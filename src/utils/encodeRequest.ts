@@ -1,6 +1,29 @@
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string'
 import type { ShoppingRequestPayload } from '../types/shopping'
 
+function isValidShoppingRequestItem(value: unknown): boolean {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const item = value as Record<string, unknown>
+
+  return (
+    typeof item.id === 'string' &&
+    typeof item.productId === 'string' &&
+    typeof item.productNameSnapshot === 'string' &&
+    typeof item.categoryIdSnapshot === 'string' &&
+    typeof item.categoryNameSnapshot === 'string' &&
+    typeof item.quantity === 'number' &&
+    Number.isFinite(item.quantity) &&
+    typeof item.unit === 'string' &&
+    (typeof item.memo === 'undefined' || typeof item.memo === 'string') &&
+    typeof item.iconSnapshot === 'string' &&
+    typeof item.sortOrderSnapshot === 'number' &&
+    Number.isFinite(item.sortOrderSnapshot)
+  )
+}
+
 function isValidPayload(value: unknown): value is ShoppingRequestPayload {
   if (!value || typeof value !== 'object') {
     return false
@@ -11,7 +34,8 @@ function isValidPayload(value: unknown): value is ShoppingRequestPayload {
     typeof payload.requestId === 'string' &&
     typeof payload.title === 'string' &&
     typeof payload.createdAt === 'string' &&
-    Array.isArray(payload.items)
+    Array.isArray(payload.items) &&
+    payload.items.every((item) => isValidShoppingRequestItem(item))
   )
 }
 

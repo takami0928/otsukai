@@ -13,7 +13,11 @@ function readJson<T>(key: string, fallback: T): T {
 }
 
 function writeJson<T>(key: string, value: T) {
-  window.localStorage.setItem(key, JSON.stringify(value))
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value))
+  } catch (error) {
+    console.warn(`Failed to write localStorage key: ${key}`, error)
+  }
 }
 
 export function loadCreateDraft(): CreateDraftState {
@@ -33,9 +37,17 @@ export function saveCheckedState(requestId: string, state: CheckedStateMap) {
 }
 
 export function loadLastSharedUrl(): string {
-  return window.localStorage.getItem(LAST_SHARED_URL_KEY) || ''
+  try {
+    return window.localStorage.getItem(LAST_SHARED_URL_KEY) || ''
+  } catch {
+    return ''
+  }
 }
 
 export function saveLastSharedUrl(url: string) {
-  window.localStorage.setItem(LAST_SHARED_URL_KEY, url)
+  try {
+    window.localStorage.setItem(LAST_SHARED_URL_KEY, url)
+  } catch (error) {
+    console.warn(`Failed to write localStorage key: ${LAST_SHARED_URL_KEY}`, error)
+  }
 }
