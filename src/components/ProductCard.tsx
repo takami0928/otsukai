@@ -33,10 +33,6 @@ export function ProductCard({
         </span>
         <span className="product-main">
           <strong>{product.name}</strong>
-          <span className="product-meta">
-            既定 {product.defaultQuantity}
-            {product.unit}
-          </span>
         </span>
         <div className="quantity-stepper" aria-label={`${product.name}の数量`}>
           <button
@@ -57,11 +53,8 @@ export function ProductCard({
             ＋
           </button>
         </div>
-      </div>
-
-      <div className="product-row-actions">
         <button type="button" className="detail-toggle" onClick={onToggleDetails}>
-          {isExpanded ? '詳細を閉じる' : 'メモ'}
+          {isExpanded ? '閉じる' : 'メモ'}
         </button>
       </div>
 
