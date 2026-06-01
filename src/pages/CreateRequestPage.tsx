@@ -19,8 +19,7 @@ function getInitialDraftState(): CreateDraftState {
   for (const product of products) {
     const item = saved[product.id]
     state[product.id] = {
-      selected: item?.selected ?? false,
-      quantity: item?.quantity ?? product.defaultQuantity,
+      quantity: item?.quantity ?? 0,
       memo: item?.memo ?? product.memo ?? '',
     }
   }
@@ -30,6 +29,7 @@ function getInitialDraftState(): CreateDraftState {
 
 export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   const [draft, setDraft] = useState<CreateDraftState>(() => getInitialDraftState())
+  const [expandedProductId, setExpandedProductId] = useState<string | null>(null)
   const [title, setTitle] = useState('今日のおつかい')
   const [sharedUrl, setSharedUrl] = useState(() => loadLastSharedUrl())
   const [copyMessage, setCopyMessage] = useState('')
@@ -39,7 +39,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   }, [draft])
 
   const selectedCount = useMemo(
-    () => Object.values(draft).filter((item) => item.selected).length,
+    () => Object.values(draft).filter((item) => item.quantity > 0).length,
     [draft],
   )
 
@@ -64,9 +64,25 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     }))
   }
 
+  const handleIncrease = (productId: string) => {
+    const product = products.find((item) => item.id === productId)
+    if (!product) {
+      return
+    }
+
+    const currentQuantity = draft[productId]?.quantity ?? 0
+    const nextQuantity = currentQuantity > 0 ? currentQuantity + 1 : product.defaultQuantity
+    updateItem(productId, { quantity: nextQuantity })
+  }
+
+  const handleDecrease = (productId: string) => {
+    const currentQuantity = draft[productId]?.quantity ?? 0
+    updateItem(productId, { quantity: Math.max(0, currentQuantity - 1) })
+  }
+
   const handleCreateUrl = () => {
     const selectedItems = products
-      .filter((product) => draft[product.id]?.selected)
+      .filter((product) => (draft[product.id]?.quantity ?? 0) > 0)
       .sort((a, b) => a.sortOrder - b.sortOrder)
 
     if (selectedItems.length === 0) {
@@ -137,10 +153,10 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
             type="text"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="例: 夕飯のおつかい"
+            placeholder="例: 今日のおつかい"
           />
         </label>
-        <p className="helper-text">選択した内容は URL に埋め込まれます。</p>
+        <p className="helper-text">商品はリストから数量で選びます。共有時は数量が1以上のものだけ送られます。</p>
       </section>
 
       {groupedProducts.map(({ category, items }) => (
@@ -149,17 +165,18 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
             <h2>{category.name}</h2>
             <span>{items.length}商品</span>
           </div>
-          <div className="product-grid">
+          <div className="product-list">
             {items.map((product) => (
               <ProductCard
                 key={product.id}
                 product={product}
                 draft={draft[product.id]}
-                selected={draft[product.id].selected}
-                onToggleSelect={() =>
-                  updateItem(product.id, { selected: !draft[product.id].selected })
+                isExpanded={expandedProductId === product.id}
+                onIncrease={() => handleIncrease(product.id)}
+                onDecrease={() => handleDecrease(product.id)}
+                onToggleDetails={() =>
+                  setExpandedProductId((current) => (current === product.id ? null : product.id))
                 }
-                onQuantityChange={(value) => updateItem(product.id, { quantity: value })}
                 onMemoChange={(value) => updateItem(product.id, { memo: value })}
               />
             ))}
@@ -169,7 +186,12 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
 
       <section className="info-card">
         <h2>共有URL</h2>
-        <textarea readOnly value={sharedUrl} placeholder="URLを作成するとここに表示されます" rows={4} />
+        <textarea
+          readOnly
+          value={sharedUrl}
+          placeholder="URLを作成するとここに表示されます"
+          rows={4}
+        />
         {copyMessage ? <p className="helper-text">{copyMessage}</p> : null}
         <div className="inline-actions">
           <button type="button" className="primary-button" onClick={handleCopyUrl}>
@@ -190,7 +212,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       <BottomBar>
         <div>
           <strong>{selectedCount}件選択中</strong>
-          <p>買い物依頼URLを生成します</p>
+          <p>数量が1以上の商品だけ共有URLに入ります</p>
         </div>
         <button type="button" className="primary-button" onClick={handleCreateUrl}>
           共有URLを作成

@@ -192,22 +192,13 @@ input {
 }
 
 .product-grid,
+.product-list,
 .section-items,
 .completed-list {
   display: grid;
   gap: 0.8rem;
 }
 
-.product-card {
-  padding: 0.8rem;
-}
-
-.product-card.is-selected {
-  border-color: #d96c2c;
-  box-shadow: 0 12px 30px rgba(217, 108, 44, 0.16);
-}
-
-.product-select,
 .shopping-item-card {
   display: grid;
   width: 100%;
@@ -232,9 +223,47 @@ input {
   font-size: 1.6rem;
 }
 
+.product-row {
+  padding: 0.75rem 0.85rem;
+  border-radius: 18px;
+  border: 1px solid #e4d8c7;
+  background: rgba(255, 253, 249, 0.96);
+}
+
+.product-row.is-selected {
+  border-color: #d96c2c;
+  background: rgba(255, 244, 233, 0.98);
+  box-shadow: 0 8px 20px rgba(217, 108, 44, 0.12);
+}
+
+.product-row-main {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.selection-mark {
+  width: 1.4rem;
+  text-align: center;
+  color: #8d7a62;
+  font-weight: 700;
+}
+
+.selection-mark.is-selected {
+  color: #d96c2c;
+}
+
 .product-main,
 .shopping-body {
   display: grid;
+  min-width: 0;
+}
+
+.product-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .product-meta,
@@ -246,16 +275,47 @@ input {
   font-size: 0.9rem;
 }
 
-.product-controls {
-  display: grid;
-  gap: 0.75rem;
-  margin-top: 0.85rem;
+.quantity-stepper {
+  display: inline-grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 0.35rem;
+  align-items: center;
 }
 
-.product-controls label {
-  display: grid;
-  gap: 0.35rem;
-  color: #5d4b35;
+.step-button {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid #d4c5ae;
+  border-radius: 999px;
+  background: #fff7eb;
+  color: #5c4930;
+  cursor: pointer;
+}
+
+.quantity-value {
+  min-width: 1.5rem;
+  text-align: center;
+  font-weight: 700;
+  color: #3f3224;
+}
+
+.product-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.45rem;
+}
+
+.detail-toggle {
+  border: 0;
+  padding: 0.2rem 0;
+  background: transparent;
+  color: #7b6241;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.product-detail-panel {
+  margin-top: 0.55rem;
 }
 
 .bottom-bar {
@@ -337,5 +397,16 @@ input {
 @media (min-width: 700px) {
   .product-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 420px) {
+  .product-row-main {
+    grid-template-columns: auto auto minmax(0, 1fr);
+  }
+
+  .quantity-stepper {
+    grid-column: 2 / 4;
+    justify-self: end;
   }
 }

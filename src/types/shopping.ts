@@ -23,7 +23,6 @@ export type CheckedItemStatus = 'pending' | 'inCart'
 export type CheckedStateMap = Record<string, CheckedItemStatus>
 
 export type CreateDraftItemState = {
-  selected: boolean
   quantity: number
   memo: string
 }
