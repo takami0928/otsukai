@@ -212,7 +212,7 @@ input {
 .shopping-item-card {
   display: grid;
   width: 100%;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 0.8rem;
   align-items: center;
   border: 0;
@@ -286,7 +286,6 @@ input {
 }
 
 .product-meta,
-.shopping-quantity,
 .shopping-memo,
 .shopping-state,
 .selection-badge {
@@ -339,6 +338,65 @@ input {
   padding: 0.45rem 0.6rem;
   border-radius: 6px;
   font-size: 0.9rem;
+}
+
+.custom-items-card .section-heading {
+  margin-bottom: 0.45rem;
+}
+
+.custom-items-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.custom-items-list li {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0;
+  border-top: 1px solid #e4d8c7;
+}
+
+.custom-items-list small {
+  display: block;
+  color: #6f5e49;
+}
+
+.custom-delete-button {
+  border: 1px solid #d4c5ae;
+  border-radius: 8px;
+  padding: 0.4rem 0.55rem;
+  background: #fff7eb;
+  color: #6a5438;
+  cursor: pointer;
+}
+
+.custom-add-button {
+  margin-top: 0.75rem;
+}
+
+.custom-item-form {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid #e4d8c7;
+}
+
+.custom-item-form-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1rem;
+  align-items: end;
+}
+
+.custom-item-form-row input {
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
 }
 
 .bottom-bar {
@@ -441,6 +499,33 @@ input {
 
 .shopping-item-card.is-checked {
   opacity: 0.72;
+}
+
+.shopping-quantity-block {
+  display: grid;
+  min-width: 3rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid #e2d3bd;
+  border-radius: 12px;
+  background: #f7efe2;
+  color: #5c4930;
+  text-align: center;
+}
+
+.shopping-quantity-block strong {
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.shopping-quantity-block small {
+  margin-top: 0.1rem;
+  font-size: 0.72rem;
+}
+
+.shopping-quantity-block.is-multiple {
+  border-color: #d79a5b;
+  background: #f9dfbf;
+  color: #8b491f;
 }
 
 .completed-chip {

@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { products } from '../data/products'
 import { categories } from '../data/categories'
-import type { CreateDraftItemState, CreateDraftState, ShoppingRequestPayload } from '../types/shopping'
+import type {
+  CreateDraftItemState,
+  CreateDraftState,
+  ShoppingRequestItemPayload,
+  ShoppingRequestPayload,
+} from '../types/shopping'
 import { ProductCard } from '../components/ProductCard'
 import { BottomBar } from '../components/BottomBar'
 import { loadCreateDraft, saveCreateDraft, saveLastSharedUrl } from '../utils/storage'
@@ -14,8 +19,18 @@ type CreateRequestPageProps = {
 
 type CreateMode = 'edit' | 'review' | 'shared'
 type CopyStatus = 'success' | 'error' | ''
+type CustomItem = {
+  id: string
+  name: string
+  quantity: number
+  unit: string
+  memo: string
+}
 
 const DEFAULT_TITLE = '今日のおつかい'
+const OTHER_CATEGORY_ID = 'other'
+const OTHER_CATEGORY_NAME = 'その他'
+const CUSTOM_ITEM_SORT_ORDER = 10000
 
 function getInitialDraftState(): CreateDraftState {
   const saved = loadCreateDraft()
@@ -48,14 +63,20 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   const [sharedUrl, setSharedUrl] = useState('')
   const [copyMessage, setCopyMessage] = useState('')
   const [copyStatus, setCopyStatus] = useState<CopyStatus>('')
+  const [customItems, setCustomItems] = useState<CustomItem[]>([])
+  const [isCustomFormOpen, setIsCustomFormOpen] = useState(false)
+  const [customName, setCustomName] = useState('')
+  const [customQuantity, setCustomQuantity] = useState(1)
+  const [customUnit, setCustomUnit] = useState('個')
+  const [customMemo, setCustomMemo] = useState('')
 
   useEffect(() => {
     saveCreateDraft(draft)
   }, [draft])
 
   const selectedCount = useMemo(
-    () => Object.values(draft).filter((item) => item.quantity > 0).length,
-    [draft],
+    () => Object.values(draft).filter((item) => item.quantity > 0).length + customItems.length,
+    [customItems, draft],
   )
 
   const groupedProducts = useMemo(() => {
@@ -104,12 +125,53 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     updateItem(productId, { quantity: Math.max(0, currentQuantity - 1) })
   }
 
+  const closeCustomForm = () => {
+    setIsCustomFormOpen(false)
+    setCustomName('')
+    setCustomQuantity(1)
+    setCustomUnit('個')
+    setCustomMemo('')
+  }
+
+  const handleAddCustomItem = () => {
+    const name = customName.trim()
+    if (!name) {
+      return
+    }
+
+    setCustomItems((current) => [
+      ...current,
+      {
+        id: createId('custom'),
+        name,
+        quantity: customQuantity,
+        unit: customUnit.trim() || '個',
+        memo: customMemo.trim(),
+      },
+    ])
+    closeCustomForm()
+  }
+
+  const createCustomPayloadItems = (): ShoppingRequestItemPayload[] =>
+    customItems.map((item, index) => ({
+      id: createId('item'),
+      productId: `custom:${item.id}`,
+      productNameSnapshot: item.name,
+      categoryIdSnapshot: OTHER_CATEGORY_ID,
+      categoryNameSnapshot: OTHER_CATEGORY_NAME,
+      quantity: item.quantity,
+      unit: item.unit,
+      memo: item.memo || undefined,
+      iconSnapshot: '🛒',
+      sortOrderSnapshot: CUSTOM_ITEM_SORT_ORDER + index,
+    }))
+
   const createUrl = () => {
     const selectedItems = products
       .filter((product) => (draft[product.id]?.quantity ?? 0) > 0)
       .sort((a, b) => a.sortOrder - b.sortOrder)
 
-    if (selectedItems.length === 0) {
+    if (selectedItems.length === 0 && customItems.length === 0) {
       return ''
     }
 
@@ -117,23 +179,26 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       requestId: createId('request'),
       title: title.trim() || 'おつかい依頼',
       createdAt: new Date().toISOString(),
-      items: selectedItems.map((product) => {
-        const category = categories.find((item) => item.id === product.categoryId)
-        const itemState = draft[product.id]
+      items: [
+        ...selectedItems.map((product) => {
+          const category = categories.find((item) => item.id === product.categoryId)
+          const itemState = draft[product.id]
 
-        return {
-          id: createId('item'),
-          productId: product.id,
-          productNameSnapshot: product.name,
-          categoryIdSnapshot: product.categoryId,
-          categoryNameSnapshot: category?.name || 'その他',
-          quantity: itemState.quantity,
-          unit: product.unit,
-          memo: itemState.memo.trim() || undefined,
-          iconSnapshot: product.icon,
-          sortOrderSnapshot: product.sortOrder,
-        }
-      }),
+          return {
+            id: createId('item'),
+            productId: product.id,
+            productNameSnapshot: product.name,
+            categoryIdSnapshot: product.categoryId,
+            categoryNameSnapshot: category?.name || OTHER_CATEGORY_NAME,
+            quantity: itemState.quantity,
+            unit: product.unit,
+            memo: itemState.memo.trim() || undefined,
+            iconSnapshot: product.icon,
+            sortOrderSnapshot: product.sortOrder,
+          }
+        }),
+        ...createCustomPayloadItems(),
+      ],
     }
 
     const encoded = encodeShoppingRequest(payload)
@@ -184,6 +249,8 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     saveLastSharedUrl('')
     setCopyMessage('')
     setCopyStatus('')
+    setCustomItems([])
+    closeCustomForm()
   }
 
   const renderEdit = () => (
@@ -209,6 +276,100 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
           />
         </label>
         <p className="helper-text">商品はリストから数量で選びます。共有時は数量が1以上のものだけ送られます。</p>
+      </section>
+
+      <section className="info-card custom-items-card">
+        <div className="section-heading">
+          <h2>追加したもの</h2>
+          <span>{customItems.length}件</span>
+        </div>
+        {customItems.length > 0 ? (
+          <ul className="custom-items-list">
+            {customItems.map((item) => (
+              <li key={item.id}>
+                <span>
+                  <strong>{item.name}</strong> {item.quantity}{item.unit}
+                  {item.memo ? <small>メモ: {item.memo}</small> : null}
+                </span>
+                <button
+                  type="button"
+                  className="custom-delete-button"
+                  onClick={() => setCustomItems((current) => current.filter((currentItem) => currentItem.id !== item.id))}
+                >
+                  削除
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="helper-text">リストにない商品を、今回の依頼だけに追加できます。</p>
+        )}
+
+        {isCustomFormOpen ? (
+          <div className="custom-item-form">
+            <label className="stack-field">
+              <span>商品名</span>
+              <input
+                type="text"
+                value={customName}
+                onChange={(event) => setCustomName(event.target.value)}
+                placeholder="例: 洗濯ネット"
+              />
+            </label>
+            <div className="custom-item-form-row">
+              <label className="stack-field">
+                <span>数量</span>
+                <span className="quantity-stepper">
+                  <button
+                    type="button"
+                    className="step-button"
+                    onClick={() => setCustomQuantity((current) => Math.max(1, current - 1))}
+                  >
+                    −
+                  </button>
+                  <span className="quantity-value">{customQuantity}</span>
+                  <button
+                    type="button"
+                    className="step-button"
+                    onClick={() => setCustomQuantity((current) => current + 1)}
+                  >
+                    ＋
+                  </button>
+                </span>
+              </label>
+              <label className="stack-field">
+                <span>単位</span>
+                <input
+                  type="text"
+                  value={customUnit}
+                  onChange={(event) => setCustomUnit(event.target.value)}
+                  placeholder="個"
+                />
+              </label>
+            </div>
+            <label className="stack-field">
+              <span>メモ</span>
+              <input
+                type="text"
+                value={customMemo}
+                onChange={(event) => setCustomMemo(event.target.value)}
+                placeholder="任意"
+              />
+            </label>
+            <div className="inline-actions">
+              <button type="button" className="primary-button" onClick={handleAddCustomItem} disabled={!customName.trim()}>
+                追加
+              </button>
+              <button type="button" className="ghost-button" onClick={closeCustomForm}>
+                キャンセル
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" className="secondary-button custom-add-button" onClick={() => setIsCustomFormOpen(true)}>
+            ＋ リストにないものを追加
+          </button>
+        )}
       </section>
 
       {groupedProducts.map(({ category, items }) => (
@@ -287,6 +448,20 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
           </ul>
         </section>
       ))}
+
+      {customItems.length > 0 ? (
+        <section className="info-card review-category">
+          <h2>{OTHER_CATEGORY_NAME}</h2>
+          <ul className="review-list">
+            {customItems.map((item) => (
+              <li key={item.id}>
+                <strong>{item.name}</strong> {item.quantity}{item.unit}
+                {item.memo ? <p className="review-memo">メモ: {item.memo}</p> : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <div className="inline-actions">
         <button type="button" className="ghost-button" onClick={() => setMode('edit')}>

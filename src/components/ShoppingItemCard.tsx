@@ -18,13 +18,13 @@ export function ShoppingItemCard({ item, checked, onToggle }: ShoppingItemCardPr
       </span>
       <span className="shopping-body">
         <strong>{item.productNameSnapshot}</strong>
-        <span className="shopping-quantity">
-          {item.quantity}
-          {item.unit}
-        </span>
-        {item.memo ? <span className="shopping-memo">{item.memo}</span> : null}
+        {item.memo ? <span className="shopping-memo">メモ: {item.memo}</span> : null}
+        <span className="shopping-state">{checked ? 'かご済み' : 'タップで完了'}</span>
       </span>
-      <span className="shopping-state">{checked ? 'かご済み' : 'タップで完了'}</span>
+      <span className={`shopping-quantity-block ${item.quantity > 1 ? 'is-multiple' : ''}`}>
+        <strong>{item.quantity}</strong>
+        <small>{item.unit}</small>
+      </span>
     </button>
   )
 }
