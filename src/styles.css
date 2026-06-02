@@ -140,6 +140,11 @@ input {
   cursor: default;
 }
 
+.ghost-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .secondary-button {
   background: #efe3cc;
   color: #5b472c;
@@ -362,6 +367,41 @@ input {
   gap: 0.75rem;
   flex-wrap: wrap;
   margin-top: 0.75rem;
+}
+
+.bottom-bar-actions {
+  margin-top: 0;
+  flex-wrap: nowrap;
+}
+
+.review-category h2 {
+  margin-bottom: 0.6rem;
+}
+
+.review-list {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding-left: 1.4rem;
+}
+
+.review-memo {
+  margin: 0.15rem 0 0;
+  color: #6f5e49;
+  font-size: 0.9rem;
+}
+
+.copy-message {
+  margin: 0 0 0.8rem;
+  font-weight: 700;
+}
+
+.copy-message.success {
+  color: #356143;
+}
+
+.copy-message.error {
+  color: #a33a2a;
 }
 
 .compact-hero {

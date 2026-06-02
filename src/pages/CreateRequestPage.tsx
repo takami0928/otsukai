@@ -4,7 +4,7 @@ import { categories } from '../data/categories'
 import type { CreateDraftItemState, CreateDraftState, ShoppingRequestPayload } from '../types/shopping'
 import { ProductCard } from '../components/ProductCard'
 import { BottomBar } from '../components/BottomBar'
-import { loadCreateDraft, loadLastSharedUrl, saveCreateDraft, saveLastSharedUrl } from '../utils/storage'
+import { loadCreateDraft, saveCreateDraft, saveLastSharedUrl } from '../utils/storage'
 import { createId } from '../utils/id'
 import { encodeShoppingRequest } from '../utils/encodeRequest'
 
@@ -12,8 +12,21 @@ type CreateRequestPageProps = {
   onBackHome: () => void
 }
 
+type CreateMode = 'edit' | 'review' | 'shared'
+type CopyStatus = 'success' | 'error' | ''
+
+const DEFAULT_TITLE = '今日のおつかい'
+
 function getInitialDraftState(): CreateDraftState {
   const saved = loadCreateDraft()
+  return createDraftState(saved)
+}
+
+function getEmptyDraftState(): CreateDraftState {
+  return createDraftState({})
+}
+
+function createDraftState(saved: CreateDraftState): CreateDraftState {
   const state: CreateDraftState = {}
 
   for (const product of products) {
@@ -30,9 +43,11 @@ function getInitialDraftState(): CreateDraftState {
 export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   const [draft, setDraft] = useState<CreateDraftState>(() => getInitialDraftState())
   const [expandedProductId, setExpandedProductId] = useState<string | null>(null)
-  const [title, setTitle] = useState('今日のおつかい')
-  const [sharedUrl, setSharedUrl] = useState(() => loadLastSharedUrl())
+  const [title, setTitle] = useState(DEFAULT_TITLE)
+  const [mode, setMode] = useState<CreateMode>('edit')
+  const [sharedUrl, setSharedUrl] = useState('')
   const [copyMessage, setCopyMessage] = useState('')
+  const [copyStatus, setCopyStatus] = useState<CopyStatus>('')
 
   useEffect(() => {
     saveCreateDraft(draft)
@@ -53,6 +68,15 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       }))
       .filter((group) => group.items.length > 0)
   }, [])
+
+  const groupedSelectedProducts = useMemo(() => {
+    return groupedProducts
+      .map(({ category, items }) => ({
+        category,
+        items: items.filter((product) => (draft[product.id]?.quantity ?? 0) > 0),
+      }))
+      .filter((group) => group.items.length > 0)
+  }, [draft, groupedProducts])
 
   const updateItem = (productId: string, next: Partial<CreateDraftItemState>) => {
     setDraft((current) => ({
@@ -80,14 +104,13 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     updateItem(productId, { quantity: Math.max(0, currentQuantity - 1) })
   }
 
-  const handleCreateUrl = () => {
+  const createUrl = () => {
     const selectedItems = products
       .filter((product) => (draft[product.id]?.quantity ?? 0) > 0)
       .sort((a, b) => a.sortOrder - b.sortOrder)
 
     if (selectedItems.length === 0) {
-      setCopyMessage('商品を1つ以上選んでください。')
-      return
+      return ''
     }
 
     const payload: ShoppingRequestPayload = {
@@ -117,25 +140,54 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     const url = `${window.location.origin}${window.location.pathname}#/list?data=${encoded}`
     setSharedUrl(url)
     saveLastSharedUrl(url)
-    setCopyMessage('共有URLを作成しました。')
+    return url
   }
 
-  const handleCopyUrl = async () => {
-    if (!sharedUrl) {
-      setCopyMessage('先に共有URLを作成してください。')
+  const copyUrl = async (url: string) => {
+    if (!navigator.clipboard?.writeText) {
+      setCopyMessage('自動コピーできませんでした。下のURLを長押ししてコピーしてください。')
+      setCopyStatus('error')
       return
     }
 
     try {
-      await navigator.clipboard.writeText(sharedUrl)
-      setCopyMessage('共有URLをコピーしました。')
+      await navigator.clipboard.writeText(url)
+      setCopyMessage('共有URLをコピーしました。LINEなどに貼り付けて送ってください。')
+      setCopyStatus('success')
     } catch {
-      setCopyMessage('コピーに失敗しました。手動でURLを選択してください。')
+      setCopyMessage('自動コピーできませんでした。下のURLを長押ししてコピーしてください。')
+      setCopyStatus('error')
     }
   }
 
-  return (
-    <main className="page page-with-bottom-bar">
+  const handleCreateUrl = async () => {
+    const url = createUrl()
+    if (!url) {
+      setMode('edit')
+      return
+    }
+
+    setMode('shared')
+    await copyUrl(url)
+  }
+
+  const handleReset = () => {
+    if (selectedCount > 0 && !window.confirm('選択内容をリセットしますか？')) {
+      return
+    }
+
+    setDraft(getEmptyDraftState())
+    setExpandedProductId(null)
+    setTitle(DEFAULT_TITLE)
+    setMode('edit')
+    setSharedUrl('')
+    saveLastSharedUrl('')
+    setCopyMessage('')
+    setCopyStatus('')
+  }
+
+  const renderEdit = () => (
+    <>
       <section className="top-bar">
         <button type="button" className="ghost-button" onClick={onBackHome}>
           戻る
@@ -184,40 +236,107 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
         </section>
       ))}
 
-      <section className="info-card">
-        <h2>共有URL</h2>
-        <textarea
-          readOnly
-          value={sharedUrl}
-          placeholder="URLを作成するとここに表示されます"
-          rows={4}
-        />
-        {copyMessage ? <p className="helper-text">{copyMessage}</p> : null}
-        <div className="inline-actions">
-          <button type="button" className="primary-button" onClick={handleCopyUrl}>
-            URLをコピー
-          </button>
-          <a
-            className="secondary-button"
-            href={sharedUrl || '#'}
-            target="_blank"
-            rel="noreferrer"
-            aria-disabled={!sharedUrl}
-          >
-            別タブで確認
-          </a>
-        </div>
-      </section>
-
       <BottomBar>
         <div>
           <strong>{selectedCount}件選択中</strong>
-          <p>数量が1以上の商品だけ共有URLに入ります</p>
+          <p>数量が1以上の商品だけ確認画面に表示します</p>
         </div>
-        <button type="button" className="primary-button" onClick={handleCreateUrl}>
-          共有URLを作成
-        </button>
+        <div className="inline-actions bottom-bar-actions">
+          <button type="button" className="ghost-button" onClick={handleReset} disabled={!selectedCount}>
+            リセット
+          </button>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => setMode('review')}
+            disabled={!selectedCount}
+          >
+            確認へ
+          </button>
+        </div>
       </BottomBar>
+    </>
+  )
+
+  const renderReview = () => (
+    <>
+      <section className="top-bar">
+        <div>
+          <p className="eyebrow">依頼作成</p>
+          <h1>依頼内容の確認</h1>
+        </div>
+      </section>
+
+      <section className="info-card">
+        <p className="lead">{selectedCount}件の商品を選択しています。</p>
+      </section>
+
+      {groupedSelectedProducts.map(({ category, items }) => (
+        <section key={category.id} className="info-card review-category">
+          <h2>{category.name}</h2>
+          <ul className="review-list">
+            {items.map((product) => {
+              const item = draft[product.id]
+              return (
+                <li key={product.id}>
+                  <strong>{product.name}</strong> {item.quantity}{product.unit}
+                  {item.memo.trim() ? <p className="review-memo">メモ: {item.memo.trim()}</p> : null}
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      ))}
+
+      <div className="inline-actions">
+        <button type="button" className="ghost-button" onClick={() => setMode('edit')}>
+          修正する
+        </button>
+        <button type="button" className="primary-button" onClick={handleCreateUrl}>
+          URLを作成してコピー
+        </button>
+      </div>
+    </>
+  )
+
+  const renderShared = () => (
+    <>
+      <section className="top-bar">
+        <div>
+          <p className="eyebrow">依頼作成</p>
+          <h1>共有URLを作成しました</h1>
+        </div>
+      </section>
+
+      <section className="info-card">
+        {copyMessage ? <p className={`copy-message ${copyStatus}`}>{copyMessage}</p> : null}
+        <label className="stack-field">
+          <span>共有URL</span>
+          <textarea readOnly value={sharedUrl} rows={5} />
+        </label>
+        <div className="inline-actions">
+          <button type="button" className="primary-button" onClick={() => copyUrl(sharedUrl)}>
+            もう一度コピー
+          </button>
+          <a className="secondary-button" href={sharedUrl} target="_blank" rel="noreferrer">
+            開いて確認
+          </a>
+          <button type="button" className="ghost-button" onClick={() => setMode('edit')}>
+            修正する
+          </button>
+          <button type="button" className="ghost-button" onClick={handleReset}>
+            リセット
+          </button>
+        </div>
+      </section>
+    </>
+  )
+
+  return (
+    <main className={`page ${mode === 'edit' ? 'page-with-bottom-bar' : ''}`}>
+      {mode === 'edit' ? renderEdit() : null}
+      {mode === 'review' ? renderReview() : null}
+      {mode === 'shared' ? renderShared() : null}
     </main>
   )
 }
