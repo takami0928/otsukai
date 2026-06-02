@@ -403,7 +403,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
           <p>数量が1以上の商品だけ確認画面に表示します</p>
         </div>
         <div className="inline-actions bottom-bar-actions">
-          <button type="button" className="ghost-button" onClick={handleReset} disabled={!selectedCount}>
+          <button type="button" className="ghost-button danger-button" onClick={handleReset} disabled={!selectedCount}>
             リセット
           </button>
           <button
@@ -499,7 +499,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
           <button type="button" className="ghost-button" onClick={() => setMode('edit')}>
             修正する
           </button>
-          <button type="button" className="ghost-button" onClick={handleReset}>
+          <button type="button" className="ghost-button danger-button" onClick={handleReset}>
             リセット
           </button>
         </div>
