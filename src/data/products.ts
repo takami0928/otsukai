@@ -21,14 +21,18 @@ export const products: Product[] = [
   { id: 'sweet-potato', name: 'さつまいも', categoryId: 'vegetables', defaultQuantity: 1, unit: '袋', icon: '🍠', sortOrder: 118 },
   { id: 'pumpkin', name: 'かぼちゃ', categoryId: 'vegetables', defaultQuantity: 1, unit: '個', icon: '🎃', sortOrder: 119 },
   { id: 'eggplant', name: 'なす', categoryId: 'vegetables', defaultQuantity: 1, unit: '袋', icon: '🍆', sortOrder: 120 },
+  { id: 'burdock', name: 'ごぼう', categoryId: 'vegetables', defaultQuantity: 1, unit: '本', icon: '🥕', sortOrder: 121 },
 
   { id: 'apple', name: 'りんご', categoryId: 'fruits', defaultQuantity: 2, unit: '玉', memo: '王林かフジ', icon: '🍎', sortOrder: 201 },
   { id: 'banana', name: 'バナナ', categoryId: 'fruits', defaultQuantity: 1, unit: '房', icon: '🍌', sortOrder: 202 },
+  { id: 'watermelon', name: 'すいか', categoryId: 'fruits', defaultQuantity: 1, unit: '個', icon: '🍉', sortOrder: 203 },
 
   { id: 'salmon', name: '鮭', categoryId: 'fish', defaultQuantity: 2, unit: '切れ', icon: '🐟', sortOrder: 301 },
   { id: 'kanikama', name: 'カニカマ', categoryId: 'fish', defaultQuantity: 1, unit: '個', icon: '🦀', sortOrder: 302 },
   { id: 'fish-sausage', name: '魚肉ソーセージ', categoryId: 'fish', defaultQuantity: 1, unit: '個', icon: '🐟', sortOrder: 303 },
   { id: 'canned-tuna', name: 'ツナ缶', categoryId: 'fish', defaultQuantity: 1, unit: '個', icon: '🐟', sortOrder: 304 },
+  { id: 'chikuwa', name: 'ちくわ', categoryId: 'fish', defaultQuantity: 1, unit: '袋', icon: '🐟', sortOrder: 305 },
+  { id: 'satsuma-age', name: 'さつま揚げ', categoryId: 'fish', defaultQuantity: 1, unit: 'パック', icon: '🐟', sortOrder: 306 },
 
   { id: 'pork-koma', name: '豚小間肉', categoryId: 'meat', defaultQuantity: 3, unit: 'パック', icon: '🥩', sortOrder: 401 },
   { id: 'ground-chicken', name: 'とりひき肉', categoryId: 'meat', defaultQuantity: 1, unit: 'パック', icon: '🍗', sortOrder: 402 },
@@ -70,6 +74,7 @@ export const products: Product[] = [
   { id: 'ice', name: '氷', categoryId: 'frozen', defaultQuantity: 1, unit: '袋', memo: '1キロ', icon: '🧊', sortOrder: 1002 },
   { id: 'frozen-fried-rice', name: '冷凍炒飯', categoryId: 'frozen', defaultQuantity: 1, unit: '個', icon: '🍚', sortOrder: 1003 },
   { id: 'chicken-nuggets', name: 'チキンナゲット', categoryId: 'frozen', defaultQuantity: 2, unit: '個', icon: '🍗', sortOrder: 1004 },
+  { id: 'frozen-gyoza', name: '冷凍餃子', categoryId: 'frozen', defaultQuantity: 1, unit: '個', icon: '🥟', sortOrder: 1005 },
 
   { id: 'water', name: '水', categoryId: 'drinks', defaultQuantity: 2, unit: '本', icon: '💧', sortOrder: 1101 },
   { id: 'sparkling-water', name: '炭酸水', categoryId: 'drinks', defaultQuantity: 1, unit: '本', icon: '💧', sortOrder: 1102 },
@@ -95,6 +100,7 @@ export const products: Product[] = [
   { id: 'emal', name: 'エマール', categoryId: 'daily', defaultQuantity: 1, unit: '個', icon: '🧴', sortOrder: 1219 },
   { id: 'panty-liner', name: '織物シート', categoryId: 'daily', defaultQuantity: 1, unit: '個', icon: '🧴', sortOrder: 1220 },
   { id: 'liquid-bluelet', name: '液体ブルレット', categoryId: 'daily', defaultQuantity: 1, unit: '個', icon: '🧴', sortOrder: 1221 },
+  { id: 'toilet-paper', name: 'トイレットペーパー', categoryId: 'daily', defaultQuantity: 1, unit: '個', icon: '🧻', sortOrder: 1222 },
 
   { id: 'diapers', name: 'おむつ', categoryId: 'baby', defaultQuantity: 1, unit: '袋', icon: '🍼', sortOrder: 1301 },
   { id: 'baby-danone', name: 'ベビーダノン', categoryId: 'baby', defaultQuantity: 1, unit: '個', icon: '🥣', sortOrder: 1302 },
