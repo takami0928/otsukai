@@ -28,6 +28,8 @@ export type CheckedStatusChange = {
   nextStatus: CheckedItemStatus
 }
 
+export type CartOrderList = string[]
+
 export type CreateDraftItemState = {
   quantity: number
   memo: string

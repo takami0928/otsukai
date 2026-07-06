@@ -2,6 +2,7 @@ import type {
   CheckedItemStatus,
   CheckedStateMap,
   CheckedStatusChange,
+  CartOrderList,
   ShoppingRequestItemPayload,
 } from '../types/shopping'
 
@@ -31,6 +32,33 @@ export function normalizeCheckedState(value: unknown): CheckedStateMap {
   }
 
   return normalized
+}
+
+export function normalizeCartOrder(value: unknown): CartOrderList {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const seen = new Set<string>()
+  const normalized: CartOrderList = []
+
+  for (const itemId of value) {
+    if (typeof itemId === 'string' && !seen.has(itemId)) {
+      seen.add(itemId)
+      normalized.push(itemId)
+    }
+  }
+
+  return normalized
+}
+
+export function addToCartOrder(order: CartOrderList, itemId: string): CartOrderList {
+  const normalized = normalizeCartOrder(order)
+  return normalized.includes(itemId) ? normalized : [...normalized, itemId]
+}
+
+export function removeFromCartOrder(order: CartOrderList, itemId: string): CartOrderList {
+  return normalizeCartOrder(order).filter((currentItemId) => currentItemId !== itemId)
 }
 
 export function getItemStatus(
@@ -73,4 +101,31 @@ export function getShoppingCompletionState(
     isReadyForCheckoutReview: pendingCount === 0 && items.length > 0,
     isComplete: pendingCount === 0 && needsVerificationCount === 0 && items.length > 0,
   }
+}
+
+export function getCartItemsInCartOrder(
+  items: ShoppingRequestItemPayload[],
+  checkedState: CheckedStateMap,
+  cartOrder: CartOrderList,
+): ShoppingRequestItemPayload[] {
+  const itemById = new Map(items.map((item) => [item.id, item]))
+  const orderedItemIds = normalizeCartOrder(cartOrder)
+  const addedItemIds = new Set<string>()
+  const orderedItems: ShoppingRequestItemPayload[] = []
+
+  for (const itemId of orderedItemIds) {
+    const item = itemById.get(itemId)
+    if (!item || getItemStatus(checkedState, item.id) === 'pending') {
+      continue
+    }
+
+    addedItemIds.add(item.id)
+    orderedItems.push(item)
+  }
+
+  const fallbackItems = items
+    .filter((item) => getItemStatus(checkedState, item.id) !== 'pending' && !addedItemIds.has(item.id))
+    .sort((a, b) => a.sortOrderSnapshot - b.sortOrderSnapshot)
+
+  return [...orderedItems, ...fallbackItems]
 }

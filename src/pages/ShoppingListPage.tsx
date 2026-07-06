@@ -3,13 +3,17 @@ import { CategorySection } from '../components/CategorySection'
 import { ShoppingItemCard } from '../components/ShoppingItemCard'
 import { decodeShoppingRequest } from '../utils/encodeRequest'
 import {
+  addToCartOrder,
   createCheckedStatusChange,
+  getCartItemsInCartOrder,
   getItemStatus,
   getShoppingCompletionState,
   hasCondition,
+  removeFromCartOrder,
 } from '../utils/shoppingState'
-import { loadCheckedState, saveCheckedState } from '../utils/storage'
+import { loadCartOrder, loadCheckedState, saveCartOrder, saveCheckedState } from '../utils/storage'
 import type {
+  CartOrderList,
   CheckedItemStatus,
   CheckedStateMap,
   CheckedStatusChange,
@@ -33,6 +37,7 @@ export function ShoppingListPage({
 }: ShoppingListPageProps) {
   const [payload, setPayload] = useState<ShoppingRequestPayload | null>(null)
   const [checkedState, setCheckedState] = useState<CheckedStateMap>({})
+  const [cartOrder, setCartOrder] = useState<CartOrderList>([])
   const [filterMode, setFilterMode] = useState<FilterMode>('all')
   const [pendingConfirmItemId, setPendingConfirmItemId] = useState<string | null>(null)
   const [isCheckoutReviewOpen, setIsCheckoutReviewOpen] = useState(false)
@@ -44,6 +49,7 @@ export function ShoppingListPage({
       const decoded = decodeShoppingRequest(encodedPayload)
       setPayload(decoded)
       setCheckedState(loadCheckedState(decoded.requestId))
+      setCartOrder(loadCartOrder(decoded.requestId))
       setPendingConfirmItemId(null)
       setIsCheckoutReviewOpen(false)
       setUndoStack([])
@@ -62,6 +68,14 @@ export function ShoppingListPage({
     saveCheckedState(payload.requestId, checkedState)
   }, [checkedState, payload])
 
+  useEffect(() => {
+    if (!payload) {
+      return
+    }
+
+    saveCartOrder(payload.requestId, cartOrder)
+  }, [cartOrder, payload])
+
   const sortedItems = useMemo(() => {
     if (!payload) {
       return []
@@ -76,8 +90,8 @@ export function ShoppingListPage({
   )
 
   const cartItems = useMemo(
-    () => sortedItems.filter((item) => getItemStatus(checkedState, item.id) !== 'pending'),
-    [checkedState, sortedItems],
+    () => getCartItemsInCartOrder(sortedItems, checkedState, cartOrder),
+    [cartOrder, checkedState, sortedItems],
   )
 
   const visibleItems = filterMode === 'all' ? sortedItems : remainingItems
@@ -123,6 +137,11 @@ export function ShoppingListPage({
     }
 
     setCheckedState((current) => ({ ...current, [itemId]: nextStatus }))
+    if (statusChange.previousStatus === 'pending' && nextStatus === 'inCart') {
+      setCartOrder((current) => addToCartOrder(current, itemId))
+    } else if (nextStatus === 'pending') {
+      setCartOrder((current) => removeFromCartOrder(current, itemId))
+    }
     setUndoStack((stack) => [...stack, statusChange])
     removePendingConfirm(itemId)
   }
@@ -145,6 +164,11 @@ export function ShoppingListPage({
     }
 
     setCheckedState((current) => ({ ...current, [lastId.itemId]: lastId.previousStatus }))
+    if (lastId.previousStatus === 'pending') {
+      setCartOrder((current) => removeFromCartOrder(current, lastId.itemId))
+    } else if (lastId.nextStatus === 'pending') {
+      setCartOrder((current) => addToCartOrder(current, lastId.itemId))
+    }
     removePendingConfirm(lastId.itemId)
     setUndoStack((current) => current.slice(0, -1))
   }
@@ -233,6 +257,9 @@ export function ShoppingListPage({
             <h2>会計前チェック</h2>
             <span>{cartItems.length}件</span>
           </div>
+          <p className="helper-text">
+            かごに入れた順に表示しています。トライアルのスキャン履歴と照合してください。
+          </p>
           <p className="helper-text">
             条件ありの商品だけ、会計前に条件確認済みにしてください。
           </p>
