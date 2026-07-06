@@ -1,5 +1,5 @@
-import type { CheckedStateMap, CreateDraftState } from '../types/shopping'
-import { normalizeCheckedState } from './shoppingState'
+import type { CartOrderList, CheckedStateMap, CreateDraftState } from '../types/shopping'
+import { normalizeCartOrder, normalizeCheckedState } from './shoppingState'
 
 const CREATE_DRAFT_KEY = 'otsukai:createDraft'
 const LAST_SHARED_URL_KEY = 'otsukai:lastSharedUrl'
@@ -35,6 +35,14 @@ export function loadCheckedState(requestId: string): CheckedStateMap {
 
 export function saveCheckedState(requestId: string, state: CheckedStateMap) {
   writeJson(`otsukai:checked:${requestId}`, normalizeCheckedState(state))
+}
+
+export function loadCartOrder(requestId: string): CartOrderList {
+  return normalizeCartOrder(readJson<unknown>(`otsukai:cartOrder:${requestId}`, []))
+}
+
+export function saveCartOrder(requestId: string, order: CartOrderList) {
+  writeJson(`otsukai:cartOrder:${requestId}`, normalizeCartOrder(order))
 }
 
 export function loadLastSharedUrl(): string {

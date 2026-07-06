@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { CheckedStateMap, ShoppingRequestItemPayload } from '../types/shopping'
 import {
+  addToCartOrder,
   createCheckedStatusChange,
+  getCartItemsInCartOrder,
   getItemStatus,
   getShoppingCompletionState,
   normalizeCheckedState,
+  normalizeCartOrder,
+  removeFromCartOrder,
 } from './shoppingState'
 
 const createItem = (
@@ -100,5 +104,46 @@ describe('shopping checked state', () => {
 
   it('does not create undo history when the persistent status does not change', () => {
     expect(createCheckedStatusChange({ milk: 'inCart' }, 'milk', 'inCart')).toBeNull()
+  })
+
+  it('normalizes cart order by keeping strings once in their first-seen order', () => {
+    expect(normalizeCartOrder('milk')).toEqual([])
+    expect(normalizeCartOrder(['milk', 1, 'bread', 'milk', true, 'eggs'])).toEqual([
+      'milk',
+      'bread',
+      'eggs',
+    ])
+  })
+
+  it('adds cart order entries without duplicates', () => {
+    expect(addToCartOrder(['milk'], 'bread')).toEqual(['milk', 'bread'])
+    expect(addToCartOrder(['milk', 'bread'], 'milk')).toEqual(['milk', 'bread'])
+  })
+
+  it('removes cart order entries', () => {
+    expect(removeFromCartOrder(['milk', 'bread', 'eggs'], 'bread')).toEqual(['milk', 'eggs'])
+    expect(removeFromCartOrder(['milk', 'bread'], 'tomato')).toEqual(['milk', 'bread'])
+  })
+
+  it('returns cart items in cart order with missing ordered items appended by sort order', () => {
+    const items = [
+      createItem('milk', undefined, 30),
+      createItem('tomato', undefined, 10),
+      createItem('bread', undefined, 20),
+      createItem('eggs', undefined, 40),
+    ]
+
+    expect(
+      getCartItemsInCartOrder(
+        items,
+        {
+          milk: 'inCart',
+          tomato: 'verified',
+          bread: 'inCart',
+          eggs: 'pending',
+        },
+        ['missing', 'tomato', 'tomato', 'milk', 'eggs'],
+      ).map((item) => item.id),
+    ).toEqual(['tomato', 'milk', 'bread'])
   })
 })
