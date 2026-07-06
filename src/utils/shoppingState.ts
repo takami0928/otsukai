@@ -1,4 +1,9 @@
-import type { CheckedItemStatus, CheckedStateMap, ShoppingRequestItemPayload } from '../types/shopping'
+import type {
+  CheckedItemStatus,
+  CheckedStateMap,
+  CheckedStatusChange,
+  ShoppingRequestItemPayload,
+} from '../types/shopping'
 
 const VALID_CHECKED_STATUSES = new Set<CheckedItemStatus>(['pending', 'inCart', 'verified'])
 
@@ -34,6 +39,19 @@ export function getItemStatus(
 ): CheckedItemStatus {
   const status = checkedState[itemId]
   return isCheckedItemStatus(status) ? status : 'pending'
+}
+
+export function createCheckedStatusChange(
+  checkedState: CheckedStateMap,
+  itemId: string,
+  nextStatus: CheckedItemStatus,
+): CheckedStatusChange | null {
+  const previousStatus = getItemStatus(checkedState, itemId)
+  if (previousStatus === nextStatus) {
+    return null
+  }
+
+  return { itemId, previousStatus, nextStatus }
 }
 
 export function hasCondition(item: ShoppingRequestItemPayload): boolean {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CheckedStateMap, ShoppingRequestItemPayload } from '../types/shopping'
 import {
+  createCheckedStatusChange,
   getItemStatus,
   getShoppingCompletionState,
   normalizeCheckedState,
@@ -67,5 +68,37 @@ describe('shopping checked state', () => {
       isReadyForCheckoutReview: true,
       isComplete: true,
     })
+  })
+
+  it('creates exactly one undo history entry for each persistent status transition', () => {
+    expect(createCheckedStatusChange({}, 'milk', 'inCart')).toEqual({
+      itemId: 'milk',
+      previousStatus: 'pending',
+      nextStatus: 'inCart',
+    })
+    expect(createCheckedStatusChange({ milk: 'inCart' }, 'milk', 'pending')).toEqual({
+      itemId: 'milk',
+      previousStatus: 'inCart',
+      nextStatus: 'pending',
+    })
+    expect(createCheckedStatusChange({ milk: 'inCart' }, 'milk', 'verified')).toEqual({
+      itemId: 'milk',
+      previousStatus: 'inCart',
+      nextStatus: 'verified',
+    })
+    expect(createCheckedStatusChange({ milk: 'verified' }, 'milk', 'inCart')).toEqual({
+      itemId: 'milk',
+      previousStatus: 'verified',
+      nextStatus: 'inCart',
+    })
+    expect(createCheckedStatusChange({ milk: 'verified' }, 'milk', 'pending')).toEqual({
+      itemId: 'milk',
+      previousStatus: 'verified',
+      nextStatus: 'pending',
+    })
+  })
+
+  it('does not create undo history when the persistent status does not change', () => {
+    expect(createCheckedStatusChange({ milk: 'inCart' }, 'milk', 'inCart')).toBeNull()
   })
 })

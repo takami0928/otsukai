@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { CategorySection } from '../components/CategorySection'
 import { ShoppingItemCard } from '../components/ShoppingItemCard'
 import { decodeShoppingRequest } from '../utils/encodeRequest'
-import { getItemStatus, getShoppingCompletionState, hasCondition } from '../utils/shoppingState'
+import {
+  createCheckedStatusChange,
+  getItemStatus,
+  getShoppingCompletionState,
+  hasCondition,
+} from '../utils/shoppingState'
 import { loadCheckedState, saveCheckedState } from '../utils/storage'
 import type {
   CheckedItemStatus,
@@ -110,15 +115,15 @@ export function ShoppingListPage({
   }
 
   const updateItemStatus = (itemId: string, nextStatus: CheckedItemStatus) => {
-    setCheckedState((current) => {
-      const previousStatus = getItemStatus(current, itemId)
-      if (previousStatus === nextStatus) {
-        return current
-      }
+    const statusChange = createCheckedStatusChange(checkedState, itemId, nextStatus)
 
-      setUndoStack((stack) => [...stack, { itemId, previousStatus, nextStatus }])
-      return { ...current, [itemId]: nextStatus }
-    })
+    if (!statusChange) {
+      removePendingConfirm(itemId)
+      return
+    }
+
+    setCheckedState((current) => ({ ...current, [itemId]: nextStatus }))
+    setUndoStack((stack) => [...stack, statusChange])
     removePendingConfirm(itemId)
   }
 
