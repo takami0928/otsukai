@@ -1,9 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CategorySection } from '../components/CategorySection'
 import { ShoppingItemCard } from '../components/ShoppingItemCard'
 import { decodeShoppingRequest } from '../utils/encodeRequest'
+import {
+  createCheckedStatusChange,
+  getItemStatus,
+  getShoppingCompletionState,
+  hasCondition,
+} from '../utils/shoppingState'
 import { loadCheckedState, saveCheckedState } from '../utils/storage'
-import type { CheckedStateMap, ShoppingRequestPayload } from '../types/shopping'
+import type {
+  CheckedItemStatus,
+  CheckedStateMap,
+  CheckedStatusChange,
+  ShoppingRequestPayload,
+} from '../types/shopping'
 
 type ShoppingListPageProps = {
   encodedPayload: string
@@ -22,15 +33,20 @@ export function ShoppingListPage({
 }: ShoppingListPageProps) {
   const [payload, setPayload] = useState<ShoppingRequestPayload | null>(null)
   const [checkedState, setCheckedState] = useState<CheckedStateMap>({})
-  const [filterMode, setFilterMode] = useState<FilterMode>('remaining')
-  const [showCompleted, setShowCompleted] = useState(false)
-  const [undoStack, setUndoStack] = useState<string[]>([])
+  const [filterMode, setFilterMode] = useState<FilterMode>('all')
+  const [pendingConfirmItemId, setPendingConfirmItemId] = useState<string | null>(null)
+  const [isCheckoutReviewOpen, setIsCheckoutReviewOpen] = useState(false)
+  const [undoStack, setUndoStack] = useState<CheckedStatusChange[]>([])
+  const checkoutReviewRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     try {
       const decoded = decodeShoppingRequest(encodedPayload)
       setPayload(decoded)
       setCheckedState(loadCheckedState(decoded.requestId))
+      setPendingConfirmItemId(null)
+      setIsCheckoutReviewOpen(false)
+      setUndoStack([])
     } catch (error) {
       const message =
         error instanceof Error ? error.message : '共有URLの内容を読み込めませんでした。'
@@ -55,16 +71,20 @@ export function ShoppingListPage({
   }, [payload])
 
   const remainingItems = useMemo(
-    () => sortedItems.filter((item) => checkedState[item.id] !== 'inCart'),
+    () => sortedItems.filter((item) => getItemStatus(checkedState, item.id) === 'pending'),
     [checkedState, sortedItems],
   )
 
-  const completedItems = useMemo(
-    () => sortedItems.filter((item) => checkedState[item.id] === 'inCart'),
+  const cartItems = useMemo(
+    () => sortedItems.filter((item) => getItemStatus(checkedState, item.id) !== 'pending'),
     [checkedState, sortedItems],
   )
 
   const visibleItems = filterMode === 'all' ? sortedItems : remainingItems
+  const completionState = useMemo(
+    () => getShoppingCompletionState(sortedItems, checkedState),
+    [checkedState, sortedItems],
+  )
 
   const groupedVisibleItems = useMemo(() => {
     const groups = new Map<string, { name: string; items: typeof visibleItems }>()
@@ -90,12 +110,32 @@ export function ShoppingListPage({
     }))
   }, [visibleItems])
 
-  const toggleItem = (itemId: string) => {
-    const nextChecked = checkedState[itemId] === 'inCart' ? 'pending' : 'inCart'
-    setCheckedState((current) => ({ ...current, [itemId]: nextChecked }))
-    if (nextChecked === 'inCart') {
-      setUndoStack((current) => [...current, itemId])
+  const removePendingConfirm = (itemId: string) => {
+    setPendingConfirmItemId((current) => (current === itemId ? null : current))
+  }
+
+  const updateItemStatus = (itemId: string, nextStatus: CheckedItemStatus) => {
+    const statusChange = createCheckedStatusChange(checkedState, itemId, nextStatus)
+
+    if (!statusChange) {
+      removePendingConfirm(itemId)
+      return
     }
+
+    setCheckedState((current) => ({ ...current, [itemId]: nextStatus }))
+    setUndoStack((stack) => [...stack, statusChange])
+    removePendingConfirm(itemId)
+  }
+
+  const handleStartConfirm = (itemId: string) => {
+    setPendingConfirmItemId(itemId)
+  }
+
+  const handleOpenCheckoutReview = () => {
+    setIsCheckoutReviewOpen(true)
+    window.requestAnimationFrame(() => {
+      checkoutReviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
   }
 
   const handleUndo = () => {
@@ -104,7 +144,8 @@ export function ShoppingListPage({
       return
     }
 
-    setCheckedState((current) => ({ ...current, [lastId]: 'pending' }))
+    setCheckedState((current) => ({ ...current, [lastId.itemId]: lastId.previousStatus }))
+    removePendingConfirm(lastId.itemId)
     setUndoStack((current) => current.slice(0, -1))
   }
 
@@ -112,7 +153,8 @@ export function ShoppingListPage({
     return null
   }
 
-  const remainingCount = remainingItems.length
+  const remainingCount = completionState.pendingCount
+  const showCheckoutReview = isCheckoutReviewOpen || completionState.isReadyForCheckoutReview
 
   return (
     <main className="page">
@@ -129,9 +171,23 @@ export function ShoppingListPage({
       <section className="hero-card compact-hero">
         <p className="eyebrow">残り</p>
         <div className="remaining-count">{remainingCount}</div>
-        <p className="lead">件の買い物が残っています</p>
-        {remainingCount === 0 ? (
-          <p className="completion-message">全部そろいました。買い忘れなしです。</p>
+        <p className="lead">
+          {remainingCount > 0 ? '件の買い物が残っています' : '未購入の商品はありません'}
+        </p>
+        {completionState.isComplete ? (
+          <p className="completion-message">買い物完了です。</p>
+        ) : null}
+        {!completionState.isComplete && completionState.isReadyForCheckoutReview ? (
+          <div className="checkout-callout">
+            <p>
+              {completionState.needsVerificationCount > 0
+                ? `条件あり商品が${completionState.needsVerificationCount}件あります。会計前に確認してください。`
+                : '会計前にリストを見直せます。'}
+            </p>
+            <button type="button" className="primary-button" onClick={handleOpenCheckoutReview}>
+              会計前チェックへ
+            </button>
+          </div>
         ) : null}
       </section>
 
@@ -146,13 +202,6 @@ export function ShoppingListPage({
         >
           {filterMode === 'remaining' ? 'すべて表示' : '未購入だけ表示'}
         </button>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => setShowCompleted((current) => !current)}
-        >
-          買ったものを見る
-        </button>
       </section>
 
       {groupedVisibleItems.length > 0 ? (
@@ -162,8 +211,12 @@ export function ShoppingListPage({
               <ShoppingItemCard
                 key={item.id}
                 item={item}
-                checked={checkedState[item.id] === 'inCart'}
-                onToggle={() => toggleItem(item.id)}
+                status={getItemStatus(checkedState, item.id)}
+                isConfirming={pendingConfirmItemId === item.id}
+                onStartConfirm={() => handleStartConfirm(item.id)}
+                onConfirmInCart={() => updateItemStatus(item.id, 'inCart')}
+                onCancelConfirm={() => removePendingConfirm(item.id)}
+                onReset={() => updateItemStatus(item.id, 'pending')}
               />
             ))}
           </CategorySection>
@@ -174,28 +227,74 @@ export function ShoppingListPage({
         </section>
       )}
 
-      {showCompleted ? (
-        <section className="info-card">
+      {showCheckoutReview ? (
+        <section className="info-card checkout-review-card" ref={checkoutReviewRef}>
           <div className="section-heading">
-            <h2>買ったもの</h2>
-            <span>{completedItems.length}件</span>
+            <h2>会計前チェック</h2>
+            <span>{cartItems.length}件</span>
           </div>
-          <div className="completed-list">
-            {completedItems.length > 0 ? (
-              completedItems.map((item) => (
-                <button
-                  type="button"
-                  key={item.id}
-                  className="completed-chip"
-                  onClick={() => toggleItem(item.id)}
-                >
-                  {item.iconSnapshot} {item.productNameSnapshot}
-                </button>
-              ))
-            ) : (
-              <p className="helper-text">まだ消し込み済みの商品はありません。</p>
-            )}
+          <p className="helper-text">
+            条件ありの商品だけ、会計前に条件確認済みにしてください。
+          </p>
+          <div className="checkout-list">
+            {cartItems.map((item) => {
+              const status = getItemStatus(checkedState, item.id)
+              const conditionItem = hasCondition(item)
+
+              return (
+                <article key={item.id} className={`checkout-item is-${status}`}>
+                  <div className="checkout-item-main">
+                    <span className="shopping-icon" aria-hidden="true">
+                      {item.iconSnapshot}
+                    </span>
+                    <span>
+                      <span className="shopping-title-row">
+                        <strong>{item.productNameSnapshot}</strong>
+                        {conditionItem ? <span className="condition-badge">条件あり</span> : null}
+                      </span>
+                      <span className="checkout-quantity">
+                        {item.quantity}{item.unit}
+                      </span>
+                      {item.memo ? <span className="shopping-condition">条件: {item.memo}</span> : null}
+                      <span className="shopping-state">
+                        {status === 'verified' ? '条件確認済み' : 'かご済み'}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="checkout-actions">
+                    {conditionItem && status === 'inCart' ? (
+                      <button
+                        type="button"
+                        className="primary-button compact-button"
+                        onClick={() => updateItemStatus(item.id, 'verified')}
+                      >
+                        条件を確認した
+                      </button>
+                    ) : null}
+                    {conditionItem && status === 'verified' ? (
+                      <button
+                        type="button"
+                        className="secondary-button compact-button"
+                        onClick={() => updateItemStatus(item.id, 'inCart')}
+                      >
+                        確認を戻す
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="ghost-button compact-button"
+                      onClick={() => updateItemStatus(item.id, 'pending')}
+                    >
+                      未購入に戻す
+                    </button>
+                  </div>
+                </article>
+              )
+            })}
           </div>
+          {completionState.isComplete ? (
+            <p className="completion-message">買い物完了です。</p>
+          ) : null}
         </section>
       ) : null}
 

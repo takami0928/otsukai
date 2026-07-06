@@ -18,9 +18,15 @@ export type ShoppingRequestPayload = {
   items: ShoppingRequestItemPayload[]
 }
 
-export type CheckedItemStatus = 'pending' | 'inCart'
+export type CheckedItemStatus = 'pending' | 'inCart' | 'verified'
 
 export type CheckedStateMap = Record<string, CheckedItemStatus>
+
+export type CheckedStatusChange = {
+  itemId: string
+  previousStatus: CheckedItemStatus
+  nextStatus: CheckedItemStatus
+}
 
 export type CreateDraftItemState = {
   quantity: number
