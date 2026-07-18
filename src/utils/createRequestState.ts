@@ -6,6 +6,23 @@ type InitialCreateRequestState = {
   expandedProductIds: Set<string>
 }
 
+type CreateRequestInputState = {
+  title: string
+  defaultTitle: string
+  draft: CreateDraftState
+  productList: readonly Product[]
+  customItemCount: number
+  isCustomFormOpen: boolean
+  customName: string
+  customQuantity: number
+  customUnit: string
+  customMemo: string
+  sharedUrl: string
+  lastSharedUrl: string
+  mode: string
+  copyMessage: string
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -76,6 +93,55 @@ export function createInitialCreateRequestState(
     draft: createDraftState(saved, productList),
     expandedProductIds: getSavedExpandedProductIds(saved, productList),
   }
+}
+
+export function hasAnyCreateRequestInput({
+  title,
+  defaultTitle,
+  draft,
+  productList,
+  customItemCount,
+  isCustomFormOpen,
+  customName,
+  customQuantity,
+  customUnit,
+  customMemo,
+  sharedUrl,
+  lastSharedUrl,
+  mode,
+  copyMessage,
+}: CreateRequestInputState): boolean {
+  if (
+    title !== defaultTitle ||
+    customItemCount > 0 ||
+    isCustomFormOpen ||
+    customName.trim() !== '' ||
+    customQuantity !== 1 ||
+    customUnit !== '個' ||
+    customMemo.trim() !== '' ||
+    sharedUrl !== '' ||
+    lastSharedUrl !== '' ||
+    mode !== 'edit' ||
+    copyMessage !== ''
+  ) {
+    return true
+  }
+
+  const productsById = new Map(productList.map((product) => [product.id, product]))
+
+  return Object.entries(draft).some(([productId, item]) => {
+    if (item.quantity > 0) {
+      return true
+    }
+
+    const condition = item.memo.trim()
+    if (!condition) {
+      return false
+    }
+
+    const masterCondition = productsById.get(productId)?.memo?.trim() ?? ''
+    return condition !== masterCondition
+  })
 }
 
 export function increaseQuantity(currentQuantity: unknown): number {

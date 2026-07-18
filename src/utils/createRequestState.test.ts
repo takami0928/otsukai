@@ -6,6 +6,7 @@ import {
   createInitialCreateRequestState,
   decreaseQuantity,
   getSavedExpandedProductIds,
+  hasAnyCreateRequestInput,
   increaseQuantity,
   toggleExpandedProductId,
 } from './createRequestState'
@@ -109,6 +110,124 @@ describe('create request quantity changes', () => {
     }
 
     expect(quantities).toEqual([4, 3, 2, 1, 0, 0])
+  })
+})
+
+describe('create request reset confirmation', () => {
+  const createInputState = () => ({
+    title: '今日のおつかい',
+    defaultTitle: '今日のおつかい',
+    draft: createDraftState(undefined, productList),
+    productList,
+    customItemCount: 0,
+    isCustomFormOpen: false,
+    customName: '',
+    customQuantity: 1,
+    customUnit: '個',
+    customMemo: '',
+    sharedUrl: '',
+    lastSharedUrl: '',
+    mode: 'edit',
+    copyMessage: '',
+  })
+
+  it('does not require confirmation for the untouched initial state', () => {
+    expect(hasAnyCreateRequestInput(createInputState())).toBe(false)
+  })
+
+  it('requires confirmation when only a quantity is selected', () => {
+    const state = createInputState()
+    state.draft = {
+      ...state.draft,
+      milk: { ...state.draft.milk, quantity: 1 },
+    }
+
+    expect(hasAnyCreateRequestInput(state)).toBe(true)
+  })
+
+  it('requires confirmation for a user condition even when quantity is zero', () => {
+    const state = createInputState()
+    state.draft = {
+      ...state.draft,
+      milk: { quantity: 0, memo: '低脂肪' },
+    }
+
+    expect(hasAnyCreateRequestInput(state)).toBe(true)
+  })
+
+  it('requires confirmation when a master condition changes to another value', () => {
+    const state = createInputState()
+    state.draft = {
+      ...state.draft,
+      apple: { quantity: 0, memo: 'ふじのみ' },
+    }
+
+    expect(hasAnyCreateRequestInput(state)).toBe(true)
+  })
+
+  it('requires confirmation when only the title changes', () => {
+    expect(
+      hasAnyCreateRequestInput({ ...createInputState(), title: '週末のおつかい' }),
+    ).toBe(true)
+  })
+
+  it.each([
+    ['商品名', { customName: '洗濯ネット' }],
+    ['条件', { customMemo: '大きめ' }],
+    ['数量', { customQuantity: 2 }],
+    ['単位', { customUnit: '袋' }],
+  ])('requires confirmation for an in-progress custom item %s change', (_, change) => {
+    expect(hasAnyCreateRequestInput({ ...createInputState(), ...change })).toBe(true)
+  })
+
+  it('requires confirmation when only the custom item form is open', () => {
+    expect(
+      hasAnyCreateRequestInput({ ...createInputState(), isCustomFormOpen: true }),
+    ).toBe(true)
+  })
+
+  it('requires confirmation for an added custom item', () => {
+    expect(hasAnyCreateRequestInput({ ...createInputState(), customItemCount: 1 })).toBe(true)
+  })
+
+  it('requires confirmation when a shared URL exists', () => {
+    expect(
+      hasAnyCreateRequestInput({ ...createInputState(), sharedUrl: 'https://example.com/list' }),
+    ).toBe(true)
+  })
+
+  it('requires confirmation when only the last saved shared URL exists', () => {
+    expect(
+      hasAnyCreateRequestInput({
+        ...createInputState(),
+        lastSharedUrl: 'https://example.com/saved-list',
+      }),
+    ).toBe(true)
+  })
+
+  it.each(['review', 'shared'])('requires confirmation in %s mode', (mode) => {
+    expect(hasAnyCreateRequestInput({ ...createInputState(), mode })).toBe(true)
+  })
+
+  it('requires confirmation when a copy result message exists', () => {
+    expect(
+      hasAnyCreateRequestInput({ ...createInputState(), copyMessage: 'コピーしました' }),
+    ).toBe(true)
+  })
+
+  it('ignores untouched product master conditions', () => {
+    const state = createInputState()
+    expect(state.draft.apple.memo).toBe('王林かフジ')
+    expect(hasAnyCreateRequestInput(state)).toBe(false)
+  })
+
+  it('treats a completely empty reset draft as having no input', () => {
+    expect(
+      hasAnyCreateRequestInput({
+        ...createInputState(),
+        draft: createEmptyDraftState(productList),
+      }),
+    ).toBe(false)
   })
 })
 

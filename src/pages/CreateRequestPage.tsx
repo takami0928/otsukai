@@ -9,13 +9,19 @@ import type {
 } from '../types/shopping'
 import { ProductCard } from '../components/ProductCard'
 import { BottomBar } from '../components/BottomBar'
-import { loadCreateDraft, saveCreateDraft, saveLastSharedUrl } from '../utils/storage'
+import {
+  loadCreateDraft,
+  loadLastSharedUrl,
+  saveCreateDraft,
+  saveLastSharedUrl,
+} from '../utils/storage'
 import { createId } from '../utils/id'
 import { encodeShoppingRequest } from '../utils/encodeRequest'
 import {
   createEmptyDraftState,
   createInitialCreateRequestState,
   decreaseQuantity,
+  hasAnyCreateRequestInput,
   increaseQuantity,
   toggleExpandedProductId,
 } from '../utils/createRequestState'
@@ -50,6 +56,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   const [title, setTitle] = useState(DEFAULT_TITLE)
   const [mode, setMode] = useState<CreateMode>('edit')
   const [sharedUrl, setSharedUrl] = useState('')
+  const [lastSharedUrl, setLastSharedUrl] = useState(() => loadLastSharedUrl())
   const [copyMessage, setCopyMessage] = useState('')
   const [copyStatus, setCopyStatus] = useState<CopyStatus>('')
   const [customItems, setCustomItems] = useState<CustomItem[]>([])
@@ -66,6 +73,40 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   const selectedCount = useMemo(
     () => Object.values(draft).filter((item) => item.quantity > 0).length + customItems.length,
     [customItems, draft],
+  )
+
+  const hasResettableInput = useMemo(
+    () =>
+      hasAnyCreateRequestInput({
+        title,
+        defaultTitle: DEFAULT_TITLE,
+        draft,
+        productList: products,
+        customItemCount: customItems.length,
+        isCustomFormOpen,
+        customName,
+        customQuantity,
+        customUnit,
+        customMemo,
+        sharedUrl,
+        lastSharedUrl,
+        mode,
+        copyMessage,
+      }),
+    [
+      copyMessage,
+      customItems.length,
+      customMemo,
+      customName,
+      customQuantity,
+      customUnit,
+      draft,
+      isCustomFormOpen,
+      lastSharedUrl,
+      mode,
+      sharedUrl,
+      title,
+    ],
   )
 
   const groupedProducts = useMemo(() => {
@@ -187,6 +228,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     const encoded = encodeShoppingRequest(payload)
     const url = `${window.location.origin}${window.location.pathname}#/list?data=${encoded}`
     setSharedUrl(url)
+    setLastSharedUrl(url)
     saveLastSharedUrl(url)
     return url
   }
@@ -220,7 +262,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   }
 
   const handleReset = () => {
-    if (selectedCount > 0 && !window.confirm('入力内容をすべて消去しますか？')) {
+    if (hasResettableInput && !window.confirm('入力内容をすべて消去しますか？')) {
       return
     }
 
@@ -231,6 +273,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     setTitle(DEFAULT_TITLE)
     setMode('edit')
     setSharedUrl('')
+    setLastSharedUrl('')
     saveLastSharedUrl('')
     setCopyMessage('')
     setCopyStatus('')
