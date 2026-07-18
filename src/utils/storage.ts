@@ -1,5 +1,10 @@
-import type { CartOrderList, CheckedStateMap, CreateDraftState } from '../types/shopping'
-import { normalizeCartOrder, normalizeCheckedState } from './shoppingState'
+import type {
+  CartOrderList,
+  CheckedStateMap,
+  CreateDraftState,
+  ItemIssueMap,
+} from '../types/shopping'
+import { normalizeCartOrder, normalizeCheckedState, normalizeItemIssues } from './shoppingState'
 
 const CREATE_DRAFT_KEY = 'otsukai:createDraft'
 const LAST_SHARED_URL_KEY = 'otsukai:lastSharedUrl'
@@ -45,6 +50,14 @@ export function saveCartOrder(requestId: string, order: CartOrderList) {
   writeJson(`otsukai:cartOrder:${requestId}`, normalizeCartOrder(order))
 }
 
+export function loadItemIssues(requestId: string): ItemIssueMap {
+  return normalizeItemIssues(readJson<unknown>(`otsukai:itemIssues:${requestId}`, {}))
+}
+
+export function saveItemIssues(requestId: string, issues: ItemIssueMap) {
+  writeJson(`otsukai:itemIssues:${requestId}`, normalizeItemIssues(issues))
+}
+
 export function loadLastSharedUrl(): string {
   try {
     return window.localStorage.getItem(LAST_SHARED_URL_KEY) || ''
@@ -55,7 +68,11 @@ export function loadLastSharedUrl(): string {
 
 export function saveLastSharedUrl(url: string) {
   try {
-    window.localStorage.setItem(LAST_SHARED_URL_KEY, url)
+    if (url) {
+      window.localStorage.setItem(LAST_SHARED_URL_KEY, url)
+    } else {
+      window.localStorage.removeItem(LAST_SHARED_URL_KEY)
+    }
   } catch (error) {
     console.warn(`Failed to write localStorage key: ${LAST_SHARED_URL_KEY}`, error)
   }
