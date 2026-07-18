@@ -12,6 +12,13 @@ import { BottomBar } from '../components/BottomBar'
 import { loadCreateDraft, saveCreateDraft, saveLastSharedUrl } from '../utils/storage'
 import { createId } from '../utils/id'
 import { encodeShoppingRequest } from '../utils/encodeRequest'
+import {
+  createEmptyDraftState,
+  createInitialCreateRequestState,
+  decreaseQuantity,
+  increaseQuantity,
+  toggleExpandedProductId,
+} from '../utils/createRequestState'
 
 type CreateRequestPageProps = {
   onBackHome: () => void
@@ -32,32 +39,14 @@ const OTHER_CATEGORY_ID = 'other'
 const OTHER_CATEGORY_NAME = 'その他'
 const CUSTOM_ITEM_SORT_ORDER = 10000
 
-function getInitialDraftState(): CreateDraftState {
-  const saved = loadCreateDraft()
-  return createDraftState(saved)
-}
-
-function getEmptyDraftState(): CreateDraftState {
-  return createDraftState({})
-}
-
-function createDraftState(saved: CreateDraftState): CreateDraftState {
-  const state: CreateDraftState = {}
-
-  for (const product of products) {
-    const item = saved[product.id]
-    state[product.id] = {
-      quantity: item?.quantity ?? 0,
-      memo: item?.memo ?? product.memo ?? '',
-    }
-  }
-
-  return state
-}
-
 export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
-  const [draft, setDraft] = useState<CreateDraftState>(() => getInitialDraftState())
-  const [expandedProductId, setExpandedProductId] = useState<string | null>(null)
+  const [initialState] = useState(() =>
+    createInitialCreateRequestState(loadCreateDraft(), products),
+  )
+  const [draft, setDraft] = useState<CreateDraftState>(initialState.draft)
+  const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(
+    initialState.expandedProductIds,
+  )
   const [title, setTitle] = useState(DEFAULT_TITLE)
   const [mode, setMode] = useState<CreateMode>('edit')
   const [sharedUrl, setSharedUrl] = useState('')
@@ -110,19 +99,13 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   }
 
   const handleIncrease = (productId: string) => {
-    const product = products.find((item) => item.id === productId)
-    if (!product) {
-      return
-    }
-
     const currentQuantity = draft[productId]?.quantity ?? 0
-    const nextQuantity = currentQuantity > 0 ? currentQuantity + 1 : product.defaultQuantity
-    updateItem(productId, { quantity: nextQuantity })
+    updateItem(productId, { quantity: increaseQuantity(currentQuantity) })
   }
 
   const handleDecrease = (productId: string) => {
     const currentQuantity = draft[productId]?.quantity ?? 0
-    updateItem(productId, { quantity: Math.max(0, currentQuantity - 1) })
+    updateItem(productId, { quantity: decreaseQuantity(currentQuantity) })
   }
 
   const closeCustomForm = () => {
@@ -210,7 +193,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
 
   const copyUrl = async (url: string) => {
     if (!navigator.clipboard?.writeText) {
-      setCopyMessage('自動コピーできませんでした。下のURLを長押ししてコピーしてください。')
+      setCopyMessage('自動コピーできませんでした。下のURLを選択し、ブラウザのコピー機能をご利用ください。')
       setCopyStatus('error')
       return
     }
@@ -220,7 +203,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       setCopyMessage('共有URLをコピーしました。LINEなどに貼り付けて送ってください。')
       setCopyStatus('success')
     } catch {
-      setCopyMessage('自動コピーできませんでした。下のURLを長押ししてコピーしてください。')
+      setCopyMessage('自動コピーできませんでした。下のURLを選択し、ブラウザのコピー機能をご利用ください。')
       setCopyStatus('error')
     }
   }
@@ -237,12 +220,14 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   }
 
   const handleReset = () => {
-    if (selectedCount > 0 && !window.confirm('選択内容をリセットしますか？')) {
+    if (selectedCount > 0 && !window.confirm('入力内容をすべて消去しますか？')) {
       return
     }
 
-    setDraft(getEmptyDraftState())
-    setExpandedProductId(null)
+    const emptyDraft = createEmptyDraftState(products)
+    setDraft(emptyDraft)
+    saveCreateDraft(emptyDraft)
+    setExpandedProductIds(new Set())
     setTitle(DEFAULT_TITLE)
     setMode('edit')
     setSharedUrl('')
@@ -289,12 +274,13 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
               <li key={item.id}>
                 <span>
                   <strong>{item.name}</strong> {item.quantity}{item.unit}
-                  {item.memo ? <small>メモ: {item.memo}</small> : null}
+                  {item.memo ? <small>条件: {item.memo}</small> : null}
                 </span>
                 <button
                   type="button"
                   className="custom-delete-button"
                   onClick={() => setCustomItems((current) => current.filter((currentItem) => currentItem.id !== item.id))}
+                  aria-label={`${item.name}を削除`}
                 >
                   削除
                 </button>
@@ -317,13 +303,18 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
               />
             </label>
             <div className="custom-item-form-row">
-              <label className="stack-field">
+              <div className="stack-field">
                 <span>数量</span>
-                <span className="quantity-stepper">
+                <div
+                  className="quantity-stepper"
+                  role="group"
+                  aria-label={`${customName.trim() || '追加する商品'}の数量`}
+                >
                   <button
                     type="button"
                     className="step-button"
                     onClick={() => setCustomQuantity((current) => Math.max(1, current - 1))}
+                    aria-label={`${customName.trim() || '追加する商品'}の数量を1減らす（現在${customQuantity}）`}
                   >
                     −
                   </button>
@@ -332,11 +323,12 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
                     type="button"
                     className="step-button"
                     onClick={() => setCustomQuantity((current) => current + 1)}
+                    aria-label={`${customName.trim() || '追加する商品'}の数量を1増やす（現在${customQuantity}）`}
                   >
                     ＋
                   </button>
-                </span>
-              </label>
+                </div>
+              </div>
               <label className="stack-field">
                 <span>単位</span>
                 <input
@@ -348,12 +340,13 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
               </label>
             </div>
             <label className="stack-field">
-              <span>メモ</span>
+              <span>条件</span>
               <input
                 type="text"
+                aria-label={customName.trim() ? `${customName.trim()}の条件` : '追加する商品の条件'}
                 value={customMemo}
                 onChange={(event) => setCustomMemo(event.target.value)}
-                placeholder="任意"
+                placeholder="例：安い方でOK、○○味、500g以上"
               />
             </label>
             <div className="inline-actions">
@@ -384,11 +377,13 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
                 key={product.id}
                 product={product}
                 draft={draft[product.id]}
-                isExpanded={expandedProductId === product.id}
+                isExpanded={expandedProductIds.has(product.id)}
                 onIncrease={() => handleIncrease(product.id)}
                 onDecrease={() => handleDecrease(product.id)}
                 onToggleDetails={() =>
-                  setExpandedProductId((current) => (current === product.id ? null : product.id))
+                  setExpandedProductIds((current) =>
+                    toggleExpandedProductId(current, product.id),
+                  )
                 }
                 onMemoChange={(value) => updateItem(product.id, { memo: value })}
               />
@@ -403,8 +398,8 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
           <p>数量が1以上の商品だけ確認画面に表示します</p>
         </div>
         <div className="inline-actions bottom-bar-actions">
-          <button type="button" className="ghost-button danger-button" onClick={handleReset} disabled={!selectedCount}>
-            リセット
+          <button type="button" className="ghost-button danger-button" onClick={handleReset}>
+            入力内容を消去
           </button>
           <button
             type="button"
@@ -441,7 +436,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
               return (
                 <li key={product.id}>
                   <strong>{product.name}</strong> {item.quantity}{product.unit}
-                  {item.memo.trim() ? <p className="review-memo">メモ: {item.memo.trim()}</p> : null}
+                  {item.memo.trim() ? <p className="review-memo">条件: {item.memo.trim()}</p> : null}
                 </li>
               )
             })}
@@ -456,7 +451,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
             {customItems.map((item) => (
               <li key={item.id}>
                 <strong>{item.name}</strong> {item.quantity}{item.unit}
-                {item.memo ? <p className="review-memo">メモ: {item.memo}</p> : null}
+                {item.memo ? <p className="review-memo">条件: {item.memo}</p> : null}
               </li>
             ))}
           </ul>
@@ -484,7 +479,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       </section>
 
       <section className="info-card">
-        {copyMessage ? <p className={`copy-message ${copyStatus}`}>{copyMessage}</p> : null}
+        {copyMessage ? <p className={`copy-message ${copyStatus}`} role="status">{copyMessage}</p> : null}
         <label className="stack-field">
           <span>共有URL</span>
           <textarea readOnly value={sharedUrl} rows={5} />
@@ -500,7 +495,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
             修正する
           </button>
           <button type="button" className="ghost-button danger-button" onClick={handleReset}>
-            リセット
+            入力内容を消去
           </button>
         </div>
       </section>

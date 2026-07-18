@@ -21,6 +21,12 @@ export function ProductCard({
   onMemoChange,
 }: ProductCardProps) {
   const isSelected = draft.quantity > 0
+  const conditionPanelId = `product-condition-${product.id}`
+  const conditionToggleLabel = isExpanded
+    ? `${product.name}の条件を閉じる`
+    : draft.memo.trim()
+      ? `${product.name}の条件を開く`
+      : `${product.name}の条件を追加`
 
   return (
     <article className={`product-row ${isSelected ? 'is-selected' : ''}`}>
@@ -34,12 +40,12 @@ export function ProductCard({
         <span className="product-main">
           <strong>{product.name}</strong>
         </span>
-        <div className="quantity-stepper" aria-label={`${product.name}の数量`}>
+        <div className="quantity-stepper" role="group" aria-label={`${product.name}の数量`}>
           <button
             type="button"
             className="step-button"
             onClick={onDecrease}
-            aria-label={`${product.name}を減らす`}
+            aria-label={`${product.name}を1${product.unit}減らす（現在${draft.quantity}${product.unit}）`}
           >
             −
           </button>
@@ -48,21 +54,29 @@ export function ProductCard({
             type="button"
             className="step-button"
             onClick={onIncrease}
-            aria-label={`${product.name}を増やす`}
+            aria-label={`${product.name}を1${product.unit}増やす（現在${draft.quantity}${product.unit}）`}
           >
             ＋
           </button>
         </div>
-        <button type="button" className="detail-toggle" onClick={onToggleDetails}>
-          {isExpanded ? '閉じる' : 'メモ'}
+        <button
+          type="button"
+          className="detail-toggle"
+          onClick={onToggleDetails}
+          aria-expanded={isExpanded}
+          aria-controls={conditionPanelId}
+          aria-label={conditionToggleLabel}
+        >
+          {isExpanded ? '閉じる' : draft.memo.trim() ? '条件あり' : '条件を追加'}
         </button>
       </div>
 
       {isExpanded ? (
-        <div className="product-detail-panel">
+        <div id={conditionPanelId} className="product-detail-panel">
           <input
             type="text"
-            placeholder="例: 安い方でOK"
+            aria-label={`${product.name}の条件`}
+            placeholder="例：安い方でOK、○○味、500g以上"
             value={draft.memo}
             onChange={(event) => onMemoChange(event.target.value)}
           />
