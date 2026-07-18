@@ -3,6 +3,7 @@ export type ShareTextResult = 'shared' | 'copied' | 'cancelled' | 'failed'
 export type ShareTextInput = {
   title: string
   text: string
+  url?: string
 }
 
 export type ShareTextDependencies = {
@@ -30,6 +31,17 @@ function getBrowserDependencies(): ShareTextDependencies {
   }
 }
 
+export function buildClipboardShareText(input: ShareTextInput): string {
+  const url = input.url?.trim()
+
+  if (!url || input.text.includes(url)) {
+    return input.text
+  }
+
+  const text = input.text.trimEnd()
+  return text ? `${text}\n\n${url}` : url
+}
+
 export async function shareText(
   input: ShareTextInput,
   dependencies: ShareTextDependencies = getBrowserDependencies(),
@@ -50,7 +62,7 @@ export async function shareText(
   }
 
   try {
-    await dependencies.writeClipboardText(input.text)
+    await dependencies.writeClipboardText(buildClipboardShareText(input))
     return 'copied'
   } catch {
     return 'failed'

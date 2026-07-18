@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Product } from '../types/product'
 import {
+  canReuseSharedRequestUrl,
+  createRequestContentSnapshot,
   createDraftState,
   createEmptyDraftState,
   createInitialCreateRequestState,
@@ -8,6 +10,7 @@ import {
   getSavedExpandedProductIds,
   hasAnyCreateRequestInput,
   increaseQuantity,
+  resolveSharedRequestUrl,
   toggleExpandedProductId,
 } from './createRequestState'
 
@@ -205,8 +208,8 @@ describe('create request reset confirmation', () => {
     ).toBe(true)
   })
 
-  it.each(['review', 'shared'])('requires confirmation in %s mode', (mode) => {
-    expect(hasAnyCreateRequestInput({ ...createInputState(), mode })).toBe(true)
+  it('requires confirmation in review mode', () => {
+    expect(hasAnyCreateRequestInput({ ...createInputState(), mode: 'review' })).toBe(true)
   })
 
   it('requires confirmation when a copy result message exists', () => {
@@ -228,6 +231,116 @@ describe('create request reset confirmation', () => {
         draft: createEmptyDraftState(productList),
       }),
     ).toBe(false)
+  })
+})
+
+describe('shared request URL reuse', () => {
+  const createSnapshot = (
+    overrides: Partial<Parameters<typeof createRequestContentSnapshot>[0]> = {},
+  ) =>
+    createRequestContentSnapshot({
+      title: '今日のおつかい',
+      draft: {
+        apple: { quantity: 2, memo: '王林かフジ' },
+        milk: { quantity: 0, memo: '' },
+      },
+      productList,
+      customItems: [{ name: '洗濯ネット', quantity: 1, unit: '個', memo: '大きめ' }],
+      ...overrides,
+    })
+
+  it('creates the same snapshot for the same request content', () => {
+    expect(createSnapshot()).toBe(createSnapshot())
+  })
+
+  it('ignores random custom item IDs when the visible content is unchanged', () => {
+    const firstCustomItems = [
+      { id: 'custom-random-a', name: '洗濯ネット', quantity: 1, unit: '個', memo: '大きめ' },
+    ]
+    const secondCustomItems = [
+      { id: 'custom-random-b', name: '洗濯ネット', quantity: 1, unit: '個', memo: '大きめ' },
+    ]
+
+    expect(createSnapshot({ customItems: firstCustomItems })).toBe(
+      createSnapshot({ customItems: secondCustomItems }),
+    )
+  })
+
+  it.each([
+    ['title', { title: '週末のおつかい' }],
+    [
+      'quantity',
+      {
+        draft: {
+          apple: { quantity: 3, memo: '王林かフジ' },
+          milk: { quantity: 0, memo: '' },
+        },
+      },
+    ],
+    [
+      'condition',
+      {
+        draft: {
+          apple: { quantity: 2, memo: 'ふじのみ' },
+          milk: { quantity: 0, memo: '' },
+        },
+      },
+    ],
+    [
+      'custom item',
+      {
+        customItems: [{ name: '洗濯ネット', quantity: 2, unit: '個', memo: '大きめ' }],
+      },
+    ],
+  ])('changes the snapshot after a %s change', (_, overrides) => {
+    expect(createSnapshot(overrides)).not.toBe(createSnapshot())
+  })
+
+  it('reuses a URL only when both the URL and matching snapshot exist', () => {
+    const snapshot = createSnapshot()
+
+    expect(canReuseSharedRequestUrl(snapshot, snapshot, 'https://example.com/request')).toBe(true)
+    expect(canReuseSharedRequestUrl(snapshot, `${snapshot}-changed`, 'https://example.com/request')).toBe(false)
+    expect(canReuseSharedRequestUrl(snapshot, snapshot, '')).toBe(false)
+  })
+
+  it('keeps the same URL after cancellation while the request content is unchanged', () => {
+    const snapshot = createSnapshot()
+    let generatedCount = 0
+    const resolution = resolveSharedRequestUrl(
+      snapshot,
+      snapshot,
+      'https://example.com/original-request',
+      () => {
+        generatedCount += 1
+        return 'https://example.com/new-request'
+      },
+    )
+
+    expect(resolution).toEqual({
+      url: 'https://example.com/original-request',
+      snapshot,
+      reused: true,
+    })
+    expect(generatedCount).toBe(0)
+  })
+
+  it('generates a new URL after the request content changes', () => {
+    const originalSnapshot = createSnapshot()
+    const changedSnapshot = createSnapshot({ title: '週末のおつかい' })
+
+    expect(
+      resolveSharedRequestUrl(
+        changedSnapshot,
+        originalSnapshot,
+        'https://example.com/original-request',
+        () => 'https://example.com/new-request',
+      ),
+    ).toEqual({
+      url: 'https://example.com/new-request',
+      snapshot: changedSnapshot,
+      reused: false,
+    })
   })
 })
 

@@ -23,6 +23,20 @@ type CreateRequestInputState = {
   copyMessage: string
 }
 
+type CreateRequestSnapshotCustomItem = {
+  name: string
+  quantity: number
+  unit: string
+  memo: string
+}
+
+type CreateRequestSnapshotInput = {
+  title: string
+  draft: CreateDraftState
+  productList: readonly Product[]
+  customItems: readonly CreateRequestSnapshotCustomItem[]
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -142,6 +156,60 @@ export function hasAnyCreateRequestInput({
     const masterCondition = productsById.get(productId)?.memo?.trim() ?? ''
     return condition !== masterCondition
   })
+}
+
+export function createRequestContentSnapshot({
+  title,
+  draft,
+  productList,
+  customItems,
+}: CreateRequestSnapshotInput): string {
+  const selectedProducts = productList
+    .filter((product) => (draft[product.id]?.quantity ?? 0) > 0)
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id, 'ja'))
+    .map((product) => ({
+      productId: product.id,
+      quantity: normalizeQuantity(draft[product.id]?.quantity),
+      memo: draft[product.id]?.memo.trim() ?? '',
+    }))
+
+  const normalizedCustomItems = customItems.map((item) => ({
+    name: item.name.trim(),
+    quantity: normalizeQuantity(item.quantity),
+    unit: item.unit.trim() || '個',
+    memo: item.memo.trim(),
+  }))
+
+  return JSON.stringify({
+    title: title.trim() || 'おつかい依頼',
+    selectedProducts,
+    customItems: normalizedCustomItems,
+  })
+}
+
+export function canReuseSharedRequestUrl(
+  currentSnapshot: string,
+  sharedSnapshot: string,
+  sharedUrl: string,
+): boolean {
+  return sharedUrl !== '' && currentSnapshot === sharedSnapshot
+}
+
+export function resolveSharedRequestUrl(
+  currentSnapshot: string,
+  sharedSnapshot: string,
+  sharedUrl: string,
+  createUrl: () => string,
+): { url: string; snapshot: string; reused: boolean } {
+  if (canReuseSharedRequestUrl(currentSnapshot, sharedSnapshot, sharedUrl)) {
+    return { url: sharedUrl, snapshot: sharedSnapshot, reused: true }
+  }
+
+  return {
+    url: createUrl(),
+    snapshot: currentSnapshot,
+    reused: false,
+  }
 }
 
 export function increaseQuantity(currentQuantity: unknown): number {

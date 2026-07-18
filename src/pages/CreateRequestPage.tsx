@@ -19,19 +19,23 @@ import { createId } from '../utils/id'
 import { encodeShoppingRequest } from '../utils/encodeRequest'
 import {
   createEmptyDraftState,
+  createRequestContentSnapshot,
   createInitialCreateRequestState,
   decreaseQuantity,
   hasAnyCreateRequestInput,
   increaseQuantity,
+  resolveSharedRequestUrl,
   toggleExpandedProductId,
 } from '../utils/createRequestState'
+import { shareText, type ShareTextResult } from '../utils/shareText'
+import { buildRequestShareText } from '../utils/requestShareMessage'
 
 type CreateRequestPageProps = {
   onBackHome: () => void
 }
 
-type CreateMode = 'edit' | 'review' | 'shared'
-type CopyStatus = 'success' | 'error' | ''
+type CreateMode = 'edit' | 'review'
+type ShareMessageStatus = 'success' | 'cancelled' | 'error' | ''
 type CustomItem = {
   id: string
   name: string
@@ -44,6 +48,7 @@ const DEFAULT_TITLE = '今日のおつかい'
 const OTHER_CATEGORY_ID = 'other'
 const OTHER_CATEGORY_NAME = 'その他'
 const CUSTOM_ITEM_SORT_ORDER = 10000
+const REQUEST_SHARE_TITLE = 'おつかい依頼'
 
 export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   const [initialState] = useState(() =>
@@ -56,9 +61,10 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   const [title, setTitle] = useState(DEFAULT_TITLE)
   const [mode, setMode] = useState<CreateMode>('edit')
   const [sharedUrl, setSharedUrl] = useState('')
+  const [sharedSnapshot, setSharedSnapshot] = useState('')
   const [lastSharedUrl, setLastSharedUrl] = useState(() => loadLastSharedUrl())
   const [copyMessage, setCopyMessage] = useState('')
-  const [copyStatus, setCopyStatus] = useState<CopyStatus>('')
+  const [copyStatus, setCopyStatus] = useState<ShareMessageStatus>('')
   const [customItems, setCustomItems] = useState<CustomItem[]>([])
   const [isCustomFormOpen, setIsCustomFormOpen] = useState(false)
   const [customName, setCustomName] = useState('')
@@ -73,6 +79,17 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   const selectedCount = useMemo(
     () => Object.values(draft).filter((item) => item.quantity > 0).length + customItems.length,
     [customItems, draft],
+  )
+
+  const currentRequestSnapshot = useMemo(
+    () =>
+      createRequestContentSnapshot({
+        title,
+        draft,
+        productList: products,
+        customItems,
+      }),
+    [customItems, draft, title],
   )
 
   const hasResettableInput = useMemo(
@@ -190,7 +207,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       sortOrderSnapshot: CUSTOM_ITEM_SORT_ORDER + index,
     }))
 
-  const createUrl = () => {
+  const generateRequestUrl = () => {
     const selectedItems = products
       .filter((product) => (draft[product.id]?.quantity ?? 0) > 0)
       .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -227,38 +244,69 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
 
     const encoded = encodeShoppingRequest(payload)
     const url = `${window.location.origin}${window.location.pathname}#/list?data=${encoded}`
-    setSharedUrl(url)
-    setLastSharedUrl(url)
-    saveLastSharedUrl(url)
     return url
   }
 
-  const copyUrl = async (url: string) => {
-    if (!navigator.clipboard?.writeText) {
-      setCopyMessage('自動コピーできませんでした。下のURLを選択し、ブラウザのコピー機能をご利用ください。')
-      setCopyStatus('error')
+  const showShareResult = (result: ShareTextResult) => {
+    if (result === 'shared') {
+      setCopyMessage('LINEなどへ共有しました。')
+      setCopyStatus('success')
       return
     }
 
-    try {
-      await navigator.clipboard.writeText(url)
-      setCopyMessage('共有URLをコピーしました。LINEなどに貼り付けて送ってください。')
+    if (result === 'copied') {
+      setCopyMessage('依頼文をコピーしました。LINEへ貼り付けてください。')
       setCopyStatus('success')
-    } catch {
-      setCopyMessage('自動コピーできませんでした。下のURLを選択し、ブラウザのコピー機能をご利用ください。')
-      setCopyStatus('error')
+      return
     }
+
+    if (result === 'cancelled') {
+      setCopyMessage('共有をキャンセルしました。')
+      setCopyStatus('cancelled')
+      return
+    }
+
+    setCopyMessage('共有できませんでした。もう一度お試しください。')
+    setCopyStatus('error')
   }
 
-  const handleCreateUrl = async () => {
-    const url = createUrl()
-    if (!url) {
+  const handleShareRequest = () => {
+    const resolved = resolveSharedRequestUrl(
+      currentRequestSnapshot,
+      sharedSnapshot,
+      sharedUrl,
+      generateRequestUrl,
+    )
+
+    if (!resolved.url) {
+      setCopyMessage('共有する商品を選んでください。')
+      setCopyStatus('error')
       setMode('edit')
       return
     }
 
-    setMode('shared')
-    await copyUrl(url)
+    const shareResult = shareText({
+      title: REQUEST_SHARE_TITLE,
+      text: buildRequestShareText(title),
+      url: resolved.url,
+    })
+
+    if (!resolved.reused) {
+      setSharedUrl(resolved.url)
+      setSharedSnapshot(resolved.snapshot)
+      setLastSharedUrl(resolved.url)
+      saveLastSharedUrl(resolved.url)
+    }
+    setCopyMessage('')
+    setCopyStatus('')
+
+    void shareResult.then(showShareResult)
+  }
+
+  const handleReturnToEdit = () => {
+    setCopyMessage('')
+    setCopyStatus('')
+    setMode('edit')
   }
 
   const handleReset = () => {
@@ -273,6 +321,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     setTitle(DEFAULT_TITLE)
     setMode('edit')
     setSharedUrl('')
+    setSharedSnapshot('')
     setLastSharedUrl('')
     saveLastSharedUrl('')
     setCopyMessage('')
@@ -361,7 +410,9 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
                   >
                     −
                   </button>
-                  <span className="quantity-value">{customQuantity}</span>
+                  <span className="quantity-value" aria-live="polite" aria-atomic="true">
+                    <strong>{customQuantity}</strong>
+                  </span>
                   <button
                     type="button"
                     className="step-button"
@@ -501,47 +552,20 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
         </section>
       ) : null}
 
-      <div className="inline-actions">
-        <button type="button" className="ghost-button" onClick={() => setMode('edit')}>
+      <div className="review-share-actions">
+        <button type="button" className="primary-button review-share-button" onClick={handleShareRequest}>
+          LINEで送る
+        </button>
+        <p className="helper-text">iPhone・Androidの共有画面でLINEを選択します</p>
+        {copyMessage ? (
+          <p className={`copy-message ${copyStatus}`} role="status">
+            {copyMessage}
+          </p>
+        ) : null}
+        <button type="button" className="secondary-button" onClick={handleReturnToEdit}>
           修正する
         </button>
-        <button type="button" className="primary-button" onClick={handleCreateUrl}>
-          URLを作成してコピー
-        </button>
       </div>
-    </>
-  )
-
-  const renderShared = () => (
-    <>
-      <section className="top-bar">
-        <div>
-          <p className="eyebrow">依頼作成</p>
-          <h1>共有URLを作成しました</h1>
-        </div>
-      </section>
-
-      <section className="info-card">
-        {copyMessage ? <p className={`copy-message ${copyStatus}`} role="status">{copyMessage}</p> : null}
-        <label className="stack-field">
-          <span>共有URL</span>
-          <textarea readOnly value={sharedUrl} rows={5} />
-        </label>
-        <div className="inline-actions">
-          <button type="button" className="primary-button" onClick={() => copyUrl(sharedUrl)}>
-            もう一度コピー
-          </button>
-          <a className="secondary-button" href={sharedUrl} target="_blank" rel="noreferrer">
-            開いて確認
-          </a>
-          <button type="button" className="ghost-button" onClick={() => setMode('edit')}>
-            修正する
-          </button>
-          <button type="button" className="ghost-button danger-button" onClick={handleReset}>
-            入力内容を消去
-          </button>
-        </div>
-      </section>
     </>
   )
 
@@ -549,7 +573,6 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     <main className={`page ${mode === 'edit' ? 'page-with-bottom-bar' : ''}`}>
       {mode === 'edit' ? renderEdit() : null}
       {mode === 'review' ? renderReview() : null}
-      {mode === 'shared' ? renderShared() : null}
     </main>
   )
 }
