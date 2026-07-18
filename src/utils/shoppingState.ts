@@ -1,22 +1,62 @@
 import type {
+  CartOrderList,
   CheckedItemStatus,
   CheckedStateMap,
   CheckedStatusChange,
-  CartOrderList,
+  ItemIssue,
+  ItemIssueMap,
   ShoppingRequestItemPayload,
+  ShoppingStateChange,
+  UnavailableReason,
 } from '../types/shopping'
 
-const VALID_CHECKED_STATUSES = new Set<CheckedItemStatus>(['pending', 'inCart', 'verified'])
+const VALID_CHECKED_STATUSES = new Set<CheckedItemStatus>([
+  'pending',
+  'inCart',
+  'verified',
+  'consulting',
+  'notBuying',
+])
+
+const VALID_UNAVAILABLE_REASONS = new Set<UnavailableReason>([
+  'soldOut',
+  'notFound',
+  'conditionMismatch',
+  'poorCondition',
+  'other',
+])
 
 export type ShoppingCompletionState = {
   pendingCount: number
+  consultingCount: number
   needsVerificationCount: number
-  isReadyForCheckoutReview: boolean
-  isComplete: boolean
+  purchasedCount: number
+  notBuyingCount: number
+  canFinish: boolean
 }
+
+export type ShoppingStateSnapshot = {
+  checkedState: CheckedStateMap
+  itemIssues: ItemIssueMap
+  cartOrder: CartOrderList
+}
+
+export type ShoppingStateChangeDirection = 'forward' | 'undo'
 
 export function isCheckedItemStatus(value: unknown): value is CheckedItemStatus {
   return typeof value === 'string' && VALID_CHECKED_STATUSES.has(value as CheckedItemStatus)
+}
+
+export function isUnavailableReason(value: unknown): value is UnavailableReason {
+  return typeof value === 'string' && VALID_UNAVAILABLE_REASONS.has(value as UnavailableReason)
+}
+
+export function isCartStatus(status: CheckedItemStatus): boolean {
+  return status === 'inCart' || status === 'verified'
+}
+
+export function keepsItemIssue(status: CheckedItemStatus): boolean {
+  return status === 'consulting' || status === 'notBuying'
 }
 
 export function normalizeCheckedState(value: unknown): CheckedStateMap {
@@ -32,6 +72,71 @@ export function normalizeCheckedState(value: unknown): CheckedStateMap {
   }
 
   return normalized
+}
+
+export function normalizeItemIssue(value: unknown): ItemIssue | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined
+  }
+
+  const { reason, note } = value as { reason?: unknown; note?: unknown }
+  if (!isUnavailableReason(reason)) {
+    return undefined
+  }
+
+  const normalizedNote = typeof note === 'string' ? note.trim() : ''
+  return normalizedNote ? { reason, note: normalizedNote } : { reason }
+}
+
+export function normalizeItemIssues(value: unknown): ItemIssueMap {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {}
+  }
+
+  const normalized: ItemIssueMap = {}
+  for (const [itemId, issue] of Object.entries(value)) {
+    const normalizedIssue = normalizeItemIssue(issue)
+    if (normalizedIssue) {
+      normalized[itemId] = normalizedIssue
+    }
+  }
+
+  return normalized
+}
+
+export function reconcileItemIssues(
+  itemIssues: ItemIssueMap,
+  checkedState: CheckedStateMap,
+): ItemIssueMap {
+  const normalizedIssues = normalizeItemIssues(itemIssues)
+  const normalized: ItemIssueMap = {}
+
+  for (const [itemId, issue] of Object.entries(normalizedIssues)) {
+    if (keepsItemIssue(getItemStatus(checkedState, itemId))) {
+      normalized[itemId] = issue
+    }
+  }
+
+  return normalized
+}
+
+export function reconcileCheckedStateWithIssues(
+  checkedState: CheckedStateMap,
+  itemIssues: ItemIssueMap,
+): CheckedStateMap {
+  const normalizedCheckedState = normalizeCheckedState(checkedState)
+  const normalizedIssues = normalizeItemIssues(itemIssues)
+  const reconciled: CheckedStateMap = {}
+
+  for (const [itemId, status] of Object.entries(normalizedCheckedState)) {
+    if (keepsItemIssue(status) && !normalizedIssues[itemId]) {
+      continue
+    }
+
+    reconciled[itemId] = status
+  }
+
+  return reconciled
 }
 
 export function normalizeCartOrder(value: unknown): CartOrderList {
@@ -61,6 +166,19 @@ export function removeFromCartOrder(order: CartOrderList, itemId: string): CartO
   return normalizeCartOrder(order).filter((currentItemId) => currentItemId !== itemId)
 }
 
+export function updateCartOrderForStatusChange(
+  order: CartOrderList,
+  itemId: string,
+  previousStatus: CheckedItemStatus,
+  nextStatus: CheckedItemStatus,
+): CartOrderList {
+  if (isCartStatus(nextStatus)) {
+    return isCartStatus(previousStatus) ? normalizeCartOrder(order) : addToCartOrder(order, itemId)
+  }
+
+  return removeFromCartOrder(order, itemId)
+}
+
 export function getItemStatus(
   checkedState: CheckedStateMap,
   itemId: string,
@@ -82,6 +200,80 @@ export function createCheckedStatusChange(
   return { itemId, previousStatus, nextStatus }
 }
 
+function issuesEqual(first?: ItemIssue, second?: ItemIssue): boolean {
+  return first?.reason === second?.reason && first?.note === second?.note
+}
+
+export function createShoppingStateChange(
+  checkedState: CheckedStateMap,
+  itemIssues: ItemIssueMap,
+  itemId: string,
+  nextStatus: CheckedItemStatus,
+  nextIssue?: ItemIssue,
+): ShoppingStateChange | null {
+  const previousStatus = getItemStatus(checkedState, itemId)
+  const previousIssue = normalizeItemIssue(itemIssues[itemId])
+  const suppliedNextIssue = normalizeItemIssue(nextIssue)
+  const resolvedNextIssue = keepsItemIssue(nextStatus)
+    ? suppliedNextIssue ?? (keepsItemIssue(previousStatus) ? previousIssue : undefined)
+    : undefined
+
+  if (previousStatus === nextStatus && issuesEqual(previousIssue, resolvedNextIssue)) {
+    return null
+  }
+
+  return {
+    itemId,
+    previousStatus,
+    nextStatus,
+    ...(previousIssue ? { previousIssue } : {}),
+    ...(resolvedNextIssue ? { nextIssue: resolvedNextIssue } : {}),
+  }
+}
+
+export function applyShoppingStateChange(
+  state: ShoppingStateSnapshot,
+  change: ShoppingStateChange,
+  direction: ShoppingStateChangeDirection = 'forward',
+): ShoppingStateSnapshot {
+  const usePrevious = direction === 'undo'
+  const sourceStatus = usePrevious ? change.nextStatus : change.previousStatus
+  const targetStatus = usePrevious ? change.previousStatus : change.nextStatus
+  const targetIssue = normalizeItemIssue(usePrevious ? change.previousIssue : change.nextIssue)
+  const checkedState = {
+    ...normalizeCheckedState(state.checkedState),
+    [change.itemId]: targetStatus,
+  }
+  const itemIssues = { ...normalizeItemIssues(state.itemIssues) }
+
+  if (keepsItemIssue(targetStatus) && targetIssue) {
+    itemIssues[change.itemId] = targetIssue
+  } else {
+    delete itemIssues[change.itemId]
+  }
+
+  let nextCartOrder = updateCartOrderForStatusChange(
+    state.cartOrder,
+    change.itemId,
+    sourceStatus,
+    targetStatus,
+  )
+
+  if (
+    direction === 'undo' &&
+    isCartStatus(targetStatus) &&
+    !nextCartOrder.includes(change.itemId)
+  ) {
+    nextCartOrder = addToCartOrder(nextCartOrder, change.itemId)
+  }
+
+  return {
+    checkedState,
+    itemIssues,
+    cartOrder: nextCartOrder,
+  }
+}
+
 export function hasCondition(item: ShoppingRequestItemPayload): boolean {
   return Boolean(item.memo?.trim())
 }
@@ -90,24 +282,52 @@ export function getShoppingCompletionState(
   items: ShoppingRequestItemPayload[],
   checkedState: CheckedStateMap,
 ): ShoppingCompletionState {
-  const pendingCount = items.filter((item) => getItemStatus(checkedState, item.id) === 'pending').length
-  const needsVerificationCount = items.filter(
-    (item) => hasCondition(item) && getItemStatus(checkedState, item.id) !== 'verified',
-  ).length
+  let pendingCount = 0
+  let consultingCount = 0
+  let needsVerificationCount = 0
+  let purchasedCount = 0
+  let notBuyingCount = 0
+
+  for (const item of items) {
+    const status = getItemStatus(checkedState, item.id)
+
+    if (status === 'pending') {
+      pendingCount += 1
+    } else if (status === 'consulting') {
+      consultingCount += 1
+    } else if (status === 'notBuying') {
+      notBuyingCount += 1
+    } else if (isCartStatus(status)) {
+      purchasedCount += 1
+    }
+
+    if (status === 'inCart' && hasCondition(item)) {
+      needsVerificationCount += 1
+    }
+  }
 
   return {
     pendingCount,
+    consultingCount,
     needsVerificationCount,
-    isReadyForCheckoutReview: pendingCount === 0 && items.length > 0,
-    isComplete: pendingCount === 0 && needsVerificationCount === 0 && items.length > 0,
+    purchasedCount,
+    notBuyingCount,
+    canFinish:
+      items.length > 0 &&
+      pendingCount === 0 &&
+      consultingCount === 0 &&
+      needsVerificationCount === 0,
   }
 }
 
-export function getCartItemsInCartOrder(
+function getCartItemGroups(
   items: ShoppingRequestItemPayload[],
   checkedState: CheckedStateMap,
   cartOrder: CartOrderList,
-): ShoppingRequestItemPayload[] {
+): {
+  orderedItems: ShoppingRequestItemPayload[]
+  fallbackItems: ShoppingRequestItemPayload[]
+} {
   const itemById = new Map(items.map((item) => [item.id, item]))
   const orderedItemIds = normalizeCartOrder(cartOrder)
   const addedItemIds = new Set<string>()
@@ -115,7 +335,7 @@ export function getCartItemsInCartOrder(
 
   for (const itemId of orderedItemIds) {
     const item = itemById.get(itemId)
-    if (!item || getItemStatus(checkedState, item.id) === 'pending') {
+    if (!item || !isCartStatus(getItemStatus(checkedState, item.id))) {
       continue
     }
 
@@ -124,8 +344,34 @@ export function getCartItemsInCartOrder(
   }
 
   const fallbackItems = items
-    .filter((item) => getItemStatus(checkedState, item.id) !== 'pending' && !addedItemIds.has(item.id))
+    .filter(
+      (item) =>
+        isCartStatus(getItemStatus(checkedState, item.id)) && !addedItemIds.has(item.id),
+    )
     .sort((a, b) => a.sortOrderSnapshot - b.sortOrderSnapshot)
 
+  return { orderedItems, fallbackItems }
+}
+
+/** Returns purchased items in the persisted, oldest-first cart order. */
+export function getCartItemsInCartOrder(
+  items: ShoppingRequestItemPayload[],
+  checkedState: CheckedStateMap,
+  cartOrder: CartOrderList,
+): ShoppingRequestItemPayload[] {
+  const { orderedItems, fallbackItems } = getCartItemGroups(items, checkedState, cartOrder)
   return [...orderedItems, ...fallbackItems]
+}
+
+/**
+ * Returns purchased items for checkout review. Persisted entries are newest first;
+ * items missing from legacy cartOrder data keep the existing sales-floor sort order.
+ */
+export function getCartItemsForCheckout(
+  items: ShoppingRequestItemPayload[],
+  checkedState: CheckedStateMap,
+  cartOrder: CartOrderList,
+): ShoppingRequestItemPayload[] {
+  const { orderedItems, fallbackItems } = getCartItemGroups(items, checkedState, cartOrder)
+  return [...[...orderedItems].reverse(), ...fallbackItems]
 }
