@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isShareCancellation, shareText } from './shareText'
+import { buildClipboardShareText, isShareCancellation, shareText } from './shareText'
 
 const input = {
   title: 'おつかい相談',
@@ -8,18 +8,40 @@ const input = {
 
 describe('shareText', () => {
   it('uses Web Share before the clipboard', async () => {
-    const calls: string[] = []
-    const result = await shareText(input, {
+    const sharedData: ShareData[] = []
+    const requestInput = {
+      ...input,
+      url: 'https://example.com/request',
+    }
+    const result = await shareText(requestInput, {
       share: async (data) => {
-        calls.push(`share:${data.text}`)
+        sharedData.push(data)
       },
-      writeClipboardText: async (text) => {
-        calls.push(`copy:${text}`)
+      writeClipboardText: async () => {
+        throw new Error('clipboard should not be used')
       },
     })
 
     expect(result).toBe('shared')
-    expect(calls).toEqual(['share:相談内容'])
+    expect(sharedData).toEqual([
+      {
+        title: 'おつかい相談',
+        text: '相談内容',
+        url: 'https://example.com/request',
+      },
+    ])
+  })
+
+  it('keeps existing callers compatible when no URL is provided', async () => {
+    const sharedData: ShareData[] = []
+    const result = await shareText(input, {
+      share: async (data) => {
+        sharedData.push(data)
+      },
+    })
+
+    expect(result).toBe('shared')
+    expect(sharedData).toEqual([input])
   })
 
   it('copies when Web Share is unavailable', async () => {
@@ -32,6 +54,28 @@ describe('shareText', () => {
 
     expect(result).toBe('copied')
     expect(copied).toEqual(['相談内容'])
+  })
+
+  it('combines text and URL for the clipboard fallback', async () => {
+    const copied: string[] = []
+    const result = await shareText(
+      { ...input, url: 'https://example.com/request' },
+      {
+        writeClipboardText: async (text) => {
+          copied.push(text)
+        },
+      },
+    )
+
+    expect(result).toBe('copied')
+    expect(copied).toEqual(['相談内容\n\nhttps://example.com/request'])
+  })
+
+  it('does not duplicate a URL already present in the text', () => {
+    const url = 'https://example.com/request'
+    expect(buildClipboardShareText({ ...input, text: `相談内容\n${url}`, url })).toBe(
+      `相談内容\n${url}`,
+    )
   })
 
   it('falls back to copying when Web Share fails for a reason other than cancellation', async () => {
@@ -73,6 +117,19 @@ describe('shareText', () => {
         },
       }),
     ).toBe('failed')
+  })
+
+  it('reports failure when Web Share and the clipboard both fail', async () => {
+    const result = await shareText(input, {
+      share: async () => {
+        throw new Error('share unavailable')
+      },
+      writeClipboardText: async () => {
+        throw new Error('clipboard denied')
+      },
+    })
+
+    expect(result).toBe('failed')
   })
 
   it('recognizes only AbortError as a share cancellation', () => {

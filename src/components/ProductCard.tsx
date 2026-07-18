@@ -21,19 +21,21 @@ export function ProductCard({
   onMemoChange,
 }: ProductCardProps) {
   const isSelected = draft.quantity > 0
+  const hasCondition = draft.memo.trim().length > 0
   const conditionPanelId = `product-condition-${product.id}`
-  const conditionToggleLabel = isExpanded
-    ? `${product.name}の条件を閉じる`
-    : draft.memo.trim()
-      ? `${product.name}の条件を開く`
-      : `${product.name}の条件を追加`
+  const conditionToggleLabel = [
+    `${product.name}の条件を${isExpanded ? '閉じる' : '開く'}`,
+    hasCondition ? `${product.name}には入力済みの条件があります` : '',
+  ]
+    .filter(Boolean)
+    .join('。')
 
   return (
-    <article className={`product-row ${isSelected ? 'is-selected' : ''}`}>
+    <article
+      className={`product-row ${isSelected ? 'is-selected' : ''}`}
+      aria-label={`${product.name}、${isSelected ? `選択済み、数量${draft.quantity}${product.unit}` : '未選択'}`}
+    >
       <div className="product-row-main">
-        <span className={`selection-mark ${isSelected ? 'is-selected' : ''}`} aria-hidden="true">
-          {isSelected ? '✓' : '□'}
-        </span>
         <span className="product-icon" aria-hidden="true">
           {product.icon}
         </span>
@@ -49,7 +51,10 @@ export function ProductCard({
           >
             −
           </button>
-          <span className="quantity-value">{draft.quantity}</span>
+          <span className="quantity-value" aria-live="polite" aria-atomic="true">
+            <strong>{draft.quantity}</strong>
+            <small>{product.unit}</small>
+          </span>
           <button
             type="button"
             className="step-button"
@@ -61,13 +66,16 @@ export function ProductCard({
         </div>
         <button
           type="button"
-          className="detail-toggle"
+          className={`detail-toggle ${hasCondition ? 'has-condition' : ''}`}
           onClick={onToggleDetails}
           aria-expanded={isExpanded}
           aria-controls={conditionPanelId}
           aria-label={conditionToggleLabel}
         >
-          {isExpanded ? '閉じる' : draft.memo.trim() ? '条件あり' : '条件を追加'}
+          <span className="condition-entered-marker" aria-hidden="true">
+            {hasCondition ? '•' : ''}
+          </span>
+          <span aria-hidden="true">条件{isExpanded ? '▲' : '▼'}</span>
         </button>
       </div>
 

@@ -29,6 +29,7 @@ import {
   getItemIssueLabel,
 } from '../utils/shoppingMessages'
 import { shareText, type ShareTextResult } from '../utils/shareText'
+import { compareItemsByStoreOrder } from '../utils/storeOrder'
 import type {
   CheckedItemStatus,
   ItemIssue,
@@ -198,13 +199,21 @@ export function ShoppingListPage({
     return [...payload.items].sort((a, b) => a.sortOrderSnapshot - b.sortOrderSnapshot)
   }, [payload])
 
+  const storeOrderedItems = useMemo(() => {
+    if (!payload) {
+      return []
+    }
+
+    return [...payload.items].sort(compareItemsByStoreOrder)
+  }, [payload])
+
   const remainingItems = useMemo(
     () =>
-      sortedItems.filter((item) => {
+      storeOrderedItems.filter((item) => {
         const status = getItemStatus(checkedState, item.id)
         return status === 'pending' || status === 'consulting'
       }),
-    [checkedState, sortedItems],
+    [checkedState, storeOrderedItems],
   )
 
   const cartItems = useMemo(
@@ -222,7 +231,7 @@ export function ShoppingListPage({
     [checkedState, sortedItems],
   )
 
-  const visibleItems = filterMode === 'all' ? sortedItems : remainingItems
+  const visibleItems = filterMode === 'all' ? storeOrderedItems : remainingItems
   const completionState = useMemo(
     () => getShoppingCompletionState(sortedItems, checkedState),
     [checkedState, sortedItems],
