@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildRequestShareMessage, buildRequestShareText } from './requestShareMessage'
 
 describe('request share message', () => {
-  it('builds Web Share text with a trimmed request title and no URL', () => {
+  it('builds request text with a trimmed title and no URL', () => {
     expect(buildRequestShareText('  今日のおつかい  ')).toBe(
       [
         '【おつかい依頼】',

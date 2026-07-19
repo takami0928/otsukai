@@ -593,6 +593,23 @@ input:focus {
   text-align: center;
 }
 
+.review-copy-fallback {
+  display: grid;
+  gap: 0.15rem;
+  justify-items: center;
+  margin-top: 0.15rem;
+}
+
+.review-copy-fallback .helper-text {
+  font-size: 0.78rem;
+}
+
+.review-copy-button {
+  min-height: 44px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.82rem;
+}
+
 .copy-message {
   margin: 0 0 0.75rem;
   padding: 0.65rem 0.75rem;
