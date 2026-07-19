@@ -4,14 +4,14 @@ import { HomePage } from './pages/HomePage'
 import { CreateRequestPage } from './pages/CreateRequestPage'
 import { ShoppingListPage } from './pages/ShoppingListPage'
 
-type RouteState =
+export type RouteState =
   | { page: 'home' }
   | { page: 'create' }
-  | { page: 'list'; encoded: string }
+  | { page: 'list'; encoded: string; format: 'v1' | 'v2' }
   | { page: 'error'; title: string; description: string }
 
-function parseHashRoute(): RouteState {
-  const rawHash = window.location.hash || '#/'
+export function parseHashRoute(rawHash: string): RouteState {
+  rawHash = rawHash || '#/'
   const normalized = rawHash.startsWith('#') ? rawHash.slice(1) : rawHash
   const [pathPart, queryString = ''] = normalized.split('?')
   const path = pathPart || '/'
@@ -36,7 +36,19 @@ function parseHashRoute(): RouteState {
       }
     }
 
-    return { page: 'list', encoded }
+    return { page: 'list', encoded, format: 'v1' }
+  }
+
+  if (path.startsWith('/l/')) {
+    const encoded = path.slice('/l/'.length)
+    if (!encoded) {
+      return {
+        page: 'error',
+        title: '共有URLにデータがありません',
+        description: '依頼データ付きのURLをもう一度開いてください。',
+      }
+    }
+    return { page: 'list', encoded, format: 'v2' }
   }
 
   return {
@@ -51,11 +63,11 @@ function navigate(hashPath: string) {
 }
 
 export default function App() {
-  const [route, setRoute] = useState<RouteState>(() => parseHashRoute())
+  const [route, setRoute] = useState<RouteState>(() => parseHashRoute(window.location.hash))
 
   useEffect(() => {
     const handleHashChange = () => {
-      setRoute(parseHashRoute())
+      setRoute(parseHashRoute(window.location.hash))
       window.scrollTo({ top: 0, behavior: 'auto' })
     }
 
@@ -73,6 +85,7 @@ export default function App() {
         return (
           <ShoppingListPage
             encodedPayload={route.encoded}
+            payloadFormat={route.format}
             onBackHome={() => navigate('/')}
             onOpenCreate={() => navigate('/create')}
             onError={(title, description) => setRoute({ page: 'error', title, description })}

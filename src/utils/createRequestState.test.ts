@@ -66,7 +66,7 @@ describe('create request draft state', () => {
         productList,
       ),
     ).toEqual({
-      apple: { quantity: 0, memo: '王林かフジ' },
+      apple: { quantity: 2, memo: '王林かフジ' },
       milk: { quantity: 0, memo: '' },
     })
   })
@@ -76,6 +76,18 @@ describe('create request draft state', () => {
       apple: { quantity: 0, memo: '' },
       milk: { quantity: 0, memo: '' },
     })
+  })
+
+  it('normalizes an old saved quantity 99 and an overlong condition on load', () => {
+    const result = createInitialCreateRequestState(
+      {
+        milk: { quantity: 99, memo: '長'.repeat(31) },
+      },
+      productList,
+    )
+
+    expect(result.draft.milk).toEqual({ quantity: 20, memo: '長'.repeat(30) })
+    expect(result.wasNormalized).toBe(true)
   })
 
   it('opens only products with non-empty saved conditions', () => {
@@ -113,6 +125,12 @@ describe('create request quantity changes', () => {
     }
 
     expect(quantities).toEqual([4, 3, 2, 1, 0, 0])
+  })
+
+  it('stops increasing at the shared quantity limit', () => {
+    expect(increaseQuantity(19)).toBe(20)
+    expect(increaseQuantity(20)).toBe(20)
+    expect(increaseQuantity(99)).toBe(20)
   })
 })
 

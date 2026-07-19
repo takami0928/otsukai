@@ -354,6 +354,32 @@ input:focus {
   cursor: pointer;
 }
 
+.step-button:disabled {
+  border-color: #dde4e1;
+  background: #f3f6f5;
+  color: #9aa7a2;
+  cursor: default;
+  opacity: 0.7;
+}
+
+.quantity-number-input {
+  width: 3.125rem;
+  min-width: 3.125rem;
+  height: 2.75rem;
+  padding: 0.25rem;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: 800;
+  -moz-appearance: textfield;
+}
+
+.quantity-number-input::-webkit-inner-spin-button,
+.quantity-number-input::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
 .quantity-value {
   display: inline-flex;
   width: 3.125rem;
@@ -427,6 +453,49 @@ input:focus {
   font-size: 0.86rem;
 }
 
+.character-count {
+  display: block;
+  margin-top: 0.2rem;
+  color: #6b7974;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.limit-inline-message,
+.quantity-limit-message {
+  margin: 0.25rem 0 0;
+  color: #9a4d24;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.quantity-limit-message {
+  padding-left: 3.15rem;
+}
+
+.request-limit-summary {
+  display: grid;
+  gap: 0.25rem;
+  color: #53625d;
+  font-size: 0.84rem;
+}
+
+.request-limit-summary p {
+  margin: 0;
+}
+
+.request-limit-summary .limit-message {
+  margin-top: 0.3rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #ead2cf;
+  border-radius: 8px;
+  background: #fff7f6;
+  color: #a04743;
+  font-weight: 700;
+}
+
 .custom-items-card .section-heading {
   margin-bottom: 0.35rem;
 }
@@ -453,6 +522,13 @@ input:focus {
   display: block;
   color: #73817c;
   font-size: 0.78rem;
+}
+
+.custom-item-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.35rem;
+  align-items: center;
 }
 
 .custom-delete-button {

@@ -1,9 +1,13 @@
 import type { Product } from '../types/product'
 import type { CreateDraftState } from '../types/shopping'
+import { MAX_ITEM_CONDITION_CHARS } from '../constants/requestLimits'
+import { normalizeRegularQuantity } from './draftLimits'
+import { truncateUserCharacters } from './textLength'
 
 type InitialCreateRequestState = {
   draft: CreateDraftState
   expandedProductIds: Set<string>
+  wasNormalized: boolean
 }
 
 type CreateRequestInputState = {
@@ -42,11 +46,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizeQuantity(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    return 0
-  }
-
-  return Math.floor(value)
+  return normalizeRegularQuantity(value)
 }
 
 export function createDraftState(
@@ -59,9 +59,11 @@ export function createDraftState(
   for (const product of productList) {
     const savedValue = savedItems[product.id]
     const savedItem = isRecord(savedValue) ? savedValue : undefined
+    const memo =
+      typeof savedItem?.memo === 'string' ? savedItem.memo : product.memo ?? ''
     state[product.id] = {
       quantity: normalizeQuantity(savedItem?.quantity),
-      memo: typeof savedItem?.memo === 'string' ? savedItem.memo : product.memo ?? '',
+      memo: truncateUserCharacters(memo, MAX_ITEM_CONDITION_CHARS),
     }
   }
 
@@ -103,9 +105,24 @@ export function createInitialCreateRequestState(
   saved: unknown,
   productList: readonly Product[],
 ): InitialCreateRequestState {
+  const draft = createDraftState(saved, productList)
+  const savedItems = isRecord(saved) ? saved : {}
+  const wasNormalized = productList.some((product) => {
+    const savedValue = savedItems[product.id]
+    const savedItem = isRecord(savedValue) ? savedValue : undefined
+    if (!savedItem) {
+      return false
+    }
+    return (
+      savedItem.quantity !== draft[product.id].quantity ||
+      savedItem.memo !== draft[product.id].memo
+    )
+  })
+
   return {
-    draft: createDraftState(saved, productList),
+    draft,
     expandedProductIds: getSavedExpandedProductIds(saved, productList),
+    wasNormalized,
   }
 }
 
@@ -213,7 +230,7 @@ export function resolveSharedRequestUrl(
 }
 
 export function increaseQuantity(currentQuantity: unknown): number {
-  return normalizeQuantity(currentQuantity) + 1
+  return normalizeQuantity(normalizeQuantity(currentQuantity) + 1)
 }
 
 export function decreaseQuantity(currentQuantity: unknown): number {
