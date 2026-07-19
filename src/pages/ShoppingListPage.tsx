@@ -29,7 +29,12 @@ import {
   buildShoppingResultMessage,
   getItemIssueLabel,
 } from '../utils/shoppingMessages'
-import { shareText, type ShareTextResult } from '../utils/shareText'
+import {
+  isNativeShareAvailable,
+  shareText,
+  type NativeShareResult,
+} from '../utils/shareText'
+import { addLineExternalBrowserHint } from '../utils/lineDeliveryUrl'
 import { compareItemsByStoreOrder } from '../utils/storeOrder'
 import type {
   CheckedItemStatus,
@@ -70,15 +75,27 @@ function createIssue(reason: UnavailableReason, note: string): ItemIssue {
   return trimmedNote ? { reason, note: trimmedNote } : { reason }
 }
 
-function getShareNotice(result: ShareTextResult, subject: '相談文' | '結果'): ShareNotice {
+function getShareNotice(
+  result: NativeShareResult,
+  subject: 'consultation' | 'result',
+): ShareNotice {
   if (result === 'shared') {
-    return { kind: 'success', message: `${subject}を共有しました。` }
+    return {
+      kind: 'success',
+      message:
+        subject === 'result'
+          ? '共有画面を開きました。\nLINEを選択して結果を送信してください。'
+          : '共有画面を開きました。\nLINEを選択して送信してください。',
+    }
   }
 
   if (result === 'copied') {
     return {
       kind: 'success',
-      message: `${subject}をコピーしました。LINEなどに貼り付けて送ってください。`,
+      message:
+        subject === 'result'
+          ? 'OS共有を利用できなかったため、結果をコピーしました。\nLINEへ貼り付けるか、外部ブラウザで開いて共有してください。'
+          : 'OS共有を利用できなかったため、相談文をコピーしました。\nLINEへ貼り付けるか、外部ブラウザで開いて共有してください。',
     }
   }
 
@@ -88,8 +105,30 @@ function getShareNotice(result: ShareTextResult, subject: '相談文' | '結果'
 
   return {
     kind: 'error',
-    message: `${subject}を共有またはコピーできませんでした。もう一度お試しください。`,
+    message:
+      '共有またはコピーができませんでした。\n外部ブラウザで開いてもう一度お試しください。',
   }
+}
+
+function NativeShareUnavailableNotice({
+  externalBrowserUrl,
+}: {
+  externalBrowserUrl: string
+}) {
+  return (
+    <section
+      className="info-card native-share-unavailable"
+      aria-label="共有機能の案内"
+    >
+      <p>
+        この画面ではOSの共有機能を利用できません。
+        外部ブラウザで開くと、LINEなどの共有先を選べます。
+      </p>
+      <a className="primary-button" href={externalBrowserUrl}>
+        外部ブラウザで開く
+      </a>
+    </section>
+  )
 }
 
 export function ShoppingListPage({
@@ -117,6 +156,11 @@ export function ShoppingListPage({
   const shoppingStateRef = useRef<ShoppingStateSnapshot>(EMPTY_SHOPPING_STATE)
   const checkoutReviewRef = useRef<HTMLElement | null>(null)
   const completionHeadingRef = useRef<HTMLHeadingElement | null>(null)
+  const nativeShareAvailable = isNativeShareAvailable()
+  const externalBrowserUrl = useMemo(
+    () => addLineExternalBrowserHint(window.location.href),
+    [encodedPayload, payloadFormat],
+  )
 
   const { checkedState, itemIssues, cartOrder } = shoppingState
 
@@ -363,7 +407,7 @@ export function ShoppingListPage({
         return
       }
 
-      setShareNotice(getShareNotice(result, '相談文'))
+      setShareNotice(getShareNotice(result, 'consultation'))
 
       if (
         (result === 'shared' || result === 'copied') &&
@@ -396,7 +440,7 @@ export function ShoppingListPage({
         return
       }
 
-      setShareNotice(getShareNotice(result, '相談文'))
+      setShareNotice(getShareNotice(result, 'consultation'))
     } finally {
       if (shareGeneration === shareGenerationRef.current) {
         activeShareRef.current = false
@@ -424,7 +468,7 @@ export function ShoppingListPage({
         return
       }
 
-      setShareNotice(getShareNotice(result, '相談文'))
+      setShareNotice(getShareNotice(result, 'consultation'))
     } finally {
       if (shareGeneration === shareGenerationRef.current) {
         activeShareRef.current = false
@@ -453,7 +497,7 @@ export function ShoppingListPage({
         return
       }
 
-      setShareNotice(getShareNotice(result, '結果'))
+      setShareNotice(getShareNotice(result, 'result'))
     } finally {
       if (shareGeneration === shareGenerationRef.current) {
         activeShareRef.current = false
@@ -498,6 +542,9 @@ export function ShoppingListPage({
 
     return (
       <main className="page completion-page">
+        {!nativeShareAvailable ? (
+          <NativeShareUnavailableNotice externalBrowserUrl={externalBrowserUrl} />
+        ) : null}
         <section className={`hero-card completion-hero ${allPurchased ? 'is-complete' : ''}`}>
           <p className="completion-symbol" aria-hidden="true">{allPurchased ? '✓' : '!'}</p>
           <h1 ref={completionHeadingRef} tabIndex={-1}>
@@ -570,6 +617,10 @@ export function ShoppingListPage({
           <h1>{payload.title}</h1>
         </div>
       </section>
+
+      {!nativeShareAvailable ? (
+        <NativeShareUnavailableNotice externalBrowserUrl={externalBrowserUrl} />
+      ) : null}
 
       <section className="hero-card compact-hero">
         <p className="eyebrow">残りの処理</p>
