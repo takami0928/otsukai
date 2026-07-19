@@ -6,6 +6,7 @@ import type {
 } from '../types/shopping'
 import { getItemIssueLabel, getUnavailableReasonLabel } from '../utils/shoppingMessages'
 import { hasCondition } from '../utils/shoppingState'
+import { ImeAwareTextInput } from './ImeAwareTextInput'
 
 type ShoppingItemCardProps = {
   item: ShoppingRequestItemPayload
@@ -223,10 +224,15 @@ export function ShoppingItemCard({
           {selectedReason === 'other' ? (
             <label className="stack-field">
               <span>補足（任意）</span>
-              <input
-                type="text"
+              <ImeAwareTextInput
                 value={issueNote}
-                onChange={(event) => onIssueNoteChange(event.target.value)}
+                onCommit={(candidate) => {
+                  onIssueNoteChange(candidate)
+                  return {
+                    value: candidate,
+                    accepted: candidate !== issueNote,
+                  }
+                }}
                 placeholder="例：予算より高かった"
                 aria-label={`${item.productNameSnapshot}を買えない理由の補足`}
                 disabled={isInteractionLocked}
