@@ -1,20 +1,5 @@
-import { buildClipboardShareText } from './shareText'
+export const REQUEST_SHARE_TITLE = 'おつかい依頼'
 
-const DEFAULT_REQUEST_SHARE_TITLE = 'おつかい依頼'
-
-export function buildRequestShareText(requestTitle: string): string {
-  return [
-    '【おつかい依頼】',
-    '',
-    requestTitle.trim() || DEFAULT_REQUEST_SHARE_TITLE,
-    '次のリンクから買い物リストを確認してください。',
-  ].join('\n')
-}
-
-export function buildRequestShareMessage(requestTitle: string, requestUrl: string): string {
-  return buildClipboardShareText({
-    title: DEFAULT_REQUEST_SHARE_TITLE,
-    text: buildRequestShareText(requestTitle),
-    url: requestUrl,
-  })
+export function buildRequestShareMessage(requestUrl: string): string {
+  return ['今日のおつかいをお願いします。', '', requestUrl].join('\n')
 }

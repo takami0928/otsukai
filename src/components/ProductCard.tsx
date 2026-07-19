@@ -1,5 +1,11 @@
+import { useRef } from 'react'
 import type { Product } from '../types/product'
 import type { CreateDraftItemState } from '../types/shopping'
+import {
+  MAX_ITEM_CONDITION_CHARS,
+  MAX_ITEM_QUANTITY,
+} from '../constants/requestLimits'
+import { countUserCharacters } from '../utils/textLength'
 
 type ProductCardProps = {
   product: Product
@@ -20,9 +26,11 @@ export function ProductCard({
   onToggleDetails,
   onMemoChange,
 }: ProductCardProps) {
+  const isComposingRef = useRef(false)
   const isSelected = draft.quantity > 0
   const hasCondition = draft.memo.trim().length > 0
   const conditionPanelId = `product-condition-${product.id}`
+  const conditionCountId = `${conditionPanelId}-count`
   const conditionToggleLabel = [
     `${product.name}の条件を${isExpanded ? '閉じる' : '開く'}`,
     hasCondition ? `${product.name}には入力済みの条件があります` : '',
@@ -47,6 +55,7 @@ export function ProductCard({
             type="button"
             className="step-button"
             onClick={onDecrease}
+            disabled={draft.quantity <= 0}
             aria-label={`${product.name}を1${product.unit}減らす（現在${draft.quantity}${product.unit}）`}
           >
             −
@@ -59,6 +68,7 @@ export function ProductCard({
             type="button"
             className="step-button"
             onClick={onIncrease}
+            disabled={draft.quantity >= MAX_ITEM_QUANTITY}
             aria-label={`${product.name}を1${product.unit}増やす（現在${draft.quantity}${product.unit}）`}
           >
             ＋
@@ -79,15 +89,40 @@ export function ProductCard({
         </button>
       </div>
 
+      {draft.quantity >= MAX_ITEM_QUANTITY ? (
+        <p className="quantity-limit-message" role="status">
+          数量は20個までです。
+        </p>
+      ) : null}
+
       {isExpanded ? (
         <div id={conditionPanelId} className="product-detail-panel">
           <input
             type="text"
             aria-label={`${product.name}の条件`}
+            aria-describedby={conditionCountId}
             placeholder="例：安い方でOK、○○味、500g以上"
             value={draft.memo}
-            onChange={(event) => onMemoChange(event.target.value)}
+            maxLength={MAX_ITEM_CONDITION_CHARS}
+            onCompositionStart={() => {
+              isComposingRef.current = true
+            }}
+            onCompositionEnd={(event) => {
+              isComposingRef.current = false
+              onMemoChange(event.currentTarget.value)
+            }}
+            onChange={(event) => {
+              if (!isComposingRef.current) {
+                onMemoChange(event.target.value)
+              }
+            }}
           />
+          <span id={conditionCountId} className="character-count">
+            {countUserCharacters(draft.memo)} / {MAX_ITEM_CONDITION_CHARS}
+          </span>
+          {countUserCharacters(draft.memo) >= MAX_ITEM_CONDITION_CHARS ? (
+            <p className="limit-inline-message">条件は30文字までです。</p>
+          ) : null}
         </div>
       ) : null}
     </article>

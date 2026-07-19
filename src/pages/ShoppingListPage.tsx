@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { CategorySection } from '../components/CategorySection'
 import { ShoppingItemCard } from '../components/ShoppingItemCard'
 import { decodeShoppingRequest } from '../utils/encodeRequest'
+import { decodeCompactRequest } from '../utils/compactRequest'
 import {
   applyShoppingStateChange,
   createShoppingStateChange,
@@ -41,6 +42,7 @@ import type {
 
 type ShoppingListPageProps = {
   encodedPayload: string
+  payloadFormat: 'v1' | 'v2'
   onBackHome: () => void
   onOpenCreate: () => void
   onError: (title: string, description: string) => void
@@ -92,6 +94,7 @@ function getShareNotice(result: ShareTextResult, subject: '相談文' | '結果'
 
 export function ShoppingListPage({
   encodedPayload,
+  payloadFormat,
   onBackHome,
   onOpenCreate,
   onError,
@@ -122,7 +125,10 @@ export function ShoppingListPage({
     activeShareRef.current = false
 
     try {
-      const decoded = decodeShoppingRequest(encodedPayload)
+      const decoded =
+        payloadFormat === 'v2'
+          ? decodeCompactRequest(encodedPayload)
+          : decodeShoppingRequest(encodedPayload)
       const loadedCheckedState = loadCheckedState(decoded.requestId)
       const loadedItemIssues = loadItemIssues(decoded.requestId)
       const nextCheckedState = reconcileCheckedStateWithIssues(
@@ -161,7 +167,7 @@ export function ShoppingListPage({
         error instanceof Error ? error.message : '共有URLの内容を読み込めませんでした。'
       onError('共有URLを開けませんでした', message)
     }
-  }, [encodedPayload, onError])
+  }, [encodedPayload, onError, payloadFormat])
 
   useEffect(() => {
     shoppingStateRef.current = shoppingState

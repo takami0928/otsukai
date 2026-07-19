@@ -1,0 +1,8 @@
+export const MAX_ITEM_QUANTITY = 20
+export const MAX_ITEM_CONDITION_CHARS = 30
+export const MAX_TOTAL_CONDITION_CHARS = 1000
+export const MAX_TITLE_CHARS = 30
+export const MAX_CUSTOM_ITEM_NAME_CHARS = 30
+export const MAX_CUSTOM_ITEM_UNIT_CHARS = 10
+export const MAX_CUSTOM_ITEMS = 10
+export const MAX_SHARE_URL_LENGTH = 2200

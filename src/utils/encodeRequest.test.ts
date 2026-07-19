@@ -34,6 +34,31 @@ describe('shopping request URL compatibility', () => {
     expect(encodeShoppingRequest(LEGACY_PAYLOAD)).toBe(LEGACY_ENCODED)
   })
 
+  it('preserves legacy quantities above the new creation limit and custom snapshots', () => {
+    const legacyWithOldValues: ShoppingRequestPayload = {
+      ...LEGACY_PAYLOAD,
+      items: [
+        { ...LEGACY_PAYLOAD.items[0], quantity: 25 },
+        {
+          id: 'legacy-custom',
+          productId: 'custom:old',
+          productNameSnapshot: '昔の自由商品',
+          categoryIdSnapshot: 'other',
+          categoryNameSnapshot: 'その他',
+          quantity: 21,
+          unit: '袋',
+          memo: '旧URLの条件',
+          iconSnapshot: '🛒',
+          sortOrderSnapshot: 10000,
+        },
+      ],
+    }
+
+    expect(decodeShoppingRequest(encodeShoppingRequest(legacyWithOldValues))).toEqual(
+      legacyWithOldValues,
+    )
+  })
+
   it('rejects an invalid encoded payload', () => {
     expect(() => decodeShoppingRequest('not-a-valid-request')).toThrow()
   })
