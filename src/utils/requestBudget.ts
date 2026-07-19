@@ -16,6 +16,7 @@ import {
   encodeCompactRequest,
   type CompactCustomItemInput,
 } from './compactRequest'
+import { buildLineDeliveryRequestUrl } from './lineDeliveryUrl'
 import { countUserCharacters } from './textLength'
 
 export type CustomRequestDraftItem = CompactCustomItemInput & { id: string }
@@ -81,7 +82,11 @@ export function calculateRequestBudget(
     draft: data.draft,
     customItems: data.customItems,
   })
-  const url = buildCompactRequestUrl(context.baseUrl, encodeCompactRequest(payload))
+  const compactUrl = buildCompactRequestUrl(
+    context.baseUrl,
+    encodeCompactRequest(payload),
+  )
+  const url = buildLineDeliveryRequestUrl(compactUrl)
   return {
     url,
     urlLength: url.length,

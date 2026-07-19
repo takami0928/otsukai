@@ -66,9 +66,9 @@ import {
 import {
   createRequestShareLock,
   isRequestUrlWithinShareLimit,
-  shareRequest,
-  type RequestShareResult,
 } from '../utils/shareRequest'
+import { shareText, type NativeShareResult } from '../utils/shareText'
+import { buildLineDeliveryRequestUrl } from '../utils/lineDeliveryUrl'
 
 type CreateRequestPageProps = {
   onBackHome: () => void
@@ -207,7 +207,7 @@ function getLimitMessage(reason?: DraftLimitReason): string {
   }
 }
 
-function getShareResultMessage(result: RequestShareResult): {
+function getShareResultMessage(result: NativeShareResult): {
   status: ShareMessageStatus
   message: string
 } {
@@ -644,7 +644,9 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       return ''
     }
 
-    const reusableSharedUrl = sharedUrl.includes('#/l/') ? sharedUrl : ''
+    const reusableSharedUrl = sharedUrl.includes('#/l/')
+      ? buildLineDeliveryRequestUrl(sharedUrl)
+      : ''
     const resolved = resolveSharedRequestUrl(
       currentRequestSnapshot,
       sharedSnapshot,
@@ -652,11 +654,14 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       () => validation.url,
     )
 
-    if (!resolved.reused) {
+    if (!resolved.reused || resolved.url !== sharedUrl) {
       setSharedUrl(resolved.url)
       setSharedSnapshot(resolved.snapshot)
       setLastSharedUrl(resolved.url)
       saveLastSharedUrl(resolved.url)
+    }
+
+    if (!resolved.reused) {
       setRequestKey(createRequestKey())
     }
 
@@ -691,10 +696,10 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       setIsSharingRequest(true)
       setShareMessage('共有画面を開いています…')
       setShareStatus('cancelled')
-      const result = await shareRequest(
-        REQUEST_SHARE_TITLE,
-        buildRequestShareMessage(requestUrl),
-      )
+      const result = await shareText({
+        title: REQUEST_SHARE_TITLE,
+        text: buildRequestShareMessage(requestUrl),
+      })
       const notice = getShareResultMessage(result)
       setShareMessage(notice.message)
       setShareStatus(notice.status)

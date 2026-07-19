@@ -3,11 +3,11 @@ import { buildRequestShareMessage, REQUEST_SHARE_TITLE } from './requestShareMes
 import {
   createRequestShareLock,
   isRequestUrlWithinShareLimit,
-  shareRequest,
 } from './shareRequest'
+import { shareText } from './shareText'
 
 const requestUrl =
-  'https://takami0928.github.io/otsukai/#/l/raw+#?&日本語😀'
+  'https://takami0928.github.io/otsukai/?openExternalBrowser=1#/l/raw+#?&日本語😀'
 
 describe('request share message', () => {
   it('places one unchanged URL after a blank line as the independent final line', () => {
@@ -19,7 +19,7 @@ describe('request share message', () => {
   })
 })
 
-describe('shareRequest', () => {
+describe('request sharing', () => {
   it('blocks a URL over 2,200 characters before a share call can start', () => {
     expect(isRequestUrlWithinShareLimit('x'.repeat(2200))).toBe(true)
     expect(isRequestUrlWithinShareLimit('x'.repeat(2201))).toBe(false)
@@ -38,14 +38,15 @@ describe('shareRequest', () => {
   it('uses Web Share with title and text only and never passes a url property', async () => {
     const shared: ShareData[] = []
     const message = buildRequestShareMessage(requestUrl)
-    const result = await shareRequest(
-      REQUEST_SHARE_TITLE,
-      message,
-      async (data) => {
-        shared.push(data)
-      },
-      async () => {
-        throw new Error('clipboard must not be used')
+    const result = await shareText(
+      { title: REQUEST_SHARE_TITLE, text: message },
+      {
+        share: async (data) => {
+          shared.push(data)
+        },
+        writeClipboardText: async () => {
+          throw new Error('clipboard must not be used')
+        },
       },
     )
 
@@ -53,71 +54,5 @@ describe('shareRequest', () => {
     expect(shared).toEqual([{ title: 'おつかい依頼', text: message }])
     expect(Object.keys(shared[0]).sort()).toEqual(['text', 'title'])
     expect('url' in shared[0]).toBe(false)
-  })
-
-  it('returns cancelled and does not copy after AbortError', async () => {
-    let copied = false
-    const result = await shareRequest(
-      REQUEST_SHARE_TITLE,
-      buildRequestShareMessage(requestUrl),
-      async () => {
-        throw { name: 'AbortError' }
-      },
-      async () => {
-        copied = true
-      },
-    )
-    expect(result).toBe('cancelled')
-    expect(copied).toBe(false)
-  })
-
-  it('copies the identical message when Web Share is unavailable', async () => {
-    const copied: string[] = []
-    const message = buildRequestShareMessage(requestUrl)
-    const result = await shareRequest(
-      REQUEST_SHARE_TITLE,
-      message,
-      undefined,
-      async (text) => {
-        copied.push(text)
-      },
-    )
-    expect(result).toBe('copied')
-    expect(copied).toEqual([message])
-  })
-
-  it('falls back to copying after a non-cancellation share error', async () => {
-    const copied: string[] = []
-    const message = buildRequestShareMessage(requestUrl)
-    const result = await shareRequest(
-      REQUEST_SHARE_TITLE,
-      message,
-      async () => {
-        throw new Error('share failed')
-      },
-      async (text) => {
-        copied.push(text)
-      },
-    )
-    expect(result).toBe('copied')
-    expect(copied).toEqual([message])
-  })
-
-  it('returns failed when sharing and copying are both unavailable or fail', async () => {
-    expect(await shareRequest(REQUEST_SHARE_TITLE, 'message', undefined, undefined)).toBe(
-      'failed',
-    )
-    expect(
-      await shareRequest(
-        REQUEST_SHARE_TITLE,
-        'message',
-        async () => {
-          throw new Error('share failed')
-        },
-        async () => {
-          throw new Error('clipboard failed')
-        },
-      ),
-    ).toBe('failed')
   })
 })

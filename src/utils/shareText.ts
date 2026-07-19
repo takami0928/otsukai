@@ -1,12 +1,11 @@
-export type ShareTextResult = 'shared' | 'copied' | 'cancelled' | 'failed'
+export type NativeShareResult = 'shared' | 'copied' | 'cancelled' | 'failed'
 
-export type ShareTextInput = {
+export type NativeShareInput = {
   title: string
   text: string
-  url?: string
 }
 
-export type ShareTextDependencies = {
+export type NativeShareDependencies = {
   share?: (data: ShareData) => Promise<void>
   writeClipboardText?: (text: string) => Promise<void>
 }
@@ -20,35 +19,36 @@ export function isShareCancellation(error: unknown): boolean {
   )
 }
 
-function getBrowserDependencies(): ShareTextDependencies {
+export function isNativeShareAvailable(
+  share: unknown = typeof navigator === 'undefined' ? undefined : navigator.share,
+): boolean {
+  return typeof share === 'function'
+}
+
+function getBrowserDependencies(): NativeShareDependencies {
   if (typeof navigator === 'undefined') {
     return {}
   }
 
   return {
-    share: navigator.share?.bind(navigator),
-    writeClipboardText: navigator.clipboard?.writeText?.bind(navigator.clipboard),
+    share:
+      typeof navigator.share === 'function'
+        ? navigator.share.bind(navigator)
+        : undefined,
+    writeClipboardText:
+      typeof navigator.clipboard?.writeText === 'function'
+        ? navigator.clipboard.writeText.bind(navigator.clipboard)
+        : undefined,
   }
-}
-
-export function buildClipboardShareText(input: ShareTextInput): string {
-  const url = input.url?.trim()
-
-  if (!url || input.text.includes(url)) {
-    return input.text
-  }
-
-  const text = input.text.trimEnd()
-  return text ? `${text}\n\n${url}` : url
 }
 
 export async function shareText(
-  input: ShareTextInput,
-  dependencies: ShareTextDependencies = getBrowserDependencies(),
-): Promise<ShareTextResult> {
+  input: NativeShareInput,
+  dependencies: NativeShareDependencies = getBrowserDependencies(),
+): Promise<NativeShareResult> {
   if (dependencies.share) {
     try {
-      await dependencies.share(input)
+      await dependencies.share({ title: input.title, text: input.text })
       return 'shared'
     } catch (error) {
       if (isShareCancellation(error)) {
@@ -62,7 +62,7 @@ export async function shareText(
   }
 
   try {
-    await dependencies.writeClipboardText(buildClipboardShareText(input))
+    await dependencies.writeClipboardText(input.text)
     return 'copied'
   } catch {
     return 'failed'

@@ -18,6 +18,7 @@ import {
   type CompactRequestV2,
 } from './compactRequest'
 import { countUserCharacters } from './textLength'
+import { buildLineDeliveryRequestUrl } from './lineDeliveryUrl'
 
 function createDraft(): CreateDraftState {
   return Object.fromEntries(
@@ -257,11 +258,16 @@ describe('v2 URL stress budget', () => {
     expect(conditions.reduce((total, condition) => total + countUserCharacters(condition), 0)).toBe(1000)
     expect(conditions.every((condition) => countUserCharacters(condition) <= 30)).toBe(true)
 
-    const url = buildCompactRequestUrlFromInput(
+    const compactUrl = buildCompactRequestUrlFromInput(
       'https://takami0928.github.io/otsukai/',
-      createInput({ title: '全商品ストレス確認0123456789ABCDEFGHIJK', draft }),
+      createInput({
+        title: '全商品ストレス確認0123456789ABCDEFGHIJK',
+        draft,
+      }),
     )
+    const url = buildLineDeliveryRequestUrl(compactUrl)
     expect(countUserCharacters('全商品ストレス確認0123456789ABCDEFGHIJK')).toBe(30)
+    expect(url).toContain('?openExternalBrowser=1#/l/')
     expect(url.length).toBeLessThanOrEqual(MAX_SHARE_URL_LENGTH)
   })
 })

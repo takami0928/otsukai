@@ -1040,7 +1040,22 @@ input:focus {
   color: #4d5c57;
   font-size: 0.88rem;
   font-weight: 700;
+  white-space: pre-line;
   box-shadow: 0 4px 12px rgba(45, 63, 56, 0.12);
+}
+
+.native-share-unavailable {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.native-share-unavailable p {
+  margin: 0;
+}
+
+.native-share-unavailable .primary-button {
+  justify-self: start;
 }
 
 .share-notice.success {
