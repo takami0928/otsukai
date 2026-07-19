@@ -27,15 +27,15 @@ import {
   resolveSharedRequestUrl,
   toggleExpandedProductId,
 } from '../utils/createRequestState'
-import { shareText, type ShareTextResult } from '../utils/shareText'
-import { buildRequestShareText } from '../utils/requestShareMessage'
+import { buildLineShareUrl, copyRequestShareMessage } from '../utils/lineShare'
+import { buildRequestShareMessage, buildRequestShareText } from '../utils/requestShareMessage'
 
 type CreateRequestPageProps = {
   onBackHome: () => void
 }
 
 type CreateMode = 'edit' | 'review'
-type ShareMessageStatus = 'success' | 'cancelled' | 'error' | ''
+type ShareMessageStatus = 'success' | 'error' | ''
 type CustomItem = {
   id: string
   name: string
@@ -44,28 +44,95 @@ type CustomItem = {
   memo: string
 }
 
+type CreateRequestReturnState = {
+  title: string
+  customItems: CustomItem[]
+  expandedProductIds: string[]
+  sharedUrl: string
+  sharedSnapshot: string
+}
+
 const DEFAULT_TITLE = '今日のおつかい'
 const OTHER_CATEGORY_ID = 'other'
 const OTHER_CATEGORY_NAME = 'その他'
 const CUSTOM_ITEM_SORT_ORDER = 10000
-const REQUEST_SHARE_TITLE = 'おつかい依頼'
+const CREATE_REQUEST_RETURN_STATE_KEY = 'otsukaiCreateRequestReturnState'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function loadCreateRequestReturnState(): CreateRequestReturnState | undefined {
+  const historyState = isRecord(window.history.state) ? window.history.state : undefined
+  const value = historyState?.[CREATE_REQUEST_RETURN_STATE_KEY]
+
+  if (
+    !isRecord(value) ||
+    typeof value.title !== 'string' ||
+    typeof value.sharedUrl !== 'string' ||
+    typeof value.sharedSnapshot !== 'string' ||
+    !Array.isArray(value.expandedProductIds) ||
+    !value.expandedProductIds.every((item) => typeof item === 'string') ||
+    !Array.isArray(value.customItems)
+  ) {
+    return undefined
+  }
+
+  const customItems = value.customItems.filter(
+    (item): item is CustomItem =>
+      isRecord(item) &&
+      typeof item.id === 'string' &&
+      typeof item.name === 'string' &&
+      typeof item.quantity === 'number' &&
+      Number.isFinite(item.quantity) &&
+      item.quantity > 0 &&
+      typeof item.unit === 'string' &&
+      typeof item.memo === 'string',
+  )
+
+  return {
+    title: value.title,
+    customItems,
+    expandedProductIds: [...value.expandedProductIds],
+    sharedUrl: value.sharedUrl,
+    sharedSnapshot: value.sharedSnapshot,
+  }
+}
+
+function saveCreateRequestReturnState(state: CreateRequestReturnState) {
+  const historyState = isRecord(window.history.state) ? window.history.state : {}
+  window.history.replaceState(
+    { ...historyState, [CREATE_REQUEST_RETURN_STATE_KEY]: state },
+    '',
+  )
+}
+
+function clearCreateRequestReturnState() {
+  if (!isRecord(window.history.state) || !(CREATE_REQUEST_RETURN_STATE_KEY in window.history.state)) {
+    return
+  }
+
+  const { [CREATE_REQUEST_RETURN_STATE_KEY]: _returnState, ...historyState } = window.history.state
+  window.history.replaceState(historyState, '')
+}
 
 export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
+  const [returnState] = useState(() => loadCreateRequestReturnState())
   const [initialState] = useState(() =>
     createInitialCreateRequestState(loadCreateDraft(), products),
   )
   const [draft, setDraft] = useState<CreateDraftState>(initialState.draft)
   const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(
-    initialState.expandedProductIds,
+    () => new Set(returnState?.expandedProductIds ?? initialState.expandedProductIds),
   )
-  const [title, setTitle] = useState(DEFAULT_TITLE)
-  const [mode, setMode] = useState<CreateMode>('edit')
-  const [sharedUrl, setSharedUrl] = useState('')
-  const [sharedSnapshot, setSharedSnapshot] = useState('')
+  const [title, setTitle] = useState(returnState?.title ?? DEFAULT_TITLE)
+  const [mode, setMode] = useState<CreateMode>(returnState ? 'review' : 'edit')
+  const [sharedUrl, setSharedUrl] = useState(returnState?.sharedUrl ?? '')
+  const [sharedSnapshot, setSharedSnapshot] = useState(returnState?.sharedSnapshot ?? '')
   const [lastSharedUrl, setLastSharedUrl] = useState(() => loadLastSharedUrl())
   const [copyMessage, setCopyMessage] = useState('')
   const [copyStatus, setCopyStatus] = useState<ShareMessageStatus>('')
-  const [customItems, setCustomItems] = useState<CustomItem[]>([])
+  const [customItems, setCustomItems] = useState<CustomItem[]>(returnState?.customItems ?? [])
   const [isCustomFormOpen, setIsCustomFormOpen] = useState(false)
   const [customName, setCustomName] = useState('')
   const [customQuantity, setCustomQuantity] = useState(1)
@@ -75,6 +142,14 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   useEffect(() => {
     saveCreateDraft(draft)
   }, [draft])
+
+  useEffect(() => {
+    const clearReturnState = () => clearCreateRequestReturnState()
+
+    clearReturnState()
+    window.addEventListener('pageshow', clearReturnState)
+    return () => window.removeEventListener('pageshow', clearReturnState)
+  }, [])
 
   const selectedCount = useMemo(
     () => Object.values(draft).filter((item) => item.quantity > 0).length + customItems.length,
@@ -247,30 +322,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     return url
   }
 
-  const showShareResult = (result: ShareTextResult) => {
-    if (result === 'shared') {
-      setCopyMessage('LINEなどへ共有しました。')
-      setCopyStatus('success')
-      return
-    }
-
-    if (result === 'copied') {
-      setCopyMessage('依頼文をコピーしました。LINEへ貼り付けてください。')
-      setCopyStatus('success')
-      return
-    }
-
-    if (result === 'cancelled') {
-      setCopyMessage('共有をキャンセルしました。')
-      setCopyStatus('cancelled')
-      return
-    }
-
-    setCopyMessage('共有できませんでした。もう一度お試しください。')
-    setCopyStatus('error')
-  }
-
-  const handleShareRequest = () => {
+  const resolveRequestUrlForShare = () => {
     const resolved = resolveSharedRequestUrl(
       currentRequestSnapshot,
       sharedSnapshot,
@@ -281,15 +333,8 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     if (!resolved.url) {
       setCopyMessage('共有する商品を選んでください。')
       setCopyStatus('error')
-      setMode('edit')
-      return
+      return ''
     }
-
-    const shareResult = shareText({
-      title: REQUEST_SHARE_TITLE,
-      text: buildRequestShareText(title),
-      url: resolved.url,
-    })
 
     if (!resolved.reused) {
       setSharedUrl(resolved.url)
@@ -297,10 +342,48 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       setLastSharedUrl(resolved.url)
       saveLastSharedUrl(resolved.url)
     }
+
+    return resolved.url
+  }
+
+  const handleShareRequest = () => {
+    const requestUrl = resolveRequestUrlForShare()
+    if (!requestUrl) {
+      return
+    }
+
     setCopyMessage('')
     setCopyStatus('')
 
-    void shareResult.then(showShareResult)
+    saveCreateDraft(draft)
+    saveCreateRequestReturnState({
+      title,
+      customItems,
+      expandedProductIds: [...expandedProductIds],
+      sharedUrl: requestUrl,
+      sharedSnapshot: currentRequestSnapshot,
+    })
+    window.location.assign(buildLineShareUrl(requestUrl, buildRequestShareText(title)))
+  }
+
+  const handleCopyRequest = async () => {
+    const requestUrl = resolveRequestUrlForShare()
+    if (!requestUrl) {
+      return
+    }
+
+    const result = await copyRequestShareMessage(
+      buildRequestShareMessage(title, requestUrl),
+      navigator.clipboard?.writeText?.bind(navigator.clipboard),
+    )
+    if (result === 'copied') {
+      setCopyMessage('依頼文とリンクをコピーしました。LINEへ貼り付けてください。')
+      setCopyStatus('success')
+      return
+    }
+
+    setCopyMessage('コピーできませんでした。')
+    setCopyStatus('error')
   }
 
   const handleReturnToEdit = () => {
@@ -556,7 +639,17 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
         <button type="button" className="primary-button review-share-button" onClick={handleShareRequest}>
           LINEで送る
         </button>
-        <p className="helper-text">iPhone・Androidの共有画面でLINEを選択します</p>
+        <p className="helper-text">LINEの送信先選択画面を開きます</p>
+        <div className="review-copy-fallback">
+          <p className="helper-text">LINEで送れない場合</p>
+          <button
+            type="button"
+            className="ghost-button review-copy-button"
+            onClick={() => void handleCopyRequest()}
+          >
+            依頼文とリンクをコピー
+          </button>
+        </div>
         {copyMessage ? (
           <p className={`copy-message ${copyStatus}`} role="status">
             {copyMessage}
