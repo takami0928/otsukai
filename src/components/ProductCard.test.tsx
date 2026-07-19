@@ -22,7 +22,7 @@ function render(quantity: number, memo = ''): string {
       onIncrease={() => undefined}
       onDecrease={() => undefined}
       onToggleDetails={() => undefined}
-      onMemoChange={() => undefined}
+      onMemoCommit={(value) => ({ value, accepted: true })}
     />,
   )
 }
@@ -42,7 +42,7 @@ describe('ProductCard limits', () => {
 
   it('connects the 30-character counter to the condition input', () => {
     const markup = render(1, '低脂肪')
-    expect(markup).toContain('maxLength="30"')
+    expect(markup).not.toContain('maxLength=')
     expect(markup).toContain('aria-describedby="product-condition-milk-count"')
     expect(markup).toContain('id="product-condition-milk-count"')
     expect(markup).toContain('3 / 30')

@@ -1,4 +1,3 @@
-import { useRef } from 'react'
 import type { Product } from '../types/product'
 import type { CreateDraftItemState } from '../types/shopping'
 import {
@@ -6,6 +5,10 @@ import {
   MAX_ITEM_QUANTITY,
 } from '../constants/requestLimits'
 import { countUserCharacters } from '../utils/textLength'
+import {
+  ImeAwareTextInput,
+  type CommitTextResult,
+} from './ImeAwareTextInput'
 
 type ProductCardProps = {
   product: Product
@@ -14,7 +17,7 @@ type ProductCardProps = {
   onIncrease: () => void
   onDecrease: () => void
   onToggleDetails: () => void
-  onMemoChange: (value: string) => void
+  onMemoCommit: (value: string) => CommitTextResult
 }
 
 export function ProductCard({
@@ -24,9 +27,8 @@ export function ProductCard({
   onIncrease,
   onDecrease,
   onToggleDetails,
-  onMemoChange,
+  onMemoCommit,
 }: ProductCardProps) {
-  const isComposingRef = useRef(false)
   const isSelected = draft.quantity > 0
   const hasCondition = draft.memo.trim().length > 0
   const conditionPanelId = `product-condition-${product.id}`
@@ -97,25 +99,12 @@ export function ProductCard({
 
       {isExpanded ? (
         <div id={conditionPanelId} className="product-detail-panel">
-          <input
-            type="text"
+          <ImeAwareTextInput
             aria-label={`${product.name}の条件`}
             aria-describedby={conditionCountId}
             placeholder="例：安い方でOK、○○味、500g以上"
             value={draft.memo}
-            maxLength={MAX_ITEM_CONDITION_CHARS}
-            onCompositionStart={() => {
-              isComposingRef.current = true
-            }}
-            onCompositionEnd={(event) => {
-              isComposingRef.current = false
-              onMemoChange(event.currentTarget.value)
-            }}
-            onChange={(event) => {
-              if (!isComposingRef.current) {
-                onMemoChange(event.target.value)
-              }
-            }}
+            onCommit={onMemoCommit}
           />
           <span id={conditionCountId} className="character-count">
             {countUserCharacters(draft.memo)} / {MAX_ITEM_CONDITION_CHARS}

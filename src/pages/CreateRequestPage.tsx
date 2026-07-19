@@ -5,6 +5,10 @@ import type { CreateDraftState } from '../types/shopping'
 import { ProductCard } from '../components/ProductCard'
 import { BottomBar } from '../components/BottomBar'
 import {
+  ImeAwareTextInput,
+  type CommitTextResult,
+} from '../components/ImeAwareTextInput'
+import {
   loadCreateDraft,
   loadLastSharedUrl,
   saveCreateDraft,
@@ -270,7 +274,6 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   const [requestKey, setRequestKey] = useState(createRequestKey)
   const [isSharingRequest, setIsSharingRequest] = useState(false)
   const shareLockRef = useRef(createRequestShareLock())
-  const composingFieldsRef = useRef(new Set<string>())
 
   const requestBaseUrl = useMemo(
     () => `${window.location.origin}${window.location.pathname}`,
@@ -408,8 +411,14 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     )
   }
 
-  const handleTitleChange = (value: string) => {
-    applyChangeResult(applyTitleChange(requestData, value, budgetContext))
+  const handleTitleCommit = (value: string): CommitTextResult => {
+    const result = applyTitleChange(requestData, value, budgetContext)
+    applyChangeResult(result)
+    return {
+      value: result.value.title,
+      accepted: result.accepted,
+      reason: result.reason,
+    }
   }
 
   const handleIncrease = (productId: string) => {
@@ -440,15 +449,22 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     )
   }
 
-  const handleConditionChange = (productId: string, value: string) => {
-    applyChangeResult(
-      applyConditionChange(
-        requestData,
-        { kind: 'product', productId },
-        value,
-        budgetContext,
-      ),
+  const handleConditionCommit = (
+    productId: string,
+    value: string,
+  ): CommitTextResult => {
+    const result = applyConditionChange(
+      requestData,
+      { kind: 'product', productId },
+      value,
+      budgetContext,
     )
+    applyChangeResult(result)
+    return {
+      value: result.value.draft[productId]?.memo ?? '',
+      accepted: result.accepted,
+      reason: result.reason,
+    }
   }
 
   const closeCustomForm = () => {
@@ -511,7 +527,9 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     proposedValue: string,
     limit: number,
     fieldReason: DraftLimitReason,
-  ) => {
+  ): CommitTextResult => {
+    const currentValue =
+      field === 'name' ? customName : field === 'unit' ? customUnit : customMemo
     const fieldLimited = truncateUserCharacters(proposedValue, limit)
     const characters = splitUserCharacters(fieldLimited)
     let acceptedValue: string | undefined
@@ -533,8 +551,9 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     }
 
     if (typeof acceptedValue === 'undefined') {
-      setLimitMessage(getLimitMessage(rejectedReason ?? 'url-limit'))
-      return
+      const reason = rejectedReason ?? 'url-limit'
+      setLimitMessage(getLimitMessage(reason))
+      return { value: currentValue, accepted: false, reason }
     }
 
     if (field === 'name') {
@@ -547,13 +566,17 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
 
     const wasUrlLimited = acceptedValue !== fieldLimited
     const wasFieldLimited = fieldLimited !== proposedValue
-    setLimitMessage(
-      wasUrlLimited
-        ? getLimitMessage(rejectedReason ?? 'url-limit')
-        : wasFieldLimited
-          ? getLimitMessage(fieldReason)
-          : '',
-    )
+    const reason = wasUrlLimited
+      ? rejectedReason ?? 'url-limit'
+      : wasFieldLimited
+        ? fieldReason
+        : undefined
+    setLimitMessage(getLimitMessage(reason))
+    return {
+      value: acceptedValue,
+      accepted: acceptedValue !== currentValue,
+      reason,
+    }
   }
 
   const handleCustomQuantityChange = (value: unknown) => {
@@ -713,19 +736,6 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     closeCustomForm()
   }
 
-  const handleCompositionStart = (field: string) => {
-    composingFieldsRef.current.add(field)
-  }
-
-  const handleCompositionEnd = (
-    field: string,
-    value: string,
-    onChange: (next: string) => void,
-  ) => {
-    composingFieldsRef.current.delete(field)
-    onChange(value)
-  }
-
   const renderEdit = () => (
     <>
       <section className="top-bar">
@@ -741,24 +751,10 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       <section className="info-card">
         <label className="stack-field">
           <span>依頼タイトル</span>
-          <input
-            type="text"
+          <ImeAwareTextInput
             value={title}
-            maxLength={MAX_TITLE_CHARS}
             aria-describedby="request-title-count"
-            onCompositionStart={() => handleCompositionStart('title')}
-            onCompositionEnd={(event) =>
-              handleCompositionEnd(
-                'title',
-                event.currentTarget.value,
-                handleTitleChange,
-              )
-            }
-            onChange={(event) => {
-              if (!composingFieldsRef.current.has('title')) {
-                handleTitleChange(event.target.value)
-              }
-            }}
+            onCommit={handleTitleCommit}
             placeholder="例: 今日のおつかい"
           />
           <span id="request-title-count" className="character-count">
@@ -851,35 +847,17 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
             <strong>{editingCustomIndex === null ? '商品を追加' : '商品を編集'}</strong>
             <label className="stack-field">
               <span>商品名</span>
-              <input
-                type="text"
+              <ImeAwareTextInput
                 value={customName}
-                maxLength={MAX_CUSTOM_ITEM_NAME_CHARS}
                 aria-describedby="custom-name-count"
-                onCompositionStart={() => handleCompositionStart('custom-name')}
-                onCompositionEnd={(event) =>
-                  handleCompositionEnd(
-                    'custom-name',
-                    event.currentTarget.value,
-                    (value) =>
-                      applyPendingTextChange(
-                        'name',
-                        value,
-                        MAX_CUSTOM_ITEM_NAME_CHARS,
-                        'custom-name-limit',
-                      ),
+                onCommit={(value) =>
+                  applyPendingTextChange(
+                    'name',
+                    value,
+                    MAX_CUSTOM_ITEM_NAME_CHARS,
+                    'custom-name-limit',
                   )
                 }
-                onChange={(event) => {
-                  if (!composingFieldsRef.current.has('custom-name')) {
-                    applyPendingTextChange(
-                      'name',
-                      event.target.value,
-                      MAX_CUSTOM_ITEM_NAME_CHARS,
-                      'custom-name-limit',
-                    )
-                  }
-                }}
                 placeholder="例: 洗濯ネット"
               />
               <span id="custom-name-count" className="character-count">
@@ -940,35 +918,17 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
               </div>
               <label className="stack-field">
                 <span>単位</span>
-                <input
-                  type="text"
+                <ImeAwareTextInput
                   value={customUnit}
-                  maxLength={MAX_CUSTOM_ITEM_UNIT_CHARS}
                   aria-describedby="custom-unit-count"
-                  onCompositionStart={() => handleCompositionStart('custom-unit')}
-                  onCompositionEnd={(event) =>
-                    handleCompositionEnd(
-                      'custom-unit',
-                      event.currentTarget.value,
-                      (value) =>
-                        applyPendingTextChange(
-                          'unit',
-                          value,
-                          MAX_CUSTOM_ITEM_UNIT_CHARS,
-                          'custom-unit-limit',
-                        ),
+                  onCommit={(value) =>
+                    applyPendingTextChange(
+                      'unit',
+                      value,
+                      MAX_CUSTOM_ITEM_UNIT_CHARS,
+                      'custom-unit-limit',
                     )
                   }
-                  onChange={(event) => {
-                    if (!composingFieldsRef.current.has('custom-unit')) {
-                      applyPendingTextChange(
-                        'unit',
-                        event.target.value,
-                        MAX_CUSTOM_ITEM_UNIT_CHARS,
-                        'custom-unit-limit',
-                      )
-                    }
-                  }}
                   placeholder="個"
                 />
                 <span id="custom-unit-count" className="character-count">
@@ -981,8 +941,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
             </div>
             <label className="stack-field">
               <span>条件</span>
-              <input
-                type="text"
+              <ImeAwareTextInput
                 aria-label={
                   customName.trim()
                     ? `${customName.trim()}の条件`
@@ -990,33 +949,14 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
                 }
                 aria-describedby="custom-condition-count"
                 value={customMemo}
-                maxLength={MAX_ITEM_CONDITION_CHARS}
-                onCompositionStart={() =>
-                  handleCompositionStart('custom-condition')
-                }
-                onCompositionEnd={(event) =>
-                  handleCompositionEnd(
-                    'custom-condition',
-                    event.currentTarget.value,
-                    (value) =>
-                      applyPendingTextChange(
-                        'memo',
-                        value,
-                        MAX_ITEM_CONDITION_CHARS,
-                        'item-condition-limit',
-                      ),
+                onCommit={(value) =>
+                  applyPendingTextChange(
+                    'memo',
+                    value,
+                    MAX_ITEM_CONDITION_CHARS,
+                    'item-condition-limit',
                   )
                 }
-                onChange={(event) => {
-                  if (!composingFieldsRef.current.has('custom-condition')) {
-                    applyPendingTextChange(
-                      'memo',
-                      event.target.value,
-                      MAX_ITEM_CONDITION_CHARS,
-                      'item-condition-limit',
-                    )
-                  }
-                }}
                 placeholder="例：安い方でOK、○○味、500g以上"
               />
               <span id="custom-condition-count" className="character-count">
@@ -1078,8 +1018,8 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
                     toggleExpandedProductId(current, product.id),
                   )
                 }
-                onMemoChange={(value) =>
-                  handleConditionChange(product.id, value)
+                onMemoCommit={(value) =>
+                  handleConditionCommit(product.id, value)
                 }
               />
             ))}
