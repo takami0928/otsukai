@@ -55,7 +55,7 @@
 | 3 | 自由追加商品エディタ状態の局所化 | レビュー中 | #15 | 7つの連動UI stateを専用hookへ局所化 |
 | 4 | 一時Undoライフサイクルの局所化 | レビュー中 | #16 | 最新候補と5秒timerを専用hookへ局所化 |
 | 5 | ShoppingListPage派生データのselector化 | レビュー中 | #17 | 売り場順・分類・filter・完了集計を純粋selector化 |
-| 6 | 共有実行制御の監査と限定的整理 | 未着手 | - | - |
+| 6 | 共有実行制御の監査と限定的整理 | 監査完了（非実装） | - | 判断B: 意味の異なる制御を意図的に維持 |
 | 7 | 全体最終検証・ドキュメント確定 | 未着手 | - | - |
 
 ---
@@ -354,12 +354,42 @@ B. 共通化により引数・callback・世代管理が複雑化するため実
 
 BもPhase完了とする。DRYのためだけにAを選ばない。
 
+### 監査結果: 判断B（共通hookを実装しない）
+
+| 比較点 | 依頼共有 | 相談共有 | 結果共有 |
+|---|---|---|---|
+| 排他範囲 | `createRequestShareLock`による依頼共有1経路 | `activeShareRef`を結果共有と共有 | `activeShareRef`を相談共有と共有 |
+| busy state | `isSharingRequest` 1つ | `isSharingConsultation` | `isSharingResult` |
+| 実行前処理 | draft再検証、URL再利用/生成、2,200文字再検証、draft/history保存 | 相談中件数確認、1件/複数件の文生成 | 完了件数と見送り理由から結果文生成 |
+| stale result | 世代管理なし | request URL変更時の`shareGenerationRef`で破棄 | request URL変更時の`shareGenerationRef`で破棄 |
+| reset意味 | `finally`でlockと単一busyを解除 | 現在世代だけ共有lockと相談busyを解除 | 現在世代だけ共有lockと結果busyを解除 |
+| 結果通知 | 依頼共有専用のstatus・文言 | 相談用subject文言 | 結果用subject文言 |
+
+共通化すると、依頼共有だけに必要なURL準備callback、相談/結果だけに必要な共有lockと世代token、経路別busy setter、optionalなinvalidate/reset、subject別結果callbackがhookの公開APIへ流入する。単なるlockだけをhook化しても既存の小さな`createRequestShareLock`と`activeShareRef`を置き換える薄い層になり、コード・テスト・意味のいずれも単純化しない。
+
+したがって、各ページ内の短い`try/finally`の形を意図的に残す。`shareText`がWeb Share、clipboard fallback、`AbortError`、failureの共通意味をすでに一元化しているため、それより上位のdomain固有フローは統合しない。
+
+再検討条件は、同じ世代管理・同じbusyモデル・同じreset意味を持つ共有経路が新たに増え、公開APIを`run`・`busy`・`invalidate`程度に保ったまま分岐とtestを実際に減らせる場合とする。
+
 ### 完了条件
 
 - Aの場合は各共有経路の多重実行、cancel、copy fallback、failure、stale resultをテスト
 - Bの場合は比較結果と意図的重複の理由を記録
 - 公開環境で依頼共有、相談1件・複数件、結果共有を可能な範囲で確認
 - LINE実送信未実施なら明記
+
+### 実施結果
+
+- branch: `refactor/phase-6-share-execution`
+- baseline main: `4f0354093d21493691f7a59efc24e4abb7611861`
+- 判断Bを採用し、source code・test codeは変更せず、比較結果と意図的重複の理由を記録した。
+- 既存の共有focused testで依頼lock、title/text限定、1件/複数件相談、結果共有、多重実行防止、shared/copied/cancelled/failed、相談状態不変を確認した。
+- focused検証: 4 test files / 43 tests。
+- 全体検証: 26 test files / 233 tests、build成功、`git diff --check`成功。
+- URL、storage、共有文、共有結果の意味、busy、世代管理、文言、CSS、DOM、ARIA、依存関係は変更していない。
+- Pagesと公開スモーク結果はマージ後にPhase 7の記録で補完する。
+- LINE実送信と物理端末のOS共有は未確認。
+- 意図的に残した負債: 意味の異なる上位共有制御の短い`try/finally`重複。上記再検討条件を満たすまで維持する。
 
 ---
 
