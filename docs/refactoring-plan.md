@@ -51,7 +51,7 @@
 |---|---|---|---|---|
 | 0 | 実行ルールと計画書の導入 | 完了 | #12 | AGENTS.md、計画書、ランブックを導入 |
 | 1 | CreateRequestPageの表示責務分割 | 完了 | #13 | 表示を5つのpresentational componentへ抽出 |
-| 2 | history state・通知変換の純粋モジュール化 | 実装完了 | - | 履歴入出力と通知変換を2つのutilsへ抽出 |
+| 2 | history state・通知変換の純粋モジュール化 | レビュー中 | #14 | 履歴入出力と通知変換を2つのutilsへ抽出 |
 | 3 | 自由追加商品エディタ状態の局所化 | 未着手 | - | - |
 | 4 | 一時Undoライフサイクルの局所化 | 未着手 | - | - |
 | 5 | ShoppingListPage派生データのselector化 | 未着手 | - | - |
@@ -155,6 +155,7 @@ Reactページ内にあるブラウザ履歴入出力と、理由・共有結果
 ### 実施結果
 
 - branch: `refactor/phase-2-create-request-utils`
+- PR: #14
 - baseline main: `245c6c9e9b204f0dfd63ae28fc4eaa64c3013e96`
 - `createRequestReturnState`へhistory stateの型検証とload/save/clearを移し、値の解析とbrowser history I/Oを別関数に分離した。
 - `requestNoticeMessages`へ全limit reasonと共有結果4種の表示変換を、文言とstatusを変えずに移した。
