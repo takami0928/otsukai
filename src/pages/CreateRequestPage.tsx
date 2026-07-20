@@ -65,24 +65,27 @@ import {
   createRequestShareLock,
   isRequestUrlWithinShareLimit,
 } from '../utils/shareRequest'
-import { shareText, type NativeShareResult } from '../utils/shareText'
+import { shareText } from '../utils/shareText'
 import { buildLineDeliveryRequestUrl } from '../utils/lineDeliveryUrl'
+import {
+  clearCreateRequestReturnState,
+  loadCreateRequestReturnState,
+  saveCreateRequestReturnState,
+  type CreateRequestReturnState,
+} from '../utils/createRequestReturnState'
+import {
+  getLimitMessage,
+  getShareResultMessage,
+  type ShareMessageStatus,
+} from '../utils/requestNoticeMessages'
 
 type CreateRequestPageProps = {
   onBackHome: () => void
 }
 
 type CreateMode = 'edit' | 'review'
-type ShareMessageStatus = 'success' | 'error' | 'cancelled' | ''
 
 type CustomItem = CustomRequestDraftItem
-
-type CreateRequestReturnState = {
-  customItems: CustomItem[]
-  expandedProductIds: string[]
-  sharedUrl: string
-  sharedSnapshot: string
-}
 
 type InitialPageState = {
   draft: CreateDraftState
@@ -90,46 +93,6 @@ type InitialPageState = {
   customItems: CustomItem[]
   returnState?: CreateRequestReturnState
   wasNormalized: boolean
-}
-
-const CREATE_REQUEST_RETURN_STATE_KEY = 'otsukaiCreateRequestReturnState'
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function loadCreateRequestReturnState(): CreateRequestReturnState | undefined {
-  const historyState = isRecord(window.history.state) ? window.history.state : undefined
-  const value = historyState?.[CREATE_REQUEST_RETURN_STATE_KEY]
-
-  if (
-    !isRecord(value) ||
-    typeof value.sharedUrl !== 'string' ||
-    typeof value.sharedSnapshot !== 'string' ||
-    !Array.isArray(value.expandedProductIds) ||
-    !value.expandedProductIds.every((item) => typeof item === 'string') ||
-    !Array.isArray(value.customItems)
-  ) {
-    return undefined
-  }
-
-  const customItems = value.customItems.filter(
-    (item): item is CustomItem =>
-      isRecord(item) &&
-      typeof item.id === 'string' &&
-      typeof item.name === 'string' &&
-      typeof item.quantity === 'number' &&
-      Number.isFinite(item.quantity) &&
-      typeof item.unit === 'string' &&
-      typeof item.memo === 'string',
-  )
-
-  return {
-    customItems,
-    expandedProductIds: [...value.expandedProductIds],
-    sharedUrl: value.sharedUrl,
-    sharedSnapshot: value.sharedSnapshot,
-  }
 }
 
 function createInitialPageState(): InitialPageState {
@@ -149,81 +112,6 @@ function createInitialPageState(): InitialPageState {
     customItems: [...normalized.value.customItems],
     returnState,
     wasNormalized: initialDraft.wasNormalized || normalized.normalized,
-  }
-}
-
-function saveCreateRequestReturnState(state: CreateRequestReturnState) {
-  const historyState = isRecord(window.history.state) ? window.history.state : {}
-  window.history.replaceState(
-    { ...historyState, [CREATE_REQUEST_RETURN_STATE_KEY]: state },
-    '',
-  )
-}
-
-function clearCreateRequestReturnState() {
-  if (
-    !isRecord(window.history.state) ||
-    !(CREATE_REQUEST_RETURN_STATE_KEY in window.history.state)
-  ) {
-    return
-  }
-
-  const { [CREATE_REQUEST_RETURN_STATE_KEY]: _returnState, ...historyState } =
-    window.history.state
-  window.history.replaceState(historyState, '')
-}
-
-function getLimitMessage(reason?: DraftLimitReason): string {
-  switch (reason) {
-    case 'quantity-limit':
-      return '数量は20個までです。'
-    case 'item-condition-limit':
-      return '条件は30文字までです。'
-    case 'total-condition-limit':
-      return '条件の合計が1,000文字に達しました。不要な条件を短くすると、別の商品に入力できます。'
-    case 'custom-item-limit':
-      return '自由追加商品は10件までです。'
-    case 'custom-name-limit':
-      return '自由追加の商品名は30文字までです。'
-    case 'custom-unit-limit':
-      return '自由追加商品の単位は10文字までです。'
-    case 'title-limit':
-      return '共有データを作成できませんでした。'
-    case 'url-limit':
-      return 'LINEで送れるデータ量の上限に達しました。条件や自由追加商品を短くしてください。'
-    case 'no-items':
-      return '共有する商品を選んでください。'
-    default:
-      return ''
-  }
-}
-
-function getShareResultMessage(result: NativeShareResult): {
-  status: ShareMessageStatus
-  message: string
-} {
-  switch (result) {
-    case 'shared':
-      return {
-        status: 'success',
-        message: '共有画面を開きました。LINEを選択して送信してください。',
-      }
-    case 'copied':
-      return {
-        status: 'success',
-        message:
-          '共有画面を開けなかったため、依頼文をコピーしました。LINEへ貼り付けて送ってください。',
-      }
-    case 'cancelled':
-      return {
-        status: 'cancelled',
-        message: '共有をキャンセルしました。入力内容はそのまま残しています。',
-      }
-    case 'failed':
-      return {
-        status: 'error',
-        message: '共有またはコピーができませんでした。もう一度お試しください。',
-      }
   }
 }
 
