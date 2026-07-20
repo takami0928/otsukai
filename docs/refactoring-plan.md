@@ -56,7 +56,7 @@
 | 4 | 一時Undoライフサイクルの局所化 | 完了 | #16 | 最新候補と5秒timerを専用hookへ局所化 |
 | 5 | ShoppingListPage派生データのselector化 | 完了 | #17 | 売り場順・分類・filter・完了集計を純粋selector化 |
 | 6 | 共有実行制御の監査と限定的整理 | 完了（非実装） | #18 | 判断B: 意味の異なる制御を意図的に維持 |
-| 7 | 全体最終検証・ドキュメント確定 | 完了 | - | 全体監査、全検証、公開スモークを完了 |
+| 7 | 全体最終検証・ドキュメント確定 | 完了 | #19 | 全体監査、全検証、公開スモークを完了 |
 
 ### Phase 1〜6のdelivery記録
 
@@ -448,6 +448,7 @@ BもPhase完了とする。DRYのためだけにAを選ばない。
 ### 実施結果
 
 - branch: `refactor/phase-7-final-validation`
+- PR: #19
 - baseline main: `f028fbfe939704d45d3c348c3a580e7119e7e539`
 - 第2次リファクタリング開始時main: `c337c3c6a2f7c4c87bec4f50e72edc8d0a5aa2ca`
 - TypeScriptの`strict`、`noUnusedLocals`、`noUnusedParameters`を含むbuildが成功し、未使用import・未使用ローカル・到達不能な分岐を追加していないことを確認した。
