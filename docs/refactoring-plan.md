@@ -53,7 +53,7 @@
 | 1 | CreateRequestPageの表示責務分割 | 完了 | #13 | 表示を5つのpresentational componentへ抽出 |
 | 2 | history state・通知変換の純粋モジュール化 | レビュー中 | #14 | 履歴入出力と通知変換を2つのutilsへ抽出 |
 | 3 | 自由追加商品エディタ状態の局所化 | レビュー中 | #15 | 7つの連動UI stateを専用hookへ局所化 |
-| 4 | 一時Undoライフサイクルの局所化 | 実装完了 | - | 最新候補と5秒timerを専用hookへ局所化 |
+| 4 | 一時Undoライフサイクルの局所化 | レビュー中 | #16 | 最新候補と5秒timerを専用hookへ局所化 |
 | 5 | ShoppingListPage派生データのselector化 | 未着手 | - | - |
 | 6 | 共有実行制御の監査と限定的整理 | 未着手 | - | - |
 | 7 | 全体最終検証・ドキュメント確定 | 未着手 | - | - |
@@ -258,6 +258,7 @@ Reactページ内にあるブラウザ履歴入出力と、理由・共有結果
 ### 実施結果
 
 - branch: `refactor/phase-4-shopping-undo`
+- PR: #16
 - baseline main: `648605abdc3663aad43b7722e4c3e50079a6e452`
 - `useShoppingUndoNotice`へ最新Undo候補、通知表示、5秒timer、置換、consume、明示clear、unmount cleanupを移した。
 - 親ページには`ShoppingStateChange`生成・適用、理由・補足・かご順の復元、永続化、通知文生成、pending confirmとissue draft整理を残した。
