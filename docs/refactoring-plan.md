@@ -51,7 +51,7 @@
 |---|---|---|---|---|
 | 0 | 実行ルールと計画書の導入 | 完了 | #12 | AGENTS.md、計画書、ランブックを導入 |
 | 1 | CreateRequestPageの表示責務分割 | 完了 | #13 | 表示を5つのpresentational componentへ抽出 |
-| 2 | history state・通知変換の純粋モジュール化 | 未着手 | - | - |
+| 2 | history state・通知変換の純粋モジュール化 | レビュー中 | #14 | 履歴入出力と通知変換を2つのutilsへ抽出 |
 | 3 | 自由追加商品エディタ状態の局所化 | 未着手 | - | - |
 | 4 | 一時Undoライフサイクルの局所化 | 未着手 | - | - |
 | 5 | ShoppingListPage派生データのselector化 | 未着手 | - | - |
@@ -151,6 +151,19 @@ Reactページ内にあるブラウザ履歴入出力と、理由・共有結果
 - history stateの不正値・部分値を含む既存挙動を維持
 - 共有結果4種とlimit reasonのテストがある
 - 公開環境で戻る・共有後復帰・入力保持を確認
+
+### 実施結果
+
+- branch: `refactor/phase-2-create-request-utils`
+- PR: #14
+- baseline main: `245c6c9e9b204f0dfd63ae28fc4eaa64c3013e96`
+- `createRequestReturnState`へhistory stateの型検証とload/save/clearを移し、値の解析とbrowser history I/Oを別関数に分離した。
+- `requestNoticeMessages`へ全limit reasonと共有結果4種の表示変換を、文言とstatusを変えずに移した。
+- 不正値、部分値、壊れた自由追加商品、周辺history state保持、全通知変換のfocused testを追加した。
+- 検証: 23 test files / 221 tests、build成功、`git diff --check`成功。
+- URL、storage key/形式、共有意味、文言、CSS、DOM、ARIA、依存関係は変更していない。
+- Pagesと公開スモーク結果はマージ後にPhase 7の記録で補完する。
+- 意図的に残した負債: なし。
 
 ---
 
