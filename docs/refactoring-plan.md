@@ -50,7 +50,7 @@
 | Phase | 内容 | 状態 | PR | 結果 |
 |---|---|---|---|---|
 | 0 | 実行ルールと計画書の導入 | 完了 | #12 | AGENTS.md、計画書、ランブックを導入 |
-| 1 | CreateRequestPageの表示責務分割 | 完了 | 作成後追記 | 表示を5つのpresentational componentへ抽出 |
+| 1 | CreateRequestPageの表示責務分割 | 完了 | #13 | 表示を5つのpresentational componentへ抽出 |
 | 2 | history state・通知変換の純粋モジュール化 | 未着手 | - | - |
 | 3 | 自由追加商品エディタ状態の局所化 | 未着手 | - | - |
 | 4 | 一時Undoライフサイクルの局所化 | 未着手 | - | - |
@@ -107,7 +107,7 @@
 ### 実施結果
 
 - branch: `refactor/phase-1-create-request-view`
-- PR: 作成後追記
+- PR: #13
 - `RequestLimitNotice`、`CustomItemsSection`、`ProductSelectionSections`、`CreateRequestBottomActions`、`RequestReviewView`へ既存JSXを移動した。
 - 親ページにはstate、ref、effect、memo、入力制約、URL予算、history、共有、リセット処理を残した。
 - focused testとして警告表示のstatus/ARIA/文言と、確認画面のDOM・共有callback接続を追加した。
