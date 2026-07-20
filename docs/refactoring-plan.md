@@ -55,7 +55,7 @@
 | 3 | 自由追加商品エディタ状態の局所化 | レビュー中 | #15 | 7つの連動UI stateを専用hookへ局所化 |
 | 4 | 一時Undoライフサイクルの局所化 | レビュー中 | #16 | 最新候補と5秒timerを専用hookへ局所化 |
 | 5 | ShoppingListPage派生データのselector化 | レビュー中 | #17 | 売り場順・分類・filter・完了集計を純粋selector化 |
-| 6 | 共有実行制御の監査と限定的整理 | 監査完了（非実装） | - | 判断B: 意味の異なる制御を意図的に維持 |
+| 6 | 共有実行制御の監査と限定的整理 | レビュー中（非実装） | #18 | 判断B: 意味の異なる制御を意図的に維持 |
 | 7 | 全体最終検証・ドキュメント確定 | 未着手 | - | - |
 
 ---
@@ -381,6 +381,7 @@ BもPhase完了とする。DRYのためだけにAを選ばない。
 ### 実施結果
 
 - branch: `refactor/phase-6-share-execution`
+- PR: #18
 - baseline main: `4f0354093d21493691f7a59efc24e4abb7611861`
 - 判断Bを採用し、source code・test codeは変更せず、比較結果と意図的重複の理由を記録した。
 - 既存の共有focused testで依頼lock、title/text限定、1件/複数件相談、結果共有、多重実行防止、shared/copied/cancelled/failed、相談状態不変を確認した。
