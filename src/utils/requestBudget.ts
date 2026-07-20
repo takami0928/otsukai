@@ -5,8 +5,10 @@ import {
   MAX_ITEM_CONDITION_CHARS,
   MAX_ITEM_QUANTITY,
   MAX_SHARE_URL_LENGTH,
+  SHARE_URL_WARNING_THRESHOLD,
   MAX_TITLE_CHARS,
   MAX_TOTAL_CONDITION_CHARS,
+  TOTAL_CONDITION_WARNING_THRESHOLD,
 } from '../constants/requestLimits'
 import { SHARE_PRODUCT_IDS_V2 } from '../data/shareProductIdsV2'
 import type { CreateDraftState } from '../types/shopping'
@@ -51,6 +53,14 @@ export type RequestBudget = {
 export type DraftValidationResult =
   | ({ valid: true } & RequestBudget)
   | { valid: false; reason: DraftLimitReason; url?: string; urlLength?: number }
+
+export function isTotalConditionWarning(characterCount: number): boolean {
+  return characterCount >= TOTAL_CONDITION_WARNING_THRESHOLD
+}
+
+export function isShareUrlWarning(urlLength: number): boolean {
+  return urlLength >= SHARE_URL_WARNING_THRESHOLD
+}
 
 export function countTotalConditionCharacters(data: RequestDraftData): number {
   const regularTotal = SHARE_PRODUCT_IDS_V2.reduce((total, productId) => {

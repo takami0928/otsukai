@@ -1,8 +1,9 @@
 type HomePageProps = {
   onStartCreate: () => void
+  onOpenAbout: () => void
 }
 
-export function HomePage({ onStartCreate }: HomePageProps) {
+export function HomePage({ onStartCreate, onOpenAbout }: HomePageProps) {
   return (
     <main className="page">
       <section className="hero-card">
@@ -13,6 +14,9 @@ export function HomePage({ onStartCreate }: HomePageProps) {
         </p>
         <button type="button" className="primary-button large-button" onClick={onStartCreate}>
           依頼を作る
+        </button>
+        <button type="button" className="ghost-button large-button" onClick={onOpenAbout}>
+          このアプリについて
         </button>
       </section>
 
@@ -25,12 +29,6 @@ export function HomePage({ onStartCreate }: HomePageProps) {
           <li>二段階操作でかご投入を記録し、買えない商品は相談する</li>
           <li>会計前チェック後に買い物を終了し、結果を共有する</li>
         </ol>
-      </section>
-
-      <section className="info-card muted-card">
-        <h2>今回の仕様</h2>
-        <p>サーバーや外部DBは使わず、依頼データは URL に埋め込まれます。</p>
-        <p>商品状態と買えない理由は、お使い側の端末の localStorage に保存されます。</p>
       </section>
     </main>
   )

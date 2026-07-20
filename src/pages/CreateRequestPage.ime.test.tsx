@@ -88,15 +88,9 @@ describe('CreateRequestPage shared IME inputs', () => {
     localStorage.clear()
   })
 
-  it('uses the shared local-display input for the title and regular condition', () => {
-    const title = queryInput(container, '[aria-describedby="request-title-count"]')
-    act(() => commitJapaneseText(title, 'にほ', '日本語タイトル'))
-    expect(title.value).toBe('日本語タイトル')
-    expect(container.querySelector('#request-title-count')?.textContent).toContain(
-      '7 / 30',
-    )
-    expect(title.hasAttribute('maxlength')).toBe(false)
-
+  it('removes the title input and keeps the shared IME input for regular conditions', () => {
+    expect(container.textContent).not.toContain('依頼タイトル')
+    expect(container.querySelector('#request-title-count')).toBeNull()
     act(() =>
       click(
         container.querySelector(
@@ -134,12 +128,44 @@ describe('CreateRequestPage shared IME inputs', () => {
       '5 / 30',
     )
 
+    expect(container.querySelector('[aria-describedby="custom-unit-count"]')).toBeNull()
+    act(() =>
+      click(
+        [...container.querySelectorAll('button')].find(
+          (candidate) => candidate.textContent?.trim() === '詳細設定',
+        ) ?? null,
+      ),
+    )
     const unit = queryInput(container, '[aria-describedby="custom-unit-count"]')
     act(() => commitJapaneseText(unit, 'ぱ', 'パック'))
     expect(unit.value).toBe('パック')
     expect(container.querySelector('#custom-unit-count')?.textContent).toContain(
       '3 / 10',
     )
+
+    act(() =>
+      click(
+        [...container.querySelectorAll('button')].find(
+          (candidate) => candidate.textContent?.trim() === '詳細設定を閉じる',
+        ) ?? null,
+      ),
+    )
+    expect(container.querySelector('[aria-describedby="custom-unit-count"]')).toBeNull()
+    act(() =>
+      click(
+        [...container.querySelectorAll('button')].find(
+          (candidate) => candidate.textContent?.trim() === '詳細設定',
+        ) ?? null,
+      ),
+    )
+    const reopenedUnit = queryInput(
+      container,
+      '[aria-describedby="custom-unit-count"]',
+    )
+    expect(reopenedUnit.value).toBe('パック')
+    act(() => commitJapaneseText(reopenedUnit, 'たん', '単'.repeat(11)))
+    expect(reopenedUnit.value).toBe('単'.repeat(10))
+    expect(container.textContent).toContain('単位は10文字までです。')
 
     const condition = queryInput(
       container,

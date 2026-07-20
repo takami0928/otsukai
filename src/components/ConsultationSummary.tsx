@@ -1,29 +1,29 @@
 type ConsultationSummaryProps = {
   consultingItemCount: number
-  isSharingBulk: boolean
+  isSharingConsultation: boolean
   isAnyShareActive: boolean
-  onBulkConsultation: () => void
+  onShareConsultation: () => void
 }
 
 export function ConsultationSummary({
   consultingItemCount,
-  isSharingBulk,
+  isSharingConsultation,
   isAnyShareActive,
-  onBulkConsultation,
+  onShareConsultation,
 }: ConsultationSummaryProps) {
   return (
     <section className="info-card consultation-summary-card">
       <div>
-        <h2>相談中の商品が{consultingItemCount}件あります</h2>
-        <p className="helper-text">相談内容をまとめて再共有できます。</p>
+        <h2>相談リスト</h2>
+        <p className="helper-text">相談中の商品が{consultingItemCount}件あります。</p>
       </div>
       <button
         type="button"
         className="secondary-button"
-        onClick={onBulkConsultation}
+        onClick={onShareConsultation}
         disabled={isAnyShareActive}
       >
-        {isSharingBulk ? '共有中…' : 'まとめてLINEで相談'}
+        {isSharingConsultation ? '共有中…' : `相談する ${consultingItemCount}件`}
       </button>
     </section>
   )

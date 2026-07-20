@@ -3,10 +3,12 @@ import { ErrorPage } from './pages/ErrorPage'
 import { HomePage } from './pages/HomePage'
 import { CreateRequestPage } from './pages/CreateRequestPage'
 import { ShoppingListPage } from './pages/ShoppingListPage'
+import { AboutPage } from './pages/AboutPage'
 
 export type RouteState =
   | { page: 'home' }
   | { page: 'create' }
+  | { page: 'about' }
   | { page: 'list'; encoded: string; format: 'v1' | 'v2' }
   | { page: 'error'; title: string; description: string }
 
@@ -22,6 +24,10 @@ export function parseHashRoute(rawHash: string): RouteState {
 
   if (path === '/create') {
     return { page: 'create' }
+  }
+
+  if (path === '/about') {
+    return { page: 'about' }
   }
 
   if (path === '/list') {
@@ -78,16 +84,22 @@ export default function App() {
   const page = useMemo(() => {
     switch (route.page) {
       case 'home':
-        return <HomePage onStartCreate={() => navigate('/create')} />
+        return (
+          <HomePage
+            onStartCreate={() => navigate('/create')}
+            onOpenAbout={() => navigate('/about')}
+          />
+        )
       case 'create':
         return <CreateRequestPage onBackHome={() => navigate('/')} />
+      case 'about':
+        return <AboutPage onBackHome={() => navigate('/')} />
       case 'list':
         return (
           <ShoppingListPage
             encodedPayload={route.encoded}
             payloadFormat={route.format}
             onBackHome={() => navigate('/')}
-            onOpenCreate={() => navigate('/create')}
             onError={(title, description) => setRoute({ page: 'error', title, description })}
           />
         )

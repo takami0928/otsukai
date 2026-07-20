@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { parseHashRoute } from './App'
 
 describe('hash routing', () => {
-  it('recognizes home, create, legacy v1, and compact v2 routes', () => {
+  it('recognizes home, create, about, legacy v1, and compact v2 routes', () => {
     expect(parseHashRoute('#/')).toEqual({ page: 'home' })
     expect(parseHashRoute('#/create')).toEqual({ page: 'create' })
+    expect(parseHashRoute('#/about')).toEqual({ page: 'about' })
     expect(parseHashRoute('#/list?data=legacy-data')).toEqual({
       page: 'list',
       encoded: 'legacy-data',

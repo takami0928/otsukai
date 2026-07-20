@@ -20,7 +20,11 @@ import {
 import type { CheckedStateMap } from '../types/shopping'
 import { ShoppingListPage } from './ShoppingListPage'
 
-function createRequest(itemCount = 1, firstItemMemo = '') {
+function createRequest(
+  itemCount = 1,
+  firstItemMemo = '',
+  requestKey = `shopping-share-${itemCount}`,
+) {
   const draft: CreateDraftState = Object.fromEntries(
     products.map((product) => [product.id, { quantity: 0, memo: '' }]),
   )
@@ -29,7 +33,7 @@ function createRequest(itemCount = 1, firstItemMemo = '') {
   })
   const encoded = encodeCompactRequest(
     buildCompactRequestPayload({
-      requestKey: `shopping-share-${itemCount}`,
+      requestKey,
       title: '共有テスト',
       draft,
       customItems: [],
@@ -57,6 +61,7 @@ function setClipboardWriter(writeText: (text: string) => Promise<void>) {
 describe('ShoppingListPage native sharing', () => {
   let container: HTMLDivElement
   let root: Root
+  let rootIsMounted: boolean
 
   beforeEach(() => {
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -68,15 +73,19 @@ describe('ShoppingListPage native sharing', () => {
     container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)
+    rootIsMounted = true
   })
 
   afterEach(() => {
-    act(() => root.unmount())
+    if (rootIsMounted) {
+      act(() => root.unmount())
+    }
     container.remove()
     window.localStorage.clear()
     window.history.replaceState({}, '', '/')
     delete (window.navigator as unknown as Record<string, unknown>).share
     delete (window.navigator as unknown as Record<string, unknown>).clipboard
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -88,7 +97,6 @@ describe('ShoppingListPage native sharing', () => {
           encodedPayload={encoded}
           payloadFormat="v2"
           onBackHome={() => undefined}
-          onOpenCreate={() => undefined}
           onError={(title, description) => {
             throw new Error(`${title}: ${description}`)
           }}
@@ -179,14 +187,30 @@ describe('ShoppingListPage native sharing', () => {
     await clickAndFlush(reason)
   }
 
-  it('uses one native share call for a new individual consultation and marks it consulting', async () => {
+  async function addToConsultation() {
+    await openNewConsultation()
+    await clickAndFlush(button('相談リストに追加'))
+  }
+
+  it('adds an item to the consultation list without sharing, then shares one individual message', async () => {
     const deferred = createDeferredNativeShare()
     const { encoded, payload } = createRequest()
     await renderRequest(encoded)
-    await openNewConsultation()
+    await addToConsultation()
+
+    expect(deferred.share).not.toHaveBeenCalled()
+    const savedBeforeShare = JSON.parse(
+      window.localStorage.getItem(`otsukai:checked:${payload.requestId}`) ?? '{}',
+    ) as CheckedStateMap
+    const savedIssues = JSON.parse(
+      window.localStorage.getItem(`otsukai:itemIssues:${payload.requestId}`) ?? '{}',
+    ) as ItemIssueMap
+    expect(savedBeforeShare[payload.items[0].id]).toBe('consulting')
+    expect(savedIssues[payload.items[0].id]).toEqual({ reason: 'soldOut' })
+    expect(button('相談する 1件')).toBeDefined()
 
     act(() => {
-      const shareButton = button('LINEで相談')
+      const shareButton = button('相談する 1件')
       click(shareButton)
       click(shareButton)
     })
@@ -201,8 +225,9 @@ describe('ShoppingListPage native sharing', () => {
     expect(container.textContent).toContain('LINEを選択して送信してください。')
   })
 
-  it('uses one native share call for an individual reconsultation', async () => {
-    const deferred = createDeferredNativeShare()
+  it('uses the same button to share an existing single consultation again', async () => {
+    const share = vi.fn(async (_data: ShareData) => undefined)
+    setNavigatorShare(share)
     const { encoded, payload } = createRequest()
     const itemId = payload.items[0].id
     storeShoppingState(
@@ -212,16 +237,18 @@ describe('ShoppingListPage native sharing', () => {
     )
     await renderRequest(encoded)
 
-    act(() => {
-      const shareButton = button('LINEで再相談')
-      click(shareButton)
-      click(shareButton)
-    })
-    expectTitleAndTextOnly(deferred.share, 'おつかい相談', '商品が見つからない')
-    await deferred.resolve()
+    await clickAndFlush(button('相談する 1件'))
+    await clickAndFlush(button('相談する 1件'))
+
+    expect(share).toHaveBeenCalledTimes(2)
+    for (const [sharedData] of share.mock.calls) {
+      expect(sharedData.title).toBe('おつかい相談')
+      expect(sharedData.text).toContain('商品が見つからない')
+      expect(Object.keys(sharedData).sort()).toEqual(['text', 'title'])
+    }
   })
 
-  it('uses one native share call for a bulk consultation', async () => {
+  it('uses the unified button for a bulk consultation', async () => {
     const deferred = createDeferredNativeShare()
     const { encoded, payload } = createRequest(2)
     const [first, second] = payload.items
@@ -236,7 +263,7 @@ describe('ShoppingListPage native sharing', () => {
     await renderRequest(encoded)
 
     act(() => {
-      const shareButton = button('まとめてLINEで相談')
+      const shareButton = button('相談する 2件')
       click(shareButton)
       click(shareButton)
     })
@@ -248,12 +275,43 @@ describe('ShoppingListPage native sharing', () => {
     await deferred.resolve()
   })
 
+  it('does not render legacy individual, reconsultation, or bulk button labels', async () => {
+    const { encoded, payload } = createRequest(2)
+    const [first, second] = payload.items
+    storeShoppingState(
+      payload.requestId,
+      { [first.id]: 'consulting', [second.id]: 'consulting' },
+      {
+        [first.id]: { reason: 'soldOut' },
+        [second.id]: { reason: 'notFound' },
+      },
+    )
+    await renderRequest(encoded)
+
+    expect(container.textContent).not.toContain('LINEで相談')
+    expect(container.textContent).not.toContain('LINEで再相談')
+    expect(container.textContent).not.toContain('まとめてLINEで相談')
+    expect(button('相談する 2件')).toBeDefined()
+  })
+
+  it('always shows the fixed shopping heading even when the shared title differs', async () => {
+    const { encoded } = createRequest()
+    await renderRequest(encoded)
+
+    expect(container.querySelector('h1')?.textContent).toBe('おつかいリスト')
+    expect(container.textContent).not.toContain('共有テスト')
+    expect(container.textContent).not.toContain('新しい依頼を作る')
+    expect(container.textContent).not.toContain('localStorage')
+  })
+
   it('uses one native share call for the shopping result', async () => {
     const deferred = createDeferredNativeShare()
     const { encoded, payload } = createRequest()
     storeShoppingState(payload.requestId, { [payload.items[0].id]: 'inCart' })
     await renderRequest(encoded)
     await clickAndFlush(button('買い物を終了する'))
+    expect(button('ホームへ')).toBeDefined()
+    expect(container.textContent).not.toContain('新しい依頼を作る')
 
     act(() => {
       const shareButton = button('結果を共有')
@@ -265,12 +323,13 @@ describe('ShoppingListPage native sharing', () => {
     expect(container.textContent).toContain('LINEを選択して結果を送信してください。')
   })
 
-  it('keeps two-step cart updates, filtering, Undo, and persistence connected', async () => {
+  it('keeps two-step cart updates, filtering, temporary undo, and persistence connected', async () => {
     const { encoded, payload } = createRequest(2)
     const firstItem = payload.items[0]
     await renderRequest(encoded)
 
-    expect(button('Undo').disabled).toBe(true)
+    expect(container.textContent).not.toContain('Undo')
+    expect(container.textContent).not.toContain('元に戻す')
     await clickAndFlush(button('かごに入れる'))
     expect(button('もう一度押して確定')).toBeDefined()
 
@@ -284,7 +343,10 @@ describe('ShoppingListPage native sharing', () => {
       window.localStorage.getItem(`otsukai:checked:${payload.requestId}`) ?? '{}',
     ) as CheckedStateMap
     expect(afterConfirmation[firstItem.id]).toBe('inCart')
-    expect(button('Undo').disabled).toBe(false)
+    expect(container.textContent).toContain(
+      `${firstItem.productNameSnapshot}をかご済みにしました`,
+    )
+    expect(button('元に戻す')).toBeDefined()
 
     await clickAndFlush(button('未購入・相談中だけ表示'))
     expect(
@@ -295,7 +357,7 @@ describe('ShoppingListPage native sharing', () => {
       ),
     ).toBeUndefined()
 
-    await clickAndFlush(button('Undo'))
+    await clickAndFlush(button('元に戻す'))
     const afterUndo = JSON.parse(
       window.localStorage.getItem(`otsukai:checked:${payload.requestId}`) ?? '{}',
     ) as CheckedStateMap
@@ -305,7 +367,174 @@ describe('ShoppingListPage native sharing', () => {
         window.localStorage.getItem(`otsukai:cartOrder:${payload.requestId}`) ?? '[]',
       ),
     ).toEqual([])
-    expect(button('Undo').disabled).toBe(true)
+    expect(container.textContent).not.toContain('元に戻す')
+  })
+
+  it('expires the latest undo notice after five seconds', async () => {
+    vi.useFakeTimers()
+    const { encoded } = createRequest()
+    await renderRequest(encoded)
+
+    await clickAndFlush(button('かごに入れる'))
+    await clickAndFlush(button('もう一度押して確定'))
+    expect(button('元に戻す')).toBeDefined()
+
+    act(() => vi.advanceTimersByTime(4_999))
+    expect(button('元に戻す')).toBeDefined()
+    act(() => vi.advanceTimersByTime(1))
+    expect(container.textContent).not.toContain('元に戻す')
+  })
+
+  it('replaces the previous undo and resets the five-second timer', async () => {
+    vi.useFakeTimers()
+    const { encoded, payload } = createRequest(2)
+    const [first, second] = payload.items
+    await renderRequest(encoded)
+
+    await clickAndFlush(button('かごに入れる'))
+    await clickAndFlush(button('もう一度押して確定'))
+    act(() => vi.advanceTimersByTime(4_000))
+    await clickAndFlush(button('かごに入れる'))
+    await clickAndFlush(button('もう一度押して確定'))
+
+    expect(container.textContent).not.toContain(
+      `${first.productNameSnapshot}をかご済みにしました`,
+    )
+    expect(container.textContent).toContain(
+      `${second.productNameSnapshot}をかご済みにしました`,
+    )
+    act(() => vi.advanceTimersByTime(4_000))
+    expect(button('元に戻す')).toBeDefined()
+
+    await clickAndFlush(button('元に戻す'))
+    const saved = JSON.parse(
+      window.localStorage.getItem(`otsukai:checked:${payload.requestId}`) ?? '{}',
+    ) as CheckedStateMap
+    expect(saved[first.id]).toBe('inCart')
+    expect(saved[second.id]).toBe('pending')
+    expect(container.textContent).not.toContain('元に戻す')
+  })
+
+  it('clears a temporary undo when another request URL is loaded', async () => {
+    vi.useFakeTimers()
+    const firstRequest = createRequest(1, '', 'first-request')
+    const secondRequest = createRequest(1, '', 'second-request')
+    await renderRequest(firstRequest.encoded)
+    await clickAndFlush(button('かごに入れる'))
+    await clickAndFlush(button('もう一度押して確定'))
+    expect(button('元に戻す')).toBeDefined()
+
+    await renderRequest(secondRequest.encoded)
+    expect(container.textContent).not.toContain('元に戻す')
+  })
+
+  it('clears the undo timer when the page unmounts', async () => {
+    vi.useFakeTimers()
+    const clearTimeout = vi.spyOn(window, 'clearTimeout')
+    const { encoded } = createRequest()
+    await renderRequest(encoded)
+    await clickAndFlush(button('かごに入れる'))
+    await clickAndFlush(button('もう一度押して確定'))
+
+    act(() => root.unmount())
+    rootIsMounted = false
+    expect(clearTimeout).toHaveBeenCalled()
+  })
+
+  it('restores the consultation reason and cart order without creating another undo', async () => {
+    const { encoded, payload } = createRequest()
+    const item = payload.items[0]
+    storeShoppingState(
+      payload.requestId,
+      { [item.id]: 'consulting' },
+      { [item.id]: { reason: 'other', note: '予算より高い' } },
+    )
+    await renderRequest(encoded)
+
+    await clickAndFlush(button('相談を取り消す'))
+    await clickAndFlush(button('元に戻す'))
+    let saved = JSON.parse(
+      window.localStorage.getItem(`otsukai:checked:${payload.requestId}`) ?? '{}',
+    ) as CheckedStateMap
+    let issues = JSON.parse(
+      window.localStorage.getItem(`otsukai:itemIssues:${payload.requestId}`) ?? '{}',
+    ) as ItemIssueMap
+    expect(saved[item.id]).toBe('consulting')
+    expect(issues[item.id]).toEqual({ reason: 'other', note: '予算より高い' })
+    expect(container.textContent).not.toContain('元に戻す')
+
+    await clickAndFlush(button('かごに入れる'))
+    await clickAndFlush(button('もう一度押して確定'))
+    await clickAndFlush(button('未購入に戻す'))
+    await clickAndFlush(button('元に戻す'))
+    saved = JSON.parse(
+      window.localStorage.getItem(`otsukai:checked:${payload.requestId}`) ?? '{}',
+    ) as CheckedStateMap
+    const order = JSON.parse(
+      window.localStorage.getItem(`otsukai:cartOrder:${payload.requestId}`) ?? '[]',
+    ) as string[]
+    issues = JSON.parse(
+      window.localStorage.getItem(`otsukai:itemIssues:${payload.requestId}`) ?? '{}',
+    ) as ItemIssueMap
+    expect(saved[item.id]).toBe('inCart')
+    expect(order).toEqual([item.id])
+    expect(issues[item.id]).toBeUndefined()
+  })
+
+  it('restores the exact previous cart order when undoing a return to pending', async () => {
+    const { encoded, payload } = createRequest(2)
+    const [first, second] = payload.items
+    storeShoppingState(payload.requestId, {
+      [first.id]: 'inCart',
+      [second.id]: 'inCart',
+    })
+    window.localStorage.setItem(
+      `otsukai:cartOrder:${payload.requestId}`,
+      JSON.stringify([first.id, second.id]),
+    )
+    await renderRequest(encoded)
+
+    const resetFirst = container.querySelector<HTMLButtonElement>(
+      `button[aria-label="${first.productNameSnapshot}を未購入に戻す"]`,
+    )
+    if (!resetFirst) {
+      throw new Error('First cart item reset was not rendered')
+    }
+    await clickAndFlush(resetFirst)
+    await clickAndFlush(button('元に戻す'))
+
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(`otsukai:cartOrder:${payload.requestId}`) ?? '[]',
+      ),
+    ).toEqual([first.id, second.id])
+  })
+
+  it('marks an issue as not buying and can return it to pending', async () => {
+    const { encoded, payload } = createRequest()
+    const item = payload.items[0]
+    await renderRequest(encoded)
+    await openNewConsultation()
+    await clickAndFlush(button('今回は買わない'))
+
+    let saved = JSON.parse(
+      window.localStorage.getItem(`otsukai:checked:${payload.requestId}`) ?? '{}',
+    ) as CheckedStateMap
+    let issues = JSON.parse(
+      window.localStorage.getItem(`otsukai:itemIssues:${payload.requestId}`) ?? '{}',
+    ) as ItemIssueMap
+    expect(saved[item.id]).toBe('notBuying')
+    expect(issues[item.id]).toEqual({ reason: 'soldOut' })
+
+    await clickAndFlush(button('未購入に戻す'))
+    saved = JSON.parse(
+      window.localStorage.getItem(`otsukai:checked:${payload.requestId}`) ?? '{}',
+    ) as CheckedStateMap
+    issues = JSON.parse(
+      window.localStorage.getItem(`otsukai:itemIssues:${payload.requestId}`) ?? '{}',
+    ) as ItemIssueMap
+    expect(saved[item.id]).toBe('pending')
+    expect(issues[item.id]).toBeUndefined()
   })
 
   it('keeps checkout status changes and completion focus targets connected', async () => {
@@ -369,10 +598,10 @@ describe('ShoppingListPage native sharing', () => {
   it.each([
     { outcome: 'shared', expectedStatus: 'consulting' },
     { outcome: 'copied', expectedStatus: 'consulting' },
-    { outcome: 'cancelled', expectedStatus: undefined },
-    { outcome: 'failed', expectedStatus: undefined },
+    { outcome: 'cancelled', expectedStatus: 'consulting' },
+    { outcome: 'failed', expectedStatus: 'consulting' },
   ] as const)(
-    'keeps the new-consultation state transition correct after $outcome',
+    'keeps the consultation state unchanged after the $outcome share result',
     async ({ outcome, expectedStatus }) => {
       const clipboard = vi.fn(async () => undefined)
       setClipboardWriter(clipboard)
@@ -401,8 +630,8 @@ describe('ShoppingListPage native sharing', () => {
 
       const { encoded, payload } = createRequest()
       await renderRequest(encoded)
-      await openNewConsultation()
-      await clickAndFlush(button('LINEで相談'))
+      await addToConsultation()
+      await clickAndFlush(button('相談する 1件'))
 
       const saved = JSON.parse(
         window.localStorage.getItem(`otsukai:checked:${payload.requestId}`) ?? '{}',
@@ -454,7 +683,6 @@ describe('ShoppingListPage native sharing', () => {
           encodedPayload={encoded}
           payloadFormat="v2"
           onBackHome={() => undefined}
-          onOpenCreate={() => undefined}
           onError={() => undefined}
         />,
       )

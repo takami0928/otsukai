@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { products } from '../data/products'
 import { categories } from '../data/categories'
+import { FIXED_REQUEST_TITLE } from '../constants/request'
 import type { CreateDraftState } from '../types/shopping'
 import { ProductCard } from '../components/ProductCard'
 import { BottomBar } from '../components/BottomBar'
@@ -29,7 +30,6 @@ import {
   applyCustomItemDelete,
   applyCustomItemUpdate,
   applyQuantityChange,
-  applyTitleChange,
   normalizeCustomQuantity,
   normalizeRequestDraftData,
   type DraftChangeResult,
@@ -37,6 +37,8 @@ import {
 import {
   calculateRequestBudget,
   countTotalConditionCharacters,
+  isShareUrlWarning,
+  isTotalConditionWarning,
   validateDraftLimits,
   type CustomRequestDraftItem,
   type DraftLimitReason,
@@ -50,7 +52,6 @@ import {
   MAX_ITEM_CONDITION_CHARS,
   MAX_ITEM_QUANTITY,
   MAX_SHARE_URL_LENGTH,
-  MAX_TITLE_CHARS,
   MAX_TOTAL_CONDITION_CHARS,
 } from '../constants/requestLimits'
 import {
@@ -80,7 +81,6 @@ type ShareMessageStatus = 'success' | 'error' | 'cancelled' | ''
 type CustomItem = CustomRequestDraftItem
 
 type CreateRequestReturnState = {
-  title: string
   customItems: CustomItem[]
   expandedProductIds: string[]
   sharedUrl: string
@@ -90,13 +90,11 @@ type CreateRequestReturnState = {
 type InitialPageState = {
   draft: CreateDraftState
   expandedProductIds: Set<string>
-  title: string
   customItems: CustomItem[]
   returnState?: CreateRequestReturnState
   wasNormalized: boolean
 }
 
-const DEFAULT_TITLE = '今日のおつかい'
 const OTHER_CATEGORY_NAME = 'その他'
 const CREATE_REQUEST_RETURN_STATE_KEY = 'otsukaiCreateRequestReturnState'
 
@@ -110,7 +108,6 @@ function loadCreateRequestReturnState(): CreateRequestReturnState | undefined {
 
   if (
     !isRecord(value) ||
-    typeof value.title !== 'string' ||
     typeof value.sharedUrl !== 'string' ||
     typeof value.sharedSnapshot !== 'string' ||
     !Array.isArray(value.expandedProductIds) ||
@@ -132,7 +129,6 @@ function loadCreateRequestReturnState(): CreateRequestReturnState | undefined {
   )
 
   return {
-    title: value.title,
     customItems,
     expandedProductIds: [...value.expandedProductIds],
     sharedUrl: value.sharedUrl,
@@ -144,7 +140,7 @@ function createInitialPageState(): InitialPageState {
   const returnState = loadCreateRequestReturnState()
   const initialDraft = createInitialCreateRequestState(loadCreateDraft(), products)
   const normalized = normalizeRequestDraftData({
-    title: returnState?.title ?? DEFAULT_TITLE,
+    title: FIXED_REQUEST_TITLE,
     draft: initialDraft.draft,
     customItems: returnState?.customItems ?? [],
   })
@@ -154,7 +150,6 @@ function createInitialPageState(): InitialPageState {
     expandedProductIds: new Set(
       returnState?.expandedProductIds ?? initialDraft.expandedProductIds,
     ),
-    title: normalized.value.title,
     customItems: [...normalized.value.customItems],
     returnState,
     wasNormalized: initialDraft.wasNormalized || normalized.normalized,
@@ -197,7 +192,7 @@ function getLimitMessage(reason?: DraftLimitReason): string {
     case 'custom-unit-limit':
       return '自由追加商品の単位は10文字までです。'
     case 'title-limit':
-      return '依頼タイトルは30文字までです。'
+      return '共有データを作成できませんでした。'
     case 'url-limit':
       return 'LINEで送れるデータ量の上限に達しました。条件や自由追加商品を短くしてください。'
     case 'no-items':
@@ -242,7 +237,6 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(
     initialPageState.expandedProductIds,
   )
-  const [title, setTitle] = useState(initialPageState.title)
   const [mode, setMode] = useState<CreateMode>(
     initialPageState.returnState ? 'review' : 'edit',
   )
@@ -271,6 +265,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   const [customQuantity, setCustomQuantity] = useState(1)
   const [customUnit, setCustomUnit] = useState('個')
   const [customMemo, setCustomMemo] = useState('')
+  const [isCustomDetailsOpen, setIsCustomDetailsOpen] = useState(false)
   const [requestKey, setRequestKey] = useState(createRequestKey)
   const [isSharingRequest, setIsSharingRequest] = useState(false)
   const shareLockRef = useRef(createRequestShareLock())
@@ -284,8 +279,8 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     [requestBaseUrl, requestKey],
   )
   const requestData = useMemo<RequestDraftData>(
-    () => ({ title, draft, customItems }),
-    [customItems, draft, title],
+    () => ({ title: FIXED_REQUEST_TITLE, draft, customItems }),
+    [customItems, draft],
   )
 
   useEffect(() => {
@@ -319,23 +314,31 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       return undefined
     }
   }, [budgetContext, requestData])
+  const isConditionLimitWarning = isTotalConditionWarning(totalConditionCharacters)
+  const isShareUrlLimitWarning =
+    currentBudget ? isShareUrlWarning(currentBudget.urlLength) : false
+  const isShareUrlOverLimit = (currentBudget?.urlLength ?? 0) > MAX_SHARE_URL_LENGTH
+  const hasRequestLimitError =
+    Boolean(limitMessage) || !currentBudget || isShareUrlOverLimit
+  const showRequestLimitNotice =
+    isConditionLimitWarning || isShareUrlLimitWarning || hasRequestLimitError
 
   const currentRequestSnapshot = useMemo(
     () =>
       createRequestContentSnapshot({
-        title,
+        title: FIXED_REQUEST_TITLE,
         draft,
         productList: products,
         customItems,
       }),
-    [customItems, draft, title],
+    [customItems, draft],
   )
 
   const hasResettableInput = useMemo(
     () =>
       hasAnyCreateRequestInput({
-        title,
-        defaultTitle: DEFAULT_TITLE,
+        title: FIXED_REQUEST_TITLE,
+        defaultTitle: FIXED_REQUEST_TITLE,
         draft,
         productList: products,
         customItemCount: customItems.length,
@@ -361,7 +364,6 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       mode,
       shareMessage,
       sharedUrl,
-      title,
     ],
   )
 
@@ -392,7 +394,6 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   )
 
   const applyRequestData = (next: RequestDraftData) => {
-    setTitle(next.title)
     setDraft(next.draft)
     setCustomItems([...next.customItems])
   }
@@ -409,16 +410,6 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
         ? urlMessage
         : getLimitMessage(result.reason),
     )
-  }
-
-  const handleTitleCommit = (value: string): CommitTextResult => {
-    const result = applyTitleChange(requestData, value, budgetContext)
-    applyChangeResult(result)
-    return {
-      value: result.value.title,
-      accepted: result.accepted,
-      reason: result.reason,
-    }
   }
 
   const handleIncrease = (productId: string) => {
@@ -474,6 +465,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     setCustomQuantity(1)
     setCustomUnit('個')
     setCustomMemo('')
+    setIsCustomDetailsOpen(false)
   }
 
   const openCustomForm = (index?: number) => {
@@ -487,12 +479,14 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       setCustomQuantity(item.quantity)
       setCustomUnit(item.unit)
       setCustomMemo(item.memo)
+      setIsCustomDetailsOpen(item.unit.trim() !== '個')
     } else {
       setEditingCustomIndex(null)
       setCustomName('')
       setCustomQuantity(1)
       setCustomUnit('個')
       setCustomMemo('')
+      setIsCustomDetailsOpen(false)
     }
     setLimitMessage('')
     setIsCustomFormOpen(true)
@@ -686,7 +680,6 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
 
       saveCreateDraft(draft)
       saveCreateRequestReturnState({
-        title,
         customItems,
         expandedProductIds: [...expandedProductIds],
         sharedUrl: requestUrl,
@@ -727,7 +720,6 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     setDraft(emptyDraft)
     saveCreateDraft(emptyDraft)
     setExpandedProductIds(new Set())
-    setTitle(DEFAULT_TITLE)
     setMode('edit')
     setSharedUrl('')
     setSharedSnapshot('')
@@ -754,55 +746,51 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       </section>
 
       <section className="info-card">
-        <label className="stack-field">
-          <span>依頼タイトル</span>
-          <ImeAwareTextInput
-            value={title}
-            aria-describedby="request-title-count"
-            onCommit={handleTitleCommit}
-            placeholder="例: 今日のおつかい"
-          />
-          <span id="request-title-count" className="character-count">
-            {countUserCharacters(title)} / {MAX_TITLE_CHARS}
-          </span>
-        </label>
-        {countUserCharacters(title) >= MAX_TITLE_CHARS ? (
-          <p className="limit-inline-message">依頼タイトルは30文字までです。</p>
-        ) : null}
         <p className="helper-text">
           商品はリストから数量で選びます。共有時は数量が1以上のものだけ送られます。
         </p>
       </section>
 
-      <section className="info-card request-limit-summary" aria-live="polite">
-        <strong>
-          条件：{totalConditionCharacters.toLocaleString('ja-JP')} /{' '}
-          {MAX_TOTAL_CONDITION_CHARS.toLocaleString('ja-JP')}文字
-        </strong>
-        {totalConditionCharacters >= MAX_TOTAL_CONDITION_CHARS ? (
-          <>
-            <p>条件の合計が1,000文字に達しました。</p>
-            <p>不要な条件を短くすると、別の商品に入力できます。</p>
-          </>
-        ) : MAX_TOTAL_CONDITION_CHARS - totalConditionCharacters <= 100 ? (
-          <p>
-            条件はあと
-            {MAX_TOTAL_CONDITION_CHARS - totalConditionCharacters}
-            文字入力できます。
-          </p>
-        ) : null}
-        {currentBudget ? (
-          <p>
-            共有URL：{currentBudget.urlLength.toLocaleString('ja-JP')} /{' '}
-            {MAX_SHARE_URL_LENGTH.toLocaleString('ja-JP')}文字
-          </p>
-        ) : null}
-        {limitMessage ? (
-          <p className="limit-message" role="status">
-            {limitMessage}
-          </p>
-        ) : null}
-      </section>
+      {showRequestLimitNotice ? (
+        <section
+          className={`info-card request-limit-notice ${hasRequestLimitError ? 'is-error' : 'is-warning'}`}
+          role="status"
+          aria-live="polite"
+        >
+          {isConditionLimitWarning ? (
+            <div>
+              <strong>条件の合計が上限に近づいています。</strong>
+              <p>
+                現在 {totalConditionCharacters.toLocaleString('ja-JP')} /{' '}
+                {MAX_TOTAL_CONDITION_CHARS.toLocaleString('ja-JP')}文字です。
+              </p>
+            </div>
+          ) : null}
+          {isShareUrlLimitWarning && currentBudget ? (
+            <div>
+              <strong>共有データ量が上限に近づいています。</strong>
+              <p>
+                これ以上内容を追加すると、LINEで共有できない可能性があります。
+              </p>
+              <p>
+                現在 {currentBudget.urlLength.toLocaleString('ja-JP')} /{' '}
+                {MAX_SHARE_URL_LENGTH.toLocaleString('ja-JP')}文字です。
+              </p>
+            </div>
+          ) : null}
+          {!currentBudget ? (
+            <p>
+              共有URLを生成できませんでした。入力内容を短くしてもう一度お試しください。
+            </p>
+          ) : null}
+          {isShareUrlOverLimit ? (
+            <p className="limit-message">
+              LINEで共有できるデータ量を超えています。条件や自由追加商品を短くしてください。
+            </p>
+          ) : null}
+          {limitMessage ? <p className="limit-message">{limitMessage}</p> : null}
+        </section>
+      ) : null}
 
       <section className="info-card custom-items-card">
         <div className="section-heading">
@@ -872,7 +860,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
             {countUserCharacters(customName) >= MAX_CUSTOM_ITEM_NAME_CHARS ? (
               <p className="limit-inline-message">自由追加の商品名は30文字までです。</p>
             ) : null}
-            <div className="custom-item-form-row">
+            <div className="custom-item-quantity-field">
               <div className="stack-field">
                 <span>数量</span>
                 <div
@@ -921,29 +909,42 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
                   </span>
                 ) : null}
               </div>
-              <label className="stack-field">
-                <span>単位</span>
-                <ImeAwareTextInput
-                  value={customUnit}
-                  aria-describedby="custom-unit-count"
-                  onCommit={(value) =>
-                    applyPendingTextChange(
-                      'unit',
-                      value,
-                      MAX_CUSTOM_ITEM_UNIT_CHARS,
-                      'custom-unit-limit',
-                    )
-                  }
-                  placeholder="個"
-                />
-                <span id="custom-unit-count" className="character-count">
-                  {countUserCharacters(customUnit)} / {MAX_CUSTOM_ITEM_UNIT_CHARS}
-                </span>
-                {countUserCharacters(customUnit) >= MAX_CUSTOM_ITEM_UNIT_CHARS ? (
-                  <span className="limit-inline-message">単位は10文字までです。</span>
-                ) : null}
-              </label>
             </div>
+            <button
+              type="button"
+              className="ghost-button custom-details-toggle"
+              aria-expanded={isCustomDetailsOpen}
+              aria-controls="custom-item-details"
+              onClick={() => setIsCustomDetailsOpen((current) => !current)}
+            >
+              {isCustomDetailsOpen ? '詳細設定を閉じる' : '詳細設定'}
+            </button>
+            {isCustomDetailsOpen ? (
+              <div id="custom-item-details" className="custom-item-details">
+                <label className="stack-field">
+                  <span>単位</span>
+                  <ImeAwareTextInput
+                    value={customUnit}
+                    aria-describedby="custom-unit-count"
+                    onCommit={(value) =>
+                      applyPendingTextChange(
+                        'unit',
+                        value,
+                        MAX_CUSTOM_ITEM_UNIT_CHARS,
+                        'custom-unit-limit',
+                      )
+                    }
+                    placeholder="個"
+                  />
+                  <span id="custom-unit-count" className="character-count">
+                    {countUserCharacters(customUnit)} / {MAX_CUSTOM_ITEM_UNIT_CHARS}
+                  </span>
+                  {countUserCharacters(customUnit) >= MAX_CUSTOM_ITEM_UNIT_CHARS ? (
+                    <span className="limit-inline-message">単位は10文字までです。</span>
+                  ) : null}
+                </label>
+              </div>
+            ) : null}
             <label className="stack-field">
               <span>条件</span>
               <ImeAwareTextInput
