@@ -53,7 +53,7 @@
 | 1 | CreateRequestPageの表示責務分割 | 完了 | #13 | 表示を5つのpresentational componentへ抽出 |
 | 2 | history state・通知変換の純粋モジュール化 | レビュー中 | #14 | 履歴入出力と通知変換を2つのutilsへ抽出 |
 | 3 | 自由追加商品エディタ状態の局所化 | レビュー中 | #15 | 7つの連動UI stateを専用hookへ局所化 |
-| 4 | 一時Undoライフサイクルの局所化 | 未着手 | - | - |
+| 4 | 一時Undoライフサイクルの局所化 | レビュー中 | #16 | 最新候補と5秒timerを専用hookへ局所化 |
 | 5 | ShoppingListPage派生データのselector化 | 未着手 | - | - |
 | 6 | 共有実行制御の監査と限定的整理 | 未着手 | - | - |
 | 7 | 全体最終検証・ドキュメント確定 | 未着手 | - | - |
@@ -254,6 +254,20 @@ Reactページ内にあるブラウザ履歴入出力と、理由・共有結果
 - 5秒表示、最新1件のみ、新操作で置換、Undo、URL変更、unmountの挙動を維持
 - fake timerを使ったfocused testがある
 - 公開環境でかご投入・相談追加・今回は買わない・条件確認とUndoを確認
+
+### 実施結果
+
+- branch: `refactor/phase-4-shopping-undo`
+- PR: #16
+- baseline main: `648605abdc3663aad43b7722e4c3e50079a6e452`
+- `useShoppingUndoNotice`へ最新Undo候補、通知表示、5秒timer、置換、consume、明示clear、unmount cleanupを移した。
+- 親ページには`ShoppingStateChange`生成・適用、理由・補足・かご順の復元、永続化、通知文生成、pending confirmとissue draft整理を残した。
+- fake timer testで4,999ms/5,000ms境界、新操作からの再計時、最新1件のみ、consume、request変更/reset、unmountを検証した。
+- 既存ページtestで二段階かご投入、理由・補足・かご順の復元、URL変更、Undoが新しいUndoを作らないことを維持した。
+- 検証: 25 test files / 230 tests、build成功、`git diff --check`成功。
+- 5秒仕様、文言、CSS、DOM、ARIA、URL、storage、共有意味、依存関係は変更していない。
+- Pagesと公開スモーク結果はマージ後にPhase 7の記録で補完する。
+- 意図的に残した負債: なし。
 
 ---
 

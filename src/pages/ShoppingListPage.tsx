@@ -41,6 +41,7 @@ import {
 } from '../utils/shareText'
 import { addLineExternalBrowserHint } from '../utils/lineDeliveryUrl'
 import { compareItemsByStoreOrder } from '../utils/storeOrder'
+import { useShoppingUndoNotice } from '../hooks/useShoppingUndoNotice'
 import type {
   CheckedItemStatus,
   ItemIssue,
@@ -67,13 +68,6 @@ type ShareNotice = {
   kind: 'success' | 'error' | 'info'
   message: string
 }
-type UndoNoticeState = {
-  change: ShoppingStateChange
-  message: string
-  previousCartOrder: string[]
-} | null
-
-const UNDO_NOTICE_DURATION_MS = 5_000
 
 const EMPTY_SHOPPING_STATE: ShoppingStateSnapshot = {
   checkedState: {},
@@ -156,15 +150,18 @@ export function ShoppingListPage({
   const [pendingConfirmItemId, setPendingConfirmItemId] = useState<string | null>(null)
   const [isCheckoutReviewOpen, setIsCheckoutReviewOpen] = useState(false)
   const [isCompletionView, setIsCompletionView] = useState(false)
-  const [undoNotice, setUndoNotice] = useState<UndoNoticeState>(null)
+  const {
+    undoNotice,
+    showUndoNotice,
+    consumeUndoNotice,
+    clearUndoNotice,
+  } = useShoppingUndoNotice()
   const [issueDraft, setIssueDraft] = useState<IssueDraft | null>(null)
   const [isSharingConsultation, setIsSharingConsultation] = useState(false)
   const [isSharingResult, setIsSharingResult] = useState(false)
   const [shareNotice, setShareNotice] = useState<ShareNotice | null>(null)
   const activeShareRef = useRef(false)
   const shareGenerationRef = useRef(0)
-  const undoNoticeRef = useRef<UndoNoticeState>(null)
-  const undoTimerRef = useRef<number | null>(null)
   const shoppingStateRef = useRef<ShoppingStateSnapshot>(EMPTY_SHOPPING_STATE)
   const checkoutReviewRef = useRef<HTMLElement | null>(null)
   const completionHeadingRef = useRef<HTMLHeadingElement | null>(null)
@@ -179,12 +176,7 @@ export function ShoppingListPage({
   useEffect(() => {
     shareGenerationRef.current += 1
     activeShareRef.current = false
-    if (undoTimerRef.current !== null) {
-      window.clearTimeout(undoTimerRef.current)
-      undoTimerRef.current = null
-    }
-    undoNoticeRef.current = null
-    setUndoNotice(null)
+    clearUndoNotice()
 
     try {
       const decoded =
@@ -226,16 +218,7 @@ export function ShoppingListPage({
         error instanceof Error ? error.message : '共有URLの内容を読み込めませんでした。'
       onError('共有URLを開けませんでした', message)
     }
-  }, [encodedPayload, onError, payloadFormat])
-
-  useEffect(
-    () => () => {
-      if (undoTimerRef.current !== null) {
-        window.clearTimeout(undoTimerRef.current)
-      }
-    },
-    [],
-  )
+  }, [clearUndoNotice, encodedPayload, onError, payloadFormat])
 
   useEffect(() => {
     shoppingStateRef.current = shoppingState
@@ -367,9 +350,6 @@ export function ShoppingListPage({
     shoppingStateRef.current = nextState
     setShoppingState(nextState)
     setShareNotice(null)
-    if (undoTimerRef.current !== null) {
-      window.clearTimeout(undoTimerRef.current)
-    }
     const changedItem = payload?.items.find((item) => item.id === itemId)
     if (changedItem) {
       const nextUndoNotice = {
@@ -377,18 +357,7 @@ export function ShoppingListPage({
         message: getUndoNoticeMessage(changedItem, change),
         previousCartOrder: [...currentState.cartOrder],
       }
-      undoNoticeRef.current = nextUndoNotice
-      setUndoNotice(nextUndoNotice)
-      const timerId = window.setTimeout(() => {
-        if (undoNoticeRef.current === nextUndoNotice) {
-          undoNoticeRef.current = null
-          setUndoNotice(null)
-        }
-        if (undoTimerRef.current === timerId) {
-          undoTimerRef.current = null
-        }
-      }, UNDO_NOTICE_DURATION_MS)
-      undoTimerRef.current = timerId
+      showUndoNotice(nextUndoNotice)
     }
     removePendingConfirm(itemId)
     setIssueDraft((current) => (current?.itemId === itemId ? null : current))
@@ -415,16 +384,11 @@ export function ShoppingListPage({
   }
 
   const handleUndo = () => {
-    const currentUndoNotice = undoNoticeRef.current
+    const currentUndoNotice = consumeUndoNotice()
     if (!currentUndoNotice) {
       return
     }
     const { change: lastChange, previousCartOrder } = currentUndoNotice
-
-    if (undoTimerRef.current !== null) {
-      window.clearTimeout(undoTimerRef.current)
-      undoTimerRef.current = null
-    }
 
     const revertedState = applyShoppingStateChange(
       shoppingStateRef.current,
@@ -439,8 +403,6 @@ export function ShoppingListPage({
     setShoppingState(nextState)
     removePendingConfirm(lastChange.itemId)
     setIssueDraft((current) => (current?.itemId === lastChange.itemId ? null : current))
-    undoNoticeRef.current = null
-    setUndoNotice(null)
   }
 
   const handleAddToConsultation = (item: ShoppingRequestItemPayload) => {
