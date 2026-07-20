@@ -16,7 +16,6 @@ type ShoppingItemCardProps = {
   isIssueFormOpen: boolean
   selectedReason?: UnavailableReason
   issueNote: string
-  isSharing: boolean
   isInteractionLocked: boolean
   onStartConfirm: () => void
   onConfirmInCart: () => void
@@ -24,10 +23,9 @@ type ShoppingItemCardProps = {
   onOpenIssueForm: () => void
   onReasonChange: (reason: UnavailableReason) => void
   onIssueNoteChange: (note: string) => void
-  onShareConsultation: () => void
+  onAddToConsultation: () => void
   onMarkNotBuying: () => void
   onCancelIssueForm: () => void
-  onReshareConsultation: () => void
   onReset: () => void
 }
 
@@ -63,7 +61,6 @@ export function ShoppingItemCard({
   isIssueFormOpen,
   selectedReason,
   issueNote,
-  isSharing,
   isInteractionLocked,
   onStartConfirm,
   onConfirmInCart,
@@ -71,10 +68,9 @@ export function ShoppingItemCard({
   onOpenIssueForm,
   onReasonChange,
   onIssueNoteChange,
-  onShareConsultation,
+  onAddToConsultation,
   onMarkNotBuying,
   onCancelIssueForm,
-  onReshareConsultation,
   onReset,
 }: ShoppingItemCardProps) {
   const conditionItem = hasCondition(item)
@@ -159,15 +155,6 @@ export function ShoppingItemCard({
             <button
               type="button"
               className="secondary-button"
-              onClick={onReshareConsultation}
-              disabled={isInteractionLocked}
-              aria-label={`${item.productNameSnapshot}の相談文を再共有する`}
-            >
-              {isSharing ? '共有中…' : 'LINEで再相談'}
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
               onClick={onMarkNotBuying}
               aria-label={`${item.productNameSnapshot}を今回は買わない状態にする`}
               disabled={isInteractionLocked}
@@ -246,11 +233,11 @@ export function ShoppingItemCard({
                 <button
                   type="button"
                   className="primary-button"
-                  onClick={onShareConsultation}
+                  onClick={onAddToConsultation}
                   disabled={isInteractionLocked}
-                  aria-label={`${item.productNameSnapshot}についてLINEで相談する`}
+                  aria-label={`${item.productNameSnapshot}を相談リストに追加する`}
                 >
-                  {isSharing ? '共有中…' : 'LINEで相談'}
+                  相談リストに追加
                 </button>
                 <button
                   type="button"

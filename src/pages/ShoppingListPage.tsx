@@ -6,6 +6,8 @@ import { NativeShareUnavailableNotice } from '../components/NativeShareUnavailab
 import { ShoppingCompletionView } from '../components/ShoppingCompletionView'
 import { ShoppingItemCard } from '../components/ShoppingItemCard'
 import { ShoppingToolbar } from '../components/ShoppingToolbar'
+import { ShoppingUndoNotice } from '../components/ShoppingUndoNotice'
+import { FIXED_REQUEST_TITLE } from '../constants/request'
 import { decodeShoppingRequest } from '../utils/encodeRequest'
 import { decodeCompactRequest } from '../utils/compactRequest'
 import {
@@ -52,7 +54,6 @@ type ShoppingListPageProps = {
   encodedPayload: string
   payloadFormat: 'v1' | 'v2'
   onBackHome: () => void
-  onOpenCreate: () => void
   onError: (title: string, description: string) => void
 }
 
@@ -66,6 +67,13 @@ type ShareNotice = {
   kind: 'success' | 'error' | 'info'
   message: string
 }
+type UndoNoticeState = {
+  change: ShoppingStateChange
+  message: string
+  previousCartOrder: string[]
+} | null
+
+const UNDO_NOTICE_DURATION_MS = 5_000
 
 const EMPTY_SHOPPING_STATE: ShoppingStateSnapshot = {
   checkedState: {},
@@ -76,6 +84,29 @@ const EMPTY_SHOPPING_STATE: ShoppingStateSnapshot = {
 function createIssue(reason: UnavailableReason, note: string): ItemIssue {
   const trimmedNote = note.trim()
   return trimmedNote ? { reason, note: trimmedNote } : { reason }
+}
+
+function getUndoNoticeMessage(
+  item: ShoppingRequestItemPayload,
+  change: ShoppingStateChange,
+): string {
+  if (change.nextStatus === 'inCart') {
+    return change.previousStatus === 'verified'
+      ? `${item.productNameSnapshot}の条件確認を戻しました`
+      : `${item.productNameSnapshot}をかご済みにしました`
+  }
+  if (change.nextStatus === 'verified') {
+    return `${item.productNameSnapshot}を条件確認済みにしました`
+  }
+  if (change.nextStatus === 'consulting') {
+    return `${item.productNameSnapshot}を相談リストに追加しました`
+  }
+  if (change.nextStatus === 'notBuying') {
+    return `${item.productNameSnapshot}を今回は買わないにしました`
+  }
+  return change.previousStatus === 'consulting'
+    ? `${item.productNameSnapshot}の相談を取り消しました`
+    : `${item.productNameSnapshot}を未購入に戻しました`
 }
 
 function getShareNotice(
@@ -117,7 +148,6 @@ export function ShoppingListPage({
   encodedPayload,
   payloadFormat,
   onBackHome,
-  onOpenCreate,
   onError,
 }: ShoppingListPageProps) {
   const [payload, setPayload] = useState<ShoppingRequestPayload | null>(null)
@@ -126,15 +156,15 @@ export function ShoppingListPage({
   const [pendingConfirmItemId, setPendingConfirmItemId] = useState<string | null>(null)
   const [isCheckoutReviewOpen, setIsCheckoutReviewOpen] = useState(false)
   const [isCompletionView, setIsCompletionView] = useState(false)
-  const [undoStack, setUndoStack] = useState<ShoppingStateChange[]>([])
+  const [undoNotice, setUndoNotice] = useState<UndoNoticeState>(null)
   const [issueDraft, setIssueDraft] = useState<IssueDraft | null>(null)
-  const [sharingItemId, setSharingItemId] = useState<string | null>(null)
-  const [isSharingBulk, setIsSharingBulk] = useState(false)
+  const [isSharingConsultation, setIsSharingConsultation] = useState(false)
   const [isSharingResult, setIsSharingResult] = useState(false)
   const [shareNotice, setShareNotice] = useState<ShareNotice | null>(null)
   const activeShareRef = useRef(false)
   const shareGenerationRef = useRef(0)
-  const undoStackRef = useRef<ShoppingStateChange[]>([])
+  const undoNoticeRef = useRef<UndoNoticeState>(null)
+  const undoTimerRef = useRef<number | null>(null)
   const shoppingStateRef = useRef<ShoppingStateSnapshot>(EMPTY_SHOPPING_STATE)
   const checkoutReviewRef = useRef<HTMLElement | null>(null)
   const completionHeadingRef = useRef<HTMLHeadingElement | null>(null)
@@ -149,6 +179,12 @@ export function ShoppingListPage({
   useEffect(() => {
     shareGenerationRef.current += 1
     activeShareRef.current = false
+    if (undoTimerRef.current !== null) {
+      window.clearTimeout(undoTimerRef.current)
+      undoTimerRef.current = null
+    }
+    undoNoticeRef.current = null
+    setUndoNotice(null)
 
     try {
       const decoded =
@@ -181,11 +217,8 @@ export function ShoppingListPage({
       setPendingConfirmItemId(null)
       setIsCheckoutReviewOpen(false)
       setIsCompletionView(false)
-      undoStackRef.current = []
-      setUndoStack([])
       setIssueDraft(null)
-      setSharingItemId(null)
-      setIsSharingBulk(false)
+      setIsSharingConsultation(false)
       setIsSharingResult(false)
       setShareNotice(null)
     } catch (error) {
@@ -194,6 +227,15 @@ export function ShoppingListPage({
       onError('共有URLを開けませんでした', message)
     }
   }, [encodedPayload, onError, payloadFormat])
+
+  useEffect(
+    () => () => {
+      if (undoTimerRef.current !== null) {
+        window.clearTimeout(undoTimerRef.current)
+      }
+    },
+    [],
+  )
 
   useEffect(() => {
     shoppingStateRef.current = shoppingState
@@ -272,7 +314,7 @@ export function ShoppingListPage({
     completionState.pendingCount +
     completionState.consultingCount +
     completionState.needsVerificationCount
-  const isAnyShareActive = Boolean(sharingItemId) || isSharingBulk || isSharingResult
+  const isAnyShareActive = isSharingConsultation || isSharingResult
 
   const groupedVisibleItems = useMemo(() => {
     const groups = new Map<string, { name: string; items: ShoppingRequestItemPayload[] }>()
@@ -324,9 +366,30 @@ export function ShoppingListPage({
     const nextState = applyShoppingStateChange(currentState, change)
     shoppingStateRef.current = nextState
     setShoppingState(nextState)
-    const nextUndoStack = [...undoStackRef.current, change]
-    undoStackRef.current = nextUndoStack
-    setUndoStack(nextUndoStack)
+    setShareNotice(null)
+    if (undoTimerRef.current !== null) {
+      window.clearTimeout(undoTimerRef.current)
+    }
+    const changedItem = payload?.items.find((item) => item.id === itemId)
+    if (changedItem) {
+      const nextUndoNotice = {
+        change,
+        message: getUndoNoticeMessage(changedItem, change),
+        previousCartOrder: [...currentState.cartOrder],
+      }
+      undoNoticeRef.current = nextUndoNotice
+      setUndoNotice(nextUndoNotice)
+      const timerId = window.setTimeout(() => {
+        if (undoNoticeRef.current === nextUndoNotice) {
+          undoNoticeRef.current = null
+          setUndoNotice(null)
+        }
+        if (undoTimerRef.current === timerId) {
+          undoTimerRef.current = null
+        }
+      }, UNDO_NOTICE_DURATION_MS)
+      undoTimerRef.current = timerId
+    }
     removePendingConfirm(itemId)
     setIssueDraft((current) => (current?.itemId === itemId ? null : current))
     return true
@@ -352,71 +415,64 @@ export function ShoppingListPage({
   }
 
   const handleUndo = () => {
-    const lastChange = undoStackRef.current[undoStackRef.current.length - 1]
-    if (!lastChange) {
+    const currentUndoNotice = undoNoticeRef.current
+    if (!currentUndoNotice) {
       return
     }
+    const { change: lastChange, previousCartOrder } = currentUndoNotice
 
-    const nextState = applyShoppingStateChange(
+    if (undoTimerRef.current !== null) {
+      window.clearTimeout(undoTimerRef.current)
+      undoTimerRef.current = null
+    }
+
+    const revertedState = applyShoppingStateChange(
       shoppingStateRef.current,
       lastChange,
       'undo',
     )
+    const nextState = {
+      ...revertedState,
+      cartOrder: [...previousCartOrder],
+    }
     shoppingStateRef.current = nextState
     setShoppingState(nextState)
     removePendingConfirm(lastChange.itemId)
     setIssueDraft((current) => (current?.itemId === lastChange.itemId ? null : current))
-    const nextUndoStack = undoStackRef.current.slice(0, -1)
-    undoStackRef.current = nextUndoStack
-    setUndoStack(nextUndoStack)
+    undoNoticeRef.current = null
+    setUndoNotice(null)
   }
 
-  const handleNewConsultation = async (item: ShoppingRequestItemPayload) => {
-    if (activeShareRef.current || issueDraft?.itemId !== item.id || !issueDraft.reason) {
+  const handleAddToConsultation = (item: ShoppingRequestItemPayload) => {
+    if (issueDraft?.itemId !== item.id || !issueDraft.reason) {
       return
     }
 
     const issue = createIssue(issueDraft.reason, issueDraft.note)
-    const shareGeneration = shareGenerationRef.current
-    activeShareRef.current = true
-    setSharingItemId(item.id)
-    try {
-      const result = await shareText({
-        title: 'おつかい相談',
-        text: buildIndividualConsultationMessage(item, issue),
-      })
-      if (shareGeneration !== shareGenerationRef.current) {
-        return
-      }
-
-      setShareNotice(getShareNotice(result, 'consultation'))
-
-      if (
-        (result === 'shared' || result === 'copied') &&
-        getItemStatus(shoppingStateRef.current.checkedState, item.id) === 'pending'
-      ) {
-        commitShoppingChange(item.id, 'consulting', issue)
-      }
-    } finally {
-      if (shareGeneration === shareGenerationRef.current) {
-        activeShareRef.current = false
-        setSharingItemId(null)
-      }
-    }
+    commitShoppingChange(item.id, 'consulting', issue)
   }
 
-  const handleReshareConsultation = async (item: ShoppingRequestItemPayload) => {
-    if (activeShareRef.current) {
+  const handleShareConsultation = async () => {
+    if (activeShareRef.current || consultingItems.length === 0) {
       return
     }
 
     const shareGeneration = shareGenerationRef.current
     activeShareRef.current = true
-    setSharingItemId(item.id)
+    setIsSharingConsultation(true)
     try {
+      const consultationText =
+        consultingItems.length === 1
+          ? buildIndividualConsultationMessage(
+              consultingItems[0],
+              itemIssues[consultingItems[0].id],
+            )
+          : buildBulkConsultationMessage(
+              consultingItems.map((item) => ({ item, issue: itemIssues[item.id] })),
+            )
       const result = await shareText({
         title: 'おつかい相談',
-        text: buildIndividualConsultationMessage(item, itemIssues[item.id]),
+        text: consultationText,
       })
       if (shareGeneration !== shareGenerationRef.current) {
         return
@@ -426,35 +482,7 @@ export function ShoppingListPage({
     } finally {
       if (shareGeneration === shareGenerationRef.current) {
         activeShareRef.current = false
-        setSharingItemId(null)
-      }
-    }
-  }
-
-  const handleBulkConsultation = async () => {
-    if (activeShareRef.current) {
-      return
-    }
-
-    const shareGeneration = shareGenerationRef.current
-    activeShareRef.current = true
-    setIsSharingBulk(true)
-    try {
-      const result = await shareText({
-        title: 'おつかい相談',
-        text: buildBulkConsultationMessage(
-          consultingItems.map((item) => ({ item, issue: itemIssues[item.id] })),
-        ),
-      })
-      if (shareGeneration !== shareGenerationRef.current) {
-        return
-      }
-
-      setShareNotice(getShareNotice(result, 'consultation'))
-    } finally {
-      if (shareGeneration === shareGenerationRef.current) {
-        activeShareRef.current = false
-        setIsSharingBulk(false)
+        setIsSharingConsultation(false)
       }
     }
   }
@@ -551,7 +579,7 @@ export function ShoppingListPage({
         </button>
         <div>
           <p className="eyebrow">お使いリスト</p>
-          <h1>{payload.title}</h1>
+          <h1>{FIXED_REQUEST_TITLE}</h1>
         </div>
       </section>
 
@@ -583,19 +611,25 @@ export function ShoppingListPage({
         </p>
       ) : null}
 
-      {consultingItems.length > 1 ? (
+      {undoNotice ? (
+        <ShoppingUndoNotice
+          message={undoNotice.message}
+          disabled={isAnyShareActive}
+          onUndo={handleUndo}
+        />
+      ) : null}
+
+      {consultingItems.length > 0 ? (
         <ConsultationSummary
           consultingItemCount={consultingItems.length}
-          isSharingBulk={isSharingBulk}
+          isSharingConsultation={isSharingConsultation}
           isAnyShareActive={isAnyShareActive}
-          onBulkConsultation={handleBulkConsultation}
+          onShareConsultation={handleShareConsultation}
         />
       ) : null}
 
       <ShoppingToolbar
         filterMode={filterMode}
-        undoDisabled={!undoStack.length || isAnyShareActive}
-        onUndo={handleUndo}
         onToggleFilter={() =>
           setFilterMode((current) => (current === 'remaining' ? 'all' : 'remaining'))
         }
@@ -618,7 +652,6 @@ export function ShoppingListPage({
                   isIssueFormOpen={Boolean(currentIssueDraft)}
                   selectedReason={currentIssueDraft?.reason}
                   issueNote={currentIssueDraft?.note ?? ''}
-                  isSharing={sharingItemId === item.id}
                   isInteractionLocked={isAnyShareActive}
                   onStartConfirm={() => handleStartConfirm(item.id)}
                   onConfirmInCart={() => commitShoppingChange(item.id, 'inCart')}
@@ -636,7 +669,7 @@ export function ShoppingListPage({
                       current?.itemId === item.id ? { ...current, note } : current,
                     )
                   }
-                  onShareConsultation={() => handleNewConsultation(item)}
+                  onAddToConsultation={() => handleAddToConsultation(item)}
                   onMarkNotBuying={() => {
                     if (status === 'consulting') {
                       commitShoppingChange(item.id, 'notBuying', itemIssues[item.id])
@@ -649,7 +682,6 @@ export function ShoppingListPage({
                     }
                   }}
                   onCancelIssueForm={() => setIssueDraft(null)}
-                  onReshareConsultation={() => handleReshareConsultation(item)}
                   onReset={() => commitShoppingChange(item.id, 'pending')}
                 />
               )
@@ -675,15 +707,6 @@ export function ShoppingListPage({
           onFinishShopping={handleFinishShopping}
         />
       ) : null}
-
-      <section className="info-card muted-card">
-        <p>商品状態はこの端末の localStorage に保存されます。</p>
-        <div className="inline-actions">
-          <button type="button" className="ghost-button" onClick={onOpenCreate}>
-            新しい依頼を作る
-          </button>
-        </div>
-      </section>
     </main>
   )
 }
