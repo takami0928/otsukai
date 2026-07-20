@@ -3,12 +3,12 @@ import { products } from '../data/products'
 import { categories } from '../data/categories'
 import { FIXED_REQUEST_TITLE } from '../constants/request'
 import type { CreateDraftState } from '../types/shopping'
-import { ProductCard } from '../components/ProductCard'
-import { BottomBar } from '../components/BottomBar'
-import {
-  ImeAwareTextInput,
-  type CommitTextResult,
-} from '../components/ImeAwareTextInput'
+import type { CommitTextResult } from '../components/ImeAwareTextInput'
+import { CreateRequestBottomActions } from '../components/CreateRequestBottomActions'
+import { CustomItemsSection } from '../components/CustomItemsSection'
+import { ProductSelectionSections } from '../components/ProductSelectionSections'
+import { RequestLimitNotice } from '../components/RequestLimitNotice'
+import { RequestReviewView } from '../components/RequestReviewView'
 import {
   loadCreateDraft,
   loadLastSharedUrl,
@@ -46,16 +46,13 @@ import {
   type RequestDraftData,
 } from '../utils/requestBudget'
 import {
-  MAX_CUSTOM_ITEMS,
   MAX_CUSTOM_ITEM_NAME_CHARS,
   MAX_CUSTOM_ITEM_UNIT_CHARS,
   MAX_ITEM_CONDITION_CHARS,
   MAX_ITEM_QUANTITY,
   MAX_SHARE_URL_LENGTH,
-  MAX_TOTAL_CONDITION_CHARS,
 } from '../constants/requestLimits'
 import {
-  countUserCharacters,
   splitUserCharacters,
   truncateUserCharacters,
 } from '../utils/textLength'
@@ -95,7 +92,6 @@ type InitialPageState = {
   wasNormalized: boolean
 }
 
-const OTHER_CATEGORY_NAME = 'その他'
 const CREATE_REQUEST_RETURN_STATE_KEY = 'otsukaiCreateRequestReturnState'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -752,392 +748,94 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       </section>
 
       {showRequestLimitNotice ? (
-        <section
-          className={`info-card request-limit-notice ${hasRequestLimitError ? 'is-error' : 'is-warning'}`}
-          role="status"
-          aria-live="polite"
-        >
-          {isConditionLimitWarning ? (
-            <div>
-              <strong>条件の合計が上限に近づいています。</strong>
-              <p>
-                現在 {totalConditionCharacters.toLocaleString('ja-JP')} /{' '}
-                {MAX_TOTAL_CONDITION_CHARS.toLocaleString('ja-JP')}文字です。
-              </p>
-            </div>
-          ) : null}
-          {isShareUrlLimitWarning && currentBudget ? (
-            <div>
-              <strong>共有データ量が上限に近づいています。</strong>
-              <p>
-                これ以上内容を追加すると、LINEで共有できない可能性があります。
-              </p>
-              <p>
-                現在 {currentBudget.urlLength.toLocaleString('ja-JP')} /{' '}
-                {MAX_SHARE_URL_LENGTH.toLocaleString('ja-JP')}文字です。
-              </p>
-            </div>
-          ) : null}
-          {!currentBudget ? (
-            <p>
-              共有URLを生成できませんでした。入力内容を短くしてもう一度お試しください。
-            </p>
-          ) : null}
-          {isShareUrlOverLimit ? (
-            <p className="limit-message">
-              LINEで共有できるデータ量を超えています。条件や自由追加商品を短くしてください。
-            </p>
-          ) : null}
-          {limitMessage ? <p className="limit-message">{limitMessage}</p> : null}
-        </section>
+        <RequestLimitNotice
+          hasError={hasRequestLimitError}
+          isConditionWarning={isConditionLimitWarning}
+          isShareUrlOverLimit={isShareUrlOverLimit}
+          isShareUrlWarning={isShareUrlLimitWarning}
+          limitMessage={limitMessage}
+          shareUrlLength={currentBudget?.urlLength}
+          totalConditionCharacters={totalConditionCharacters}
+        />
       ) : null}
 
-      <section className="info-card custom-items-card">
-        <div className="section-heading">
-          <h2>追加したもの</h2>
-          <span>
-            {customItems.length} / {MAX_CUSTOM_ITEMS}件
-          </span>
-        </div>
-        {customItems.length > 0 ? (
-          <ul className="custom-items-list">
-            {customItems.map((item, index) => (
-              <li key={item.id}>
-                <span>
-                  <strong>{item.name}</strong> {item.quantity}
-                  {item.unit}
-                  {item.memo ? <small>条件: {item.memo}</small> : null}
-                </span>
-                <div className="custom-item-actions">
-                  <button
-                    type="button"
-                    className="ghost-button compact-button"
-                    onClick={() => openCustomForm(index)}
-                    aria-label={`${item.name}を編集`}
-                  >
-                    編集
-                  </button>
-                  <button
-                    type="button"
-                    className="custom-delete-button"
-                    onClick={() => handleDeleteCustomItem(index)}
-                    aria-label={`${item.name}を削除`}
-                  >
-                    削除
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="helper-text">
-            リストにない商品を、今回の依頼だけに追加できます。
-          </p>
-        )}
+      <CustomItemsSection
+        customItems={customItems}
+        customMemo={customMemo}
+        customName={customName}
+        customQuantity={customQuantity}
+        customUnit={customUnit}
+        editingCustomIndex={editingCustomIndex}
+        isCustomDetailsOpen={isCustomDetailsOpen}
+        isCustomFormOpen={isCustomFormOpen}
+        onCancel={closeCustomForm}
+        onDelete={handleDeleteCustomItem}
+        onMemoCommit={(value) =>
+          applyPendingTextChange(
+            'memo',
+            value,
+            MAX_ITEM_CONDITION_CHARS,
+            'item-condition-limit',
+          )
+        }
+        onNameCommit={(value) =>
+          applyPendingTextChange(
+            'name',
+            value,
+            MAX_CUSTOM_ITEM_NAME_CHARS,
+            'custom-name-limit',
+          )
+        }
+        onOpenForm={openCustomForm}
+        onQuantityChange={handleCustomQuantityChange}
+        onSave={handleSaveCustomItem}
+        onToggleDetails={() =>
+          setIsCustomDetailsOpen((current) => !current)
+        }
+        onUnitCommit={(value) =>
+          applyPendingTextChange(
+            'unit',
+            value,
+            MAX_CUSTOM_ITEM_UNIT_CHARS,
+            'custom-unit-limit',
+          )
+        }
+      />
 
-        {isCustomFormOpen ? (
-          <div className="custom-item-form">
-            <strong>{editingCustomIndex === null ? '商品を追加' : '商品を編集'}</strong>
-            <label className="stack-field">
-              <span>商品名</span>
-              <ImeAwareTextInput
-                value={customName}
-                aria-describedby="custom-name-count"
-                onCommit={(value) =>
-                  applyPendingTextChange(
-                    'name',
-                    value,
-                    MAX_CUSTOM_ITEM_NAME_CHARS,
-                    'custom-name-limit',
-                  )
-                }
-                placeholder="例: 洗濯ネット"
-              />
-              <span id="custom-name-count" className="character-count">
-                {countUserCharacters(customName)} / {MAX_CUSTOM_ITEM_NAME_CHARS}
-              </span>
-            </label>
-            {countUserCharacters(customName) >= MAX_CUSTOM_ITEM_NAME_CHARS ? (
-              <p className="limit-inline-message">自由追加の商品名は30文字までです。</p>
-            ) : null}
-            <div className="custom-item-quantity-field">
-              <div className="stack-field">
-                <span>数量</span>
-                <div
-                  className="quantity-stepper"
-                  role="group"
-                  aria-label={`${customName.trim() || '追加する商品'}の数量`}
-                >
-                  <button
-                    type="button"
-                    className="step-button"
-                    onClick={() =>
-                      handleCustomQuantityChange(customQuantity - 1)
-                    }
-                    disabled={customQuantity <= 1}
-                    aria-label={`${customName.trim() || '追加する商品'}の数量を1減らす（現在${customQuantity}）`}
-                  >
-                    −
-                  </button>
-                  <input
-                    className="quantity-number-input"
-                    type="number"
-                    min={1}
-                    max={MAX_ITEM_QUANTITY}
-                    step={1}
-                    value={customQuantity}
-                    onChange={(event) =>
-                      handleCustomQuantityChange(event.target.value)
-                    }
-                    aria-label={`${customName.trim() || '追加する商品'}の数量（1から20）`}
-                  />
-                  <button
-                    type="button"
-                    className="step-button"
-                    onClick={() =>
-                      handleCustomQuantityChange(customQuantity + 1)
-                    }
-                    disabled={customQuantity >= MAX_ITEM_QUANTITY}
-                    aria-label={`${customName.trim() || '追加する商品'}の数量を1増やす（現在${customQuantity}）`}
-                  >
-                    ＋
-                  </button>
-                </div>
-                {customQuantity >= MAX_ITEM_QUANTITY ? (
-                  <span className="limit-inline-message">
-                    数量は20個までです。
-                  </span>
-                ) : null}
-              </div>
-            </div>
-            <button
-              type="button"
-              className="ghost-button custom-details-toggle"
-              aria-expanded={isCustomDetailsOpen}
-              aria-controls="custom-item-details"
-              onClick={() => setIsCustomDetailsOpen((current) => !current)}
-            >
-              {isCustomDetailsOpen ? '詳細設定を閉じる' : '詳細設定'}
-            </button>
-            {isCustomDetailsOpen ? (
-              <div id="custom-item-details" className="custom-item-details">
-                <label className="stack-field">
-                  <span>単位</span>
-                  <ImeAwareTextInput
-                    value={customUnit}
-                    aria-describedby="custom-unit-count"
-                    onCommit={(value) =>
-                      applyPendingTextChange(
-                        'unit',
-                        value,
-                        MAX_CUSTOM_ITEM_UNIT_CHARS,
-                        'custom-unit-limit',
-                      )
-                    }
-                    placeholder="個"
-                  />
-                  <span id="custom-unit-count" className="character-count">
-                    {countUserCharacters(customUnit)} / {MAX_CUSTOM_ITEM_UNIT_CHARS}
-                  </span>
-                  {countUserCharacters(customUnit) >= MAX_CUSTOM_ITEM_UNIT_CHARS ? (
-                    <span className="limit-inline-message">単位は10文字までです。</span>
-                  ) : null}
-                </label>
-              </div>
-            ) : null}
-            <label className="stack-field">
-              <span>条件</span>
-              <ImeAwareTextInput
-                aria-label={
-                  customName.trim()
-                    ? `${customName.trim()}の条件`
-                    : '追加する商品の条件'
-                }
-                aria-describedby="custom-condition-count"
-                value={customMemo}
-                onCommit={(value) =>
-                  applyPendingTextChange(
-                    'memo',
-                    value,
-                    MAX_ITEM_CONDITION_CHARS,
-                    'item-condition-limit',
-                  )
-                }
-                placeholder="例：安い方でOK、○○味、500g以上"
-              />
-              <span id="custom-condition-count" className="character-count">
-                {countUserCharacters(customMemo)} / {MAX_ITEM_CONDITION_CHARS}
-              </span>
-            </label>
-            {countUserCharacters(customMemo) >=
-            MAX_ITEM_CONDITION_CHARS ? (
-              <p className="limit-inline-message">条件は30文字までです。</p>
-            ) : null}
-            <div className="inline-actions">
-              <button
-                type="button"
-                className="primary-button"
-                onClick={handleSaveCustomItem}
-                disabled={!customName.trim()}
-              >
-                {editingCustomIndex === null ? '追加' : '変更を保存'}
-              </button>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={closeCustomForm}
-              >
-                キャンセル
-              </button>
-            </div>
-          </div>
-        ) : customItems.length >= MAX_CUSTOM_ITEMS ? (
-          <p className="limit-inline-message">自由追加商品は10件までです。</p>
-        ) : (
-          <button
-            type="button"
-            className="secondary-button custom-add-button"
-            onClick={() => openCustomForm()}
-          >
-            ＋ リストにないものを追加
-          </button>
-        )}
-      </section>
+      <ProductSelectionSections
+        draft={draft}
+        expandedProductIds={expandedProductIds}
+        groups={groupedProducts}
+        onConditionCommit={handleConditionCommit}
+        onDecrease={handleDecrease}
+        onIncrease={handleIncrease}
+        onToggleDetails={(productId) =>
+          setExpandedProductIds((current) =>
+            toggleExpandedProductId(current, productId),
+          )
+        }
+      />
 
-      {groupedProducts.map(({ category, items }) => (
-        <section key={category.id} className="category-block">
-          <div className="section-heading">
-            <h2>{category.name}</h2>
-            <span>{items.length}商品</span>
-          </div>
-          <div className="product-list">
-            {items.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                draft={draft[product.id]}
-                isExpanded={expandedProductIds.has(product.id)}
-                onIncrease={() => handleIncrease(product.id)}
-                onDecrease={() => handleDecrease(product.id)}
-                onToggleDetails={() =>
-                  setExpandedProductIds((current) =>
-                    toggleExpandedProductId(current, product.id),
-                  )
-                }
-                onMemoCommit={(value) =>
-                  handleConditionCommit(product.id, value)
-                }
-              />
-            ))}
-          </div>
-        </section>
-      ))}
-
-      <BottomBar>
-        <div>
-          <strong>{selectedCount}件選択中</strong>
-          <p>数量が1以上の商品だけ確認画面に表示します</p>
-        </div>
-        <div className="inline-actions bottom-bar-actions">
-          <button
-            type="button"
-            className="ghost-button danger-button"
-            onClick={handleReset}
-          >
-            入力内容を消去
-          </button>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() => setMode('review')}
-            disabled={!selectedCount}
-          >
-            確認へ
-          </button>
-        </div>
-      </BottomBar>
+      <CreateRequestBottomActions
+        selectedCount={selectedCount}
+        onReset={handleReset}
+        onReview={() => setMode('review')}
+      />
     </>
   )
 
   const renderReview = () => (
-    <>
-      <section className="top-bar">
-        <div>
-          <p className="eyebrow">依頼作成</p>
-          <h1>依頼内容の確認</h1>
-        </div>
-      </section>
-
-      <section className="info-card">
-        <p className="lead">{selectedCount}件の商品を選択しています。</p>
-      </section>
-
-      {groupedSelectedProducts.map(({ category, items }) => (
-        <section key={category.id} className="info-card review-category">
-          <h2>{category.name}</h2>
-          <ul className="review-list">
-            {items.map((product) => {
-              const item = draft[product.id]
-              return (
-                <li key={product.id}>
-                  <strong>{product.name}</strong> {item.quantity}
-                  {product.unit}
-                  {item.memo.trim() ? (
-                    <p className="review-memo">条件: {item.memo.trim()}</p>
-                  ) : null}
-                </li>
-              )
-            })}
-          </ul>
-        </section>
-      ))}
-
-      {customItems.length > 0 ? (
-        <section className="info-card review-category">
-          <h2>{OTHER_CATEGORY_NAME}</h2>
-          <ul className="review-list">
-            {customItems.map((item) => (
-              <li key={item.id}>
-                <strong>{item.name}</strong> {item.quantity}
-                {item.unit}
-                {item.memo ? (
-                  <p className="review-memo">条件: {item.memo}</p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      <div className="review-share-actions">
-        <button
-          type="button"
-          className="primary-button review-share-button"
-          onClick={() => void handleShareRequest()}
-          disabled={isSharingRequest}
-        >
-          {isSharingRequest ? '共有画面を開いています…' : 'LINEで送る'}
-        </button>
-        <p className="helper-text">共有画面でLINEを選択してください。</p>
-        {shareMessage ? (
-          <p
-            className={`copy-message ${shareStatus}`}
-            role="status"
-            aria-live="polite"
-          >
-            {shareMessage}
-          </p>
-        ) : null}
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={handleReturnToEdit}
-          disabled={isSharingRequest}
-        >
-          修正する
-        </button>
-      </div>
-    </>
+    <RequestReviewView
+      customItems={customItems}
+      draft={draft}
+      groupedSelectedProducts={groupedSelectedProducts}
+      isSharingRequest={isSharingRequest}
+      onReturnToEdit={handleReturnToEdit}
+      onShareRequest={handleShareRequest}
+      selectedCount={selectedCount}
+      shareMessage={shareMessage}
+      shareStatus={shareStatus}
+    />
   )
 
   return (
