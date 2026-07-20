@@ -54,7 +54,7 @@
 | 2 | history state・通知変換の純粋モジュール化 | レビュー中 | #14 | 履歴入出力と通知変換を2つのutilsへ抽出 |
 | 3 | 自由追加商品エディタ状態の局所化 | レビュー中 | #15 | 7つの連動UI stateを専用hookへ局所化 |
 | 4 | 一時Undoライフサイクルの局所化 | レビュー中 | #16 | 最新候補と5秒timerを専用hookへ局所化 |
-| 5 | ShoppingListPage派生データのselector化 | 未着手 | - | - |
+| 5 | ShoppingListPage派生データのselector化 | 実装完了 | - | 売り場順・分類・filter・完了集計を純粋selector化 |
 | 6 | 共有実行制御の監査と限定的整理 | 未着手 | - | - |
 | 7 | 全体最終検証・ドキュメント確定 | 未着手 | - | - |
 
@@ -305,6 +305,19 @@ Reactページ内にあるブラウザ履歴入出力と、理由・共有結果
 - `ShoppingListPage`のuseMemoと分類コードが減る
 - 売り場順、フィルター、会計前表示、完了件数が変わらない
 - 公開環境で全フィルターと完了フローを確認
+
+### 実施結果
+
+- branch: `refactor/phase-5-shopping-view-selectors`
+- baseline main: `4d1e40ea1aea1648a4ac022d275c5334737054b9`
+- `shoppingPageView`へsnapshot順、売り場順、remaining、かご、相談中、今回は買わない、visible、カテゴリgroup、完了状態、未解決件数を純粋selectorとして抽出した。
+- `getCartItemsForCheckout`、`getItemStatus`、`getShoppingCompletionState`、`compareItemsByStoreOrder`を再利用し、domainルールは重複実装していない。
+- 親ページは合成selectorを1つの`useMemo`で呼び、完了確定直前の最新state再検証はイベント処理として親に残した。
+- pure testで全分類、売り場順、remaining/all、会計前の逆順、カテゴリgroup、完了件数、入力配列の不変性を検証した。
+- 検証: 26 test files / 233 tests、build成功、`git diff --check`成功。
+- 表示順、filter、会計前表示、完了条件、文言、CSS、DOM、ARIA、URL、storage、共有意味、依存関係は変更していない。
+- Pagesと公開スモーク結果はマージ後にPhase 7の記録で補完する。
+- 意図的に残した負債: なし。
 
 ---
 

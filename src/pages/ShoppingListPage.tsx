@@ -13,7 +13,6 @@ import { decodeCompactRequest } from '../utils/compactRequest'
 import {
   applyShoppingStateChange,
   createShoppingStateChange,
-  getCartItemsForCheckout,
   getItemStatus,
   getShoppingCompletionState,
   isCartStatus,
@@ -40,8 +39,11 @@ import {
   type NativeShareResult,
 } from '../utils/shareText'
 import { addLineExternalBrowserHint } from '../utils/lineDeliveryUrl'
-import { compareItemsByStoreOrder } from '../utils/storeOrder'
 import { useShoppingUndoNotice } from '../hooks/useShoppingUndoNotice'
+import {
+  selectShoppingPageView,
+  type ShoppingFilterMode,
+} from '../utils/shoppingPageView'
 import type {
   CheckedItemStatus,
   ItemIssue,
@@ -58,7 +60,6 @@ type ShoppingListPageProps = {
   onError: (title: string, description: string) => void
 }
 
-type FilterMode = 'remaining' | 'all'
 type IssueDraft = {
   itemId: string
   reason?: UnavailableReason
@@ -146,7 +147,7 @@ export function ShoppingListPage({
 }: ShoppingListPageProps) {
   const [payload, setPayload] = useState<ShoppingRequestPayload | null>(null)
   const [shoppingState, setShoppingState] = useState<ShoppingStateSnapshot>(EMPTY_SHOPPING_STATE)
-  const [filterMode, setFilterMode] = useState<FilterMode>('all')
+  const [filterMode, setFilterMode] = useState<ShoppingFilterMode>('all')
   const [pendingConfirmItemId, setPendingConfirmItemId] = useState<string | null>(null)
   const [isCheckoutReviewOpen, setIsCheckoutReviewOpen] = useState(false)
   const [isCompletionView, setIsCompletionView] = useState(false)
@@ -248,80 +249,25 @@ export function ShoppingListPage({
     saveCartOrder(payload.requestId, cartOrder)
   }, [cartOrder, payload])
 
-  const sortedItems = useMemo(() => {
-    if (!payload) {
-      return []
-    }
-
-    return [...payload.items].sort((a, b) => a.sortOrderSnapshot - b.sortOrderSnapshot)
-  }, [payload])
-
-  const storeOrderedItems = useMemo(() => {
-    if (!payload) {
-      return []
-    }
-
-    return [...payload.items].sort(compareItemsByStoreOrder)
-  }, [payload])
-
-  const remainingItems = useMemo(
+  const {
+    sortedItems,
+    cartItems,
+    consultingItems,
+    notBuyingItems,
+    groupedVisibleItems,
+    completionState,
+    unresolvedCount,
+  } = useMemo(
     () =>
-      storeOrderedItems.filter((item) => {
-        const status = getItemStatus(checkedState, item.id)
-        return status === 'pending' || status === 'consulting'
+      selectShoppingPageView({
+        items: payload?.items ?? [],
+        checkedState,
+        cartOrder,
+        filterMode,
       }),
-    [checkedState, storeOrderedItems],
+    [cartOrder, checkedState, filterMode, payload],
   )
-
-  const cartItems = useMemo(
-    () => getCartItemsForCheckout(sortedItems, checkedState, cartOrder),
-    [cartOrder, checkedState, sortedItems],
-  )
-
-  const consultingItems = useMemo(
-    () => sortedItems.filter((item) => getItemStatus(checkedState, item.id) === 'consulting'),
-    [checkedState, sortedItems],
-  )
-
-  const notBuyingItems = useMemo(
-    () => sortedItems.filter((item) => getItemStatus(checkedState, item.id) === 'notBuying'),
-    [checkedState, sortedItems],
-  )
-
-  const visibleItems = filterMode === 'all' ? storeOrderedItems : remainingItems
-  const completionState = useMemo(
-    () => getShoppingCompletionState(sortedItems, checkedState),
-    [checkedState, sortedItems],
-  )
-  const unresolvedCount =
-    completionState.pendingCount +
-    completionState.consultingCount +
-    completionState.needsVerificationCount
   const isAnyShareActive = isSharingConsultation || isSharingResult
-
-  const groupedVisibleItems = useMemo(() => {
-    const groups = new Map<string, { name: string; items: ShoppingRequestItemPayload[] }>()
-
-    for (const item of visibleItems) {
-      const key = item.categoryIdSnapshot
-      const existing = groups.get(key)
-
-      if (existing) {
-        existing.items.push(item)
-      } else {
-        groups.set(key, {
-          name: item.categoryNameSnapshot,
-          items: [item],
-        })
-      }
-    }
-
-    return [...groups.entries()].map(([id, value]) => ({
-      id,
-      name: value.name,
-      items: value.items,
-    }))
-  }, [visibleItems])
 
   const removePendingConfirm = (itemId: string) => {
     setPendingConfirmItemId((current) => (current === itemId ? null : current))
