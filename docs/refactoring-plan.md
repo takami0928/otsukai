@@ -52,7 +52,7 @@
 | 0 | 実行ルールと計画書の導入 | 完了 | #12 | AGENTS.md、計画書、ランブックを導入 |
 | 1 | CreateRequestPageの表示責務分割 | 完了 | #13 | 表示を5つのpresentational componentへ抽出 |
 | 2 | history state・通知変換の純粋モジュール化 | レビュー中 | #14 | 履歴入出力と通知変換を2つのutilsへ抽出 |
-| 3 | 自由追加商品エディタ状態の局所化 | 未着手 | - | - |
+| 3 | 自由追加商品エディタ状態の局所化 | レビュー中 | #15 | 7つの連動UI stateを専用hookへ局所化 |
 | 4 | 一時Undoライフサイクルの局所化 | 未着手 | - | - |
 | 5 | ShoppingListPage派生データのselector化 | 未着手 | - | - |
 | 6 | 共有実行制御の監査と限定的整理 | 未着手 | - | - |
@@ -208,6 +208,20 @@ Reactページ内にあるブラウザ履歴入出力と、理由・共有結果
 - 親ページの自由追加商品用stateが明確に削減される
 - hook単体テストまたは同等のcharacterization testがある
 - 自由追加商品の新規追加、編集、削除、単位、条件、共有URL復元を公開環境で確認
+
+### 実施結果
+
+- branch: `refactor/phase-3-custom-item-editor`
+- PR: #15
+- baseline main: `654cb2a51cc659085bd1c66028696e7a26dada47`
+- `useCustomItemEditor`へフォーム開閉、編集index、商品名、数量、単位、条件、詳細設定開閉を局所化した。
+- 新規初期化、既存値の読込、非既定単位の詳細表示、削除時index補正、保存・キャンセル・全消去で使うresetをhookのUI操作としてまとめた。
+- URL予算、文字数・数量制限、追加・更新・削除のdomain関数、ID生成、localStorage、payload生成は親ページに残した。
+- hook単体testと既存ページcharacterization testで追加・編集・単位・条件・URL格納を検証した。
+- 検証: 24 test files / 225 tests、build成功、`git diff --check`成功。
+- 文言、CSS、DOM、ARIA、URL、storage、共有意味、依存関係は変更していない。
+- Pagesと公開スモーク結果はマージ後にPhase 7の記録で補完する。
+- 意図的に残した負債: なし。
 
 ---
 

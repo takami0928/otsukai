@@ -78,6 +78,7 @@ import {
   getShareResultMessage,
   type ShareMessageStatus,
 } from '../utils/requestNoticeMessages'
+import { useCustomItemEditor } from '../hooks/useCustomItemEditor'
 
 type CreateRequestPageProps = {
   onBackHome: () => void
@@ -143,13 +144,24 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
   const [customItems, setCustomItems] = useState<CustomItem[]>(
     initialPageState.customItems,
   )
-  const [isCustomFormOpen, setIsCustomFormOpen] = useState(false)
-  const [editingCustomIndex, setEditingCustomIndex] = useState<number | null>(null)
-  const [customName, setCustomName] = useState('')
-  const [customQuantity, setCustomQuantity] = useState(1)
-  const [customUnit, setCustomUnit] = useState('個')
-  const [customMemo, setCustomMemo] = useState('')
-  const [isCustomDetailsOpen, setIsCustomDetailsOpen] = useState(false)
+  const {
+    isOpen: isCustomFormOpen,
+    editingIndex: editingCustomIndex,
+    name: customName,
+    quantity: customQuantity,
+    unit: customUnit,
+    memo: customMemo,
+    isDetailsOpen: isCustomDetailsOpen,
+    setName: setCustomName,
+    setQuantity: setCustomQuantity,
+    setUnit: setCustomUnit,
+    setMemo: setCustomMemo,
+    openNew: openNewCustomForm,
+    openExisting: openExistingCustomForm,
+    handleItemDeleted: handleCustomItemDeleted,
+    toggleDetails: toggleCustomDetails,
+    reset: closeCustomForm,
+  } = useCustomItemEditor()
   const [requestKey, setRequestKey] = useState(createRequestKey)
   const [isSharingRequest, setIsSharingRequest] = useState(false)
   const shareLockRef = useRef(createRequestShareLock())
@@ -342,38 +354,17 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     }
   }
 
-  const closeCustomForm = () => {
-    setIsCustomFormOpen(false)
-    setEditingCustomIndex(null)
-    setCustomName('')
-    setCustomQuantity(1)
-    setCustomUnit('個')
-    setCustomMemo('')
-    setIsCustomDetailsOpen(false)
-  }
-
   const openCustomForm = (index?: number) => {
     if (typeof index === 'number') {
       const item = customItems[index]
       if (!item) {
         return
       }
-      setEditingCustomIndex(index)
-      setCustomName(item.name)
-      setCustomQuantity(item.quantity)
-      setCustomUnit(item.unit)
-      setCustomMemo(item.memo)
-      setIsCustomDetailsOpen(item.unit.trim() !== '個')
+      openExistingCustomForm(index, item)
     } else {
-      setEditingCustomIndex(null)
-      setCustomName('')
-      setCustomQuantity(1)
-      setCustomUnit('個')
-      setCustomMemo('')
-      setIsCustomDetailsOpen(false)
+      openNewCustomForm()
     }
     setLimitMessage('')
-    setIsCustomFormOpen(true)
   }
 
   const pendingCustomItem = (
@@ -507,11 +498,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
 
   const handleDeleteCustomItem = (index: number) => {
     applyChangeResult(applyCustomItemDelete(requestData, index))
-    if (editingCustomIndex === index) {
-      closeCustomForm()
-    } else if (editingCustomIndex !== null && editingCustomIndex > index) {
-      setEditingCustomIndex(editingCustomIndex - 1)
-    }
+    handleCustomItemDeleted(index)
   }
 
   const resolveRequestUrlForShare = () => {
@@ -677,9 +664,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
         onOpenForm={openCustomForm}
         onQuantityChange={handleCustomQuantityChange}
         onSave={handleSaveCustomItem}
-        onToggleDetails={() =>
-          setIsCustomDetailsOpen((current) => !current)
-        }
+        onToggleDetails={toggleCustomDetails}
         onUnitCommit={(value) =>
           applyPendingTextChange(
             'unit',
