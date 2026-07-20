@@ -51,12 +51,23 @@
 |---|---|---|---|---|
 | 0 | 実行ルールと計画書の導入 | 完了 | #12 | AGENTS.md、計画書、ランブックを導入 |
 | 1 | CreateRequestPageの表示責務分割 | 完了 | #13 | 表示を5つのpresentational componentへ抽出 |
-| 2 | history state・通知変換の純粋モジュール化 | レビュー中 | #14 | 履歴入出力と通知変換を2つのutilsへ抽出 |
-| 3 | 自由追加商品エディタ状態の局所化 | レビュー中 | #15 | 7つの連動UI stateを専用hookへ局所化 |
-| 4 | 一時Undoライフサイクルの局所化 | レビュー中 | #16 | 最新候補と5秒timerを専用hookへ局所化 |
-| 5 | ShoppingListPage派生データのselector化 | レビュー中 | #17 | 売り場順・分類・filter・完了集計を純粋selector化 |
-| 6 | 共有実行制御の監査と限定的整理 | レビュー中（非実装） | #18 | 判断B: 意味の異なる制御を意図的に維持 |
-| 7 | 全体最終検証・ドキュメント確定 | 未着手 | - | - |
+| 2 | history state・通知変換の純粋モジュール化 | 完了 | #14 | 履歴入出力と通知変換を2つのutilsへ抽出 |
+| 3 | 自由追加商品エディタ状態の局所化 | 完了 | #15 | 7つの連動UI stateを専用hookへ局所化 |
+| 4 | 一時Undoライフサイクルの局所化 | 完了 | #16 | 最新候補と5秒timerを専用hookへ局所化 |
+| 5 | ShoppingListPage派生データのselector化 | 完了 | #17 | 売り場順・分類・filter・完了集計を純粋selector化 |
+| 6 | 共有実行制御の監査と限定的整理 | 完了（非実装） | #18 | 判断B: 意味の異なる制御を意図的に維持 |
+| 7 | 全体最終検証・ドキュメント確定 | 完了 | - | 全体監査、全検証、公開スモークを完了 |
+
+### Phase 1〜6のdelivery記録
+
+| Phase | branch | 最終head SHA | CI run | Squash SHA | Pages run |
+|---|---|---|---|---|---|
+| 1 | `refactor/phase-1-create-request-view` | `b3c8a48e51e86e058df6a29c83400a6e53df2952` | `29722216675` success | `245c6c9e9b204f0dfd63ae28fc4eaa64c3013e96` | `29722281349` success |
+| 2 | `refactor/phase-2-create-request-utils` | `8f14c496c96c8088b0daa0ad0902bb8a464d89c9` | `29722766506` success | `654cb2a51cc659085bd1c66028696e7a26dada47` | `29722814611` success |
+| 3 | `refactor/phase-3-custom-item-editor` | `46df8dc4df037e6ea1470b277cb35b7dfce895f7` | `29723165073` success | `648605abdc3663aad43b7722e4c3e50079a6e452` | `29723249513` success |
+| 4 | `refactor/phase-4-shopping-undo` | `e347c68546b557df38fff3d33e4ee789d05586c6` | `29723691902` success | `4d1e40ea1aea1648a4ac022d275c5334737054b9` | `29723756940` success |
+| 5 | `refactor/phase-5-shopping-view-selectors` | `65a9d573e0489af0554d263822ab3615025da076` | `29724297544` success | `4f0354093d21493691f7a59efc24e4abb7611861` | `29724357494` success |
+| 6 | `refactor/phase-6-share-execution` | `c7e05a0a8249d062abd7c4c3b2cf77e3e1c46564` | `29724715526` success | `f028fbfe939704d45d3c348c3a580e7119e7e539` | `29724772524` success |
 
 ---
 
@@ -113,7 +124,7 @@
 - focused testとして警告表示のstatus/ARIA/文言と、確認画面のDOM・共有callback接続を追加した。
 - 検証: 21 test files / 198 tests、build成功、`git diff --check`成功。
 - CSS、文言、DOM順序、ARIA、URL、storage、共有意味は変更していない。
-- Pagesと公開スモーク結果はマージ後に後続Phaseの記録で補完する。
+- Pages run `29722281349`はsuccess。公開環境で固定商品・自由追加商品・確認画面・共有画面到達とconsole error 0件を確認した。
 - 意図的に残した負債: なし。
 
 ---
@@ -162,7 +173,7 @@ Reactページ内にあるブラウザ履歴入出力と、理由・共有結果
 - 不正値、部分値、壊れた自由追加商品、周辺history state保持、全通知変換のfocused testを追加した。
 - 検証: 23 test files / 221 tests、build成功、`git diff --check`成功。
 - URL、storage key/形式、共有意味、文言、CSS、DOM、ARIA、依存関係は変更していない。
-- Pagesと公開スモーク結果はマージ後にPhase 7の記録で補完する。
+- Pages run `29722814611`はsuccess。公開環境で共有後復帰、修正画面への戻り、入力保持とconsole error 0件を確認した。
 - 意図的に残した負債: なし。
 
 ---
@@ -220,7 +231,7 @@ Reactページ内にあるブラウザ履歴入出力と、理由・共有結果
 - hook単体testと既存ページcharacterization testで追加・編集・単位・条件・URL格納を検証した。
 - 検証: 24 test files / 225 tests、build成功、`git diff --check`成功。
 - 文言、CSS、DOM、ARIA、URL、storage、共有意味、依存関係は変更していない。
-- Pagesと公開スモーク結果はマージ後にPhase 7の記録で補完する。
+- Pages run `29723249513`はsuccess。公開環境で自由追加商品の追加・編集・削除、単位・条件、v2 URL復元とconsole error 0件を確認した。
 - 意図的に残した負債: なし。
 
 ---
@@ -266,7 +277,7 @@ Reactページ内にあるブラウザ履歴入出力と、理由・共有結果
 - 既存ページtestで二段階かご投入、理由・補足・かご順の復元、URL変更、Undoが新しいUndoを作らないことを維持した。
 - 検証: 25 test files / 230 tests、build成功、`git diff --check`成功。
 - 5秒仕様、文言、CSS、DOM、ARIA、URL、storage、共有意味、依存関係は変更していない。
-- Pagesと公開スモーク結果はマージ後にPhase 7の記録で補完する。
+- Pages run `29723756940`はsuccess。公開環境でかご投入、相談追加、今回は買わない、条件確認、即時Undo、5秒消去、再読込復元とconsole error 0件を確認した。
 - 意図的に残した負債: なし。
 
 ---
@@ -317,7 +328,7 @@ Reactページ内にあるブラウザ履歴入出力と、理由・共有結果
 - pure testで全分類、売り場順、remaining/all、会計前の逆順、カテゴリgroup、完了件数、入力配列の不変性を検証した。
 - 検証: 26 test files / 233 tests、build成功、`git diff --check`成功。
 - 表示順、filter、会計前表示、完了条件、文言、CSS、DOM、ARIA、URL、storage、共有意味、依存関係は変更していない。
-- Pagesと公開スモーク結果はマージ後にPhase 7の記録で補完する。
+- Pages run `29724357494`はsuccess。公開環境で売り場順、remaining/all、会計前チェック、完了件数、結果共有到達とconsole error 0件を確認した。
 - 意図的に残した負債: なし。
 
 ---
@@ -388,7 +399,7 @@ BもPhase完了とする。DRYのためだけにAを選ばない。
 - focused検証: 4 test files / 43 tests。
 - 全体検証: 26 test files / 233 tests、build成功、`git diff --check`成功。
 - URL、storage、共有文、共有結果の意味、busy、世代管理、文言、CSS、DOM、ARIA、依存関係は変更していない。
-- Pagesと公開スモーク結果はマージ後にPhase 7の記録で補完する。
+- Pages run `29724772524`はsuccess。公開環境で依頼共有、相談1件・複数件、結果共有のbusy・排他制御とconsole error 0件を確認した。
 - LINE実送信と物理端末のOS共有は未確認。
 - 意図的に残した負債: 意味の異なる上位共有制御の短い`try/finally`重複。上記再検討条件を満たすまで維持する。
 
@@ -433,6 +444,23 @@ BもPhase完了とする。DRYのためだけにAを選ばない。
 - 再読込後のlocalStorage復元
 - 320px / 360px / 390pxで重大な横スクロールなし
 - console error 0件
+
+### 実施結果
+
+- branch: `refactor/phase-7-final-validation`
+- baseline main: `f028fbfe939704d45d3c348c3a580e7119e7e539`
+- 第2次リファクタリング開始時main: `c337c3c6a2f7c4c87bec4f50e72edc8d0a5aa2ca`
+- TypeScriptの`strict`、`noUnusedLocals`、`noUnusedParameters`を含むbuildが成功し、未使用import・未使用ローカル・到達不能な分岐を追加していないことを確認した。
+- `utils`、`hooks`、`components`から`pages`へのimport、および`utils`、`hooks`から`components`へのimportは0件で、依存方向を維持した。
+- 開始時mainからの差分は計画対象の19ファイルだけで、`package.json`、`package-lock.json`、`.github`、CSS、商品・カテゴリマスターは変更していない。
+- 全体検証: 26 test files / 233 tests、build成功（79 modules）、`git diff --check`成功、`npm audit --omit=dev`は0 vulnerabilities。
+- 公開環境でホーム、About、固定商品、自由追加商品の追加・編集・削除、数量・単位・条件、確認画面、v2 URL生成・復元、共有画面到達、相談1件・複数件、二段階かご投入、即時Undoと5秒消去、remaining/all、会計前条件確認、今回は買わない、完了、結果共有、再読込後の進捗復元を確認した。
+- 320px、360px、390pxの依頼フォームと相談・Undo表示で、`scrollWidth`が`clientWidth`を超えず、各操作ボタンが画面幅内に収まることを確認した。
+- 公開サイトの重大なconsole errorは0件。
+- Phase 7ではsource code・test codeを変更せず、監査と本計画の確定だけを行った。
+- 追加機能、利用者向け仕様変更、依存更新、rebase、force pushは行っていない。
+- 物理Android、iPhone、iPad、LINE実送信、各OSの共有先選択後の動作は未確認。
+- 意図的に残した負債はPhase 6に記載した上位共有制御の短い`try/finally`重複だけで、残件はない。
 
 ## 6. 本計画外として残す事項
 
