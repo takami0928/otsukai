@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CategorySection } from '../components/CategorySection'
+import { CheckoutReviewSection } from '../components/CheckoutReviewSection'
+import { ConsultationSummary } from '../components/ConsultationSummary'
+import { NativeShareUnavailableNotice } from '../components/NativeShareUnavailableNotice'
+import { ShoppingCompletionView } from '../components/ShoppingCompletionView'
 import { ShoppingItemCard } from '../components/ShoppingItemCard'
+import { ShoppingToolbar } from '../components/ShoppingToolbar'
 import { decodeShoppingRequest } from '../utils/encodeRequest'
 import { decodeCompactRequest } from '../utils/compactRequest'
 import {
@@ -9,7 +14,6 @@ import {
   getCartItemsForCheckout,
   getItemStatus,
   getShoppingCompletionState,
-  hasCondition,
   isCartStatus,
   reconcileCheckedStateWithIssues,
   reconcileItemIssues,
@@ -27,7 +31,6 @@ import {
   buildBulkConsultationMessage,
   buildIndividualConsultationMessage,
   buildShoppingResultMessage,
-  getItemIssueLabel,
 } from '../utils/shoppingMessages'
 import {
   isNativeShareAvailable,
@@ -108,27 +111,6 @@ function getShareNotice(
     message:
       '共有またはコピーができませんでした。\n外部ブラウザで開いてもう一度お試しください。',
   }
-}
-
-function NativeShareUnavailableNotice({
-  externalBrowserUrl,
-}: {
-  externalBrowserUrl: string
-}) {
-  return (
-    <section
-      className="info-card native-share-unavailable"
-      aria-label="共有機能の案内"
-    >
-      <p>
-        この画面ではOSの共有機能を利用できません。
-        外部ブラウザで開くと、LINEなどの共有先を選べます。
-      </p>
-      <a className="primary-button" href={externalBrowserUrl}>
-        外部ブラウザで開く
-      </a>
-    </section>
-  )
 }
 
 export function ShoppingListPage({
@@ -541,65 +523,20 @@ export function ShoppingListPage({
     const allPurchased = completionState.notBuyingCount === 0
 
     return (
-      <main className="page completion-page">
-        {!nativeShareAvailable ? (
-          <NativeShareUnavailableNotice externalBrowserUrl={externalBrowserUrl} />
-        ) : null}
-        <section className={`hero-card completion-hero ${allPurchased ? 'is-complete' : ''}`}>
-          <p className="completion-symbol" aria-hidden="true">{allPurchased ? '✓' : '!'}</p>
-          <h1 ref={completionHeadingRef} tabIndex={-1}>
-            {allPurchased ? 'おつかい完了' : 'おつかい終了'}
-          </h1>
-          <dl className="completion-stats">
-            <div>
-              <dt>購入した商品</dt>
-              <dd>{completionState.purchasedCount}件</dd>
-            </div>
-            <div>
-              <dt>買えなかった商品</dt>
-              <dd>{completionState.notBuyingCount}件</dd>
-            </div>
-          </dl>
-        </section>
-
-        {shareNotice ? (
-          <p className={`share-notice ${shareNotice.kind}`} role="status">
-            {shareNotice.message}
-          </p>
-        ) : null}
-
-        {notBuyingItems.length > 0 ? (
-          <section className="info-card unavailable-result-card">
-            <h2>買えなかった商品</h2>
-            <ul className="unavailable-result-list">
-              {notBuyingItems.map((item) => (
-                <li key={item.id}>
-                  <strong>{item.productNameSnapshot}</strong>
-                  <span>{getItemIssueLabel(itemIssues[item.id])}</span>
-                  {itemIssues[item.id]?.note ? <small>補足: {itemIssues[item.id]?.note}</small> : null}
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-
-        <section className="info-card completion-actions-card">
-          <button
-            type="button"
-            className="primary-button large-button"
-            onClick={handleShareResult}
-            disabled={isSharingResult}
-          >
-            {isSharingResult ? '共有中…' : '結果を共有'}
-          </button>
-          <button type="button" className="secondary-button large-button" onClick={handleReviewShopping}>
-            買い物内容を見直す
-          </button>
-          <button type="button" className="ghost-button large-button" onClick={onBackHome}>
-            ホームへ
-          </button>
-        </section>
-      </main>
+      <ShoppingCompletionView
+        allPurchased={allPurchased}
+        nativeShareAvailable={nativeShareAvailable}
+        externalBrowserUrl={externalBrowserUrl}
+        completionState={completionState}
+        completionHeadingRef={completionHeadingRef}
+        shareNotice={shareNotice}
+        notBuyingItems={notBuyingItems}
+        itemIssues={itemIssues}
+        isSharingResult={isSharingResult}
+        onShareResult={handleShareResult}
+        onReviewShopping={handleReviewShopping}
+        onBackHome={onBackHome}
+      />
     )
   }
 
@@ -647,39 +584,22 @@ export function ShoppingListPage({
       ) : null}
 
       {consultingItems.length > 1 ? (
-        <section className="info-card consultation-summary-card">
-          <div>
-            <h2>相談中の商品が{consultingItems.length}件あります</h2>
-            <p className="helper-text">相談内容をまとめて再共有できます。</p>
-          </div>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={handleBulkConsultation}
-            disabled={isAnyShareActive}
-          >
-            {isSharingBulk ? '共有中…' : 'まとめてLINEで相談'}
-          </button>
-        </section>
+        <ConsultationSummary
+          consultingItemCount={consultingItems.length}
+          isSharingBulk={isSharingBulk}
+          isAnyShareActive={isAnyShareActive}
+          onBulkConsultation={handleBulkConsultation}
+        />
       ) : null}
 
-      <section className="toolbar-card">
-        <button
-          type="button"
-          className="primary-button"
-          onClick={handleUndo}
-          disabled={!undoStack.length || isAnyShareActive}
-        >
-          Undo
-        </button>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => setFilterMode((current) => (current === 'remaining' ? 'all' : 'remaining'))}
-        >
-          {filterMode === 'remaining' ? 'すべて表示' : '未購入・相談中だけ表示'}
-        </button>
-      </section>
+      <ShoppingToolbar
+        filterMode={filterMode}
+        undoDisabled={!undoStack.length || isAnyShareActive}
+        onUndo={handleUndo}
+        onToggleFilter={() =>
+          setFilterMode((current) => (current === 'remaining' ? 'all' : 'remaining'))
+        }
+      />
 
       {groupedVisibleItems.length > 0 ? (
         groupedVisibleItems.map((group) => (
@@ -743,130 +663,17 @@ export function ShoppingListPage({
       )}
 
       {showCheckoutReview ? (
-        <section
-          className="info-card checkout-review-card"
-          ref={checkoutReviewRef}
-          tabIndex={-1}
-          aria-labelledby="checkout-review-heading"
-        >
-          <div className="section-heading">
-            <h2 id="checkout-review-heading">会計前チェック</h2>
-            <span>{cartItems.length}件</span>
-          </div>
-          <p className="helper-text">最後にかごへ入れた商品から表示しています。</p>
-          <p className="helper-text">
-            条件ありの商品だけ、会計前に条件確認済みにしてください。
-          </p>
-
-          {cartItems.length > 0 ? (
-            <div className="checkout-list">
-              {cartItems.map((item) => {
-                const status = getItemStatus(checkedState, item.id)
-                const conditionItem = hasCondition(item)
-
-                return (
-                  <article key={item.id} className={`checkout-item is-${status}`}>
-                    <div className="checkout-item-main">
-                      <span className="shopping-icon" aria-hidden="true">
-                        {item.iconSnapshot}
-                      </span>
-                      <span>
-                        <span className="shopping-title-row">
-                          <strong>{item.productNameSnapshot}</strong>
-                          {conditionItem ? <span className="condition-badge">条件あり</span> : null}
-                        </span>
-                        <span className="checkout-quantity">
-                          {item.quantity}{item.unit}
-                        </span>
-                        {item.memo ? <span className="shopping-condition">条件: {item.memo}</span> : null}
-                        <span className="shopping-state">
-                          {status === 'verified' ? '条件確認済み' : 'かご済み'}
-                        </span>
-                      </span>
-                    </div>
-                    <div className="checkout-actions">
-                      {conditionItem && status === 'inCart' ? (
-                        <button
-                          type="button"
-                          className="primary-button compact-button"
-                          onClick={() => commitShoppingChange(item.id, 'verified')}
-                          aria-label={`${item.productNameSnapshot}の条件を確認済みにする`}
-                          disabled={isAnyShareActive}
-                        >
-                          条件を確認した
-                        </button>
-                      ) : null}
-                      {conditionItem && status === 'verified' ? (
-                        <button
-                          type="button"
-                          className="secondary-button compact-button"
-                          onClick={() => commitShoppingChange(item.id, 'inCart')}
-                          aria-label={`${item.productNameSnapshot}の条件確認を戻す`}
-                          disabled={isAnyShareActive}
-                        >
-                          確認を戻す
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="ghost-button compact-button"
-                        onClick={() => commitShoppingChange(item.id, 'pending')}
-                        aria-label={`${item.productNameSnapshot}を未購入に戻す`}
-                        disabled={isAnyShareActive}
-                      >
-                        未購入に戻す
-                      </button>
-                    </div>
-                  </article>
-                )
-              })}
-            </div>
-          ) : (
-            <p className="empty-checkout-message">かごに入れた商品はありません。</p>
-          )}
-
-          {notBuyingItems.length > 0 ? (
-            <div className="checkout-not-buying">
-              <h3>今回は買わない商品</h3>
-              <ul>
-                {notBuyingItems.map((item) => (
-                  <li key={item.id}>
-                    <strong>{item.productNameSnapshot}</strong>
-                    <span>{getItemIssueLabel(itemIssues[item.id])}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          <div className="finish-shopping-panel">
-            {completionState.pendingCount > 0 ? (
-              <p>未購入の商品が{completionState.pendingCount}件あります。</p>
-            ) : null}
-            {completionState.consultingCount > 0 ? (
-              <p>
-                相談中の商品が{completionState.consultingCount}件あります。回答後に状態を確定してください。
-              </p>
-            ) : null}
-            {completionState.needsVerificationCount > 0 ? (
-              <p>
-                条件確認が必要な商品が{completionState.needsVerificationCount}件あります。会計前に確認してください。
-              </p>
-            ) : null}
-            {completionState.canFinish ? (
-              <>
-                <p>購入内容を確認してから終了してください。</p>
-                <button
-                  type="button"
-                  className="primary-button large-button finish-shopping-button"
-                  onClick={handleFinishShopping}
-                >
-                  買い物を終了する
-                </button>
-              </>
-            ) : null}
-          </div>
-        </section>
+        <CheckoutReviewSection
+          cartItems={cartItems}
+          notBuyingItems={notBuyingItems}
+          checkedState={checkedState}
+          itemIssues={itemIssues}
+          completionState={completionState}
+          isAnyShareActive={isAnyShareActive}
+          sectionRef={checkoutReviewRef}
+          onChangeStatus={commitShoppingChange}
+          onFinishShopping={handleFinishShopping}
+        />
       ) : null}
 
       <section className="info-card muted-card">

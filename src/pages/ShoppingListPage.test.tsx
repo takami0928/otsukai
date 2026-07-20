@@ -20,12 +20,12 @@ import {
 import type { CheckedStateMap } from '../types/shopping'
 import { ShoppingListPage } from './ShoppingListPage'
 
-function createRequest(itemCount = 1) {
+function createRequest(itemCount = 1, firstItemMemo = '') {
   const draft: CreateDraftState = Object.fromEntries(
     products.map((product) => [product.id, { quantity: 0, memo: '' }]),
   )
-  products.slice(0, itemCount).forEach((product) => {
-    draft[product.id] = { quantity: 1, memo: '' }
+  products.slice(0, itemCount).forEach((product, index) => {
+    draft[product.id] = { quantity: 1, memo: index === 0 ? firstItemMemo : '' }
   })
   const encoded = encodeCompactRequest(
     buildCompactRequestPayload({
@@ -263,6 +263,107 @@ describe('ShoppingListPage native sharing', () => {
     expectTitleAndTextOnly(deferred.share, 'おつかい結果', '【おつかい結果】')
     await deferred.resolve()
     expect(container.textContent).toContain('LINEを選択して結果を送信してください。')
+  })
+
+  it('keeps two-step cart updates, filtering, Undo, and persistence connected', async () => {
+    const { encoded, payload } = createRequest(2)
+    const firstItem = payload.items[0]
+    await renderRequest(encoded)
+
+    expect(button('Undo').disabled).toBe(true)
+    await clickAndFlush(button('かごに入れる'))
+    expect(button('もう一度押して確定')).toBeDefined()
+
+    const beforeConfirmation = JSON.parse(
+      window.localStorage.getItem(`otsukai:checked:${payload.requestId}`) ?? '{}',
+    ) as CheckedStateMap
+    expect(beforeConfirmation[firstItem.id]).toBeUndefined()
+
+    await clickAndFlush(button('もう一度押して確定'))
+    const afterConfirmation = JSON.parse(
+      window.localStorage.getItem(`otsukai:checked:${payload.requestId}`) ?? '{}',
+    ) as CheckedStateMap
+    expect(afterConfirmation[firstItem.id]).toBe('inCart')
+    expect(button('Undo').disabled).toBe(false)
+
+    await clickAndFlush(button('未購入・相談中だけ表示'))
+    expect(
+      [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+        (candidate) =>
+          candidate.getAttribute('aria-label') ===
+          `${firstItem.productNameSnapshot}をかごに入れる確認を始める`,
+      ),
+    ).toBeUndefined()
+
+    await clickAndFlush(button('Undo'))
+    const afterUndo = JSON.parse(
+      window.localStorage.getItem(`otsukai:checked:${payload.requestId}`) ?? '{}',
+    ) as CheckedStateMap
+    expect(afterUndo[firstItem.id]).toBe('pending')
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(`otsukai:cartOrder:${payload.requestId}`) ?? '[]',
+      ),
+    ).toEqual([])
+    expect(button('Undo').disabled).toBe(true)
+  })
+
+  it('keeps checkout status changes and completion focus targets connected', async () => {
+    const animationFrames: FrameRequestCallback[] = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      animationFrames.push(callback)
+      return animationFrames.length
+    })
+    vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => undefined)
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+    const flushAnimationFrames = async () => {
+      await act(async () => {
+        animationFrames.splice(0).forEach((callback) => callback(0))
+        await Promise.resolve()
+      })
+    }
+
+    const { encoded, payload } = createRequest(1, '大きめ')
+    const item = payload.items[0]
+    storeShoppingState(payload.requestId, { [item.id]: 'inCart' })
+    await renderRequest(encoded)
+
+    await clickAndFlush(button('条件を確認した'))
+    let saved = JSON.parse(
+      window.localStorage.getItem(`otsukai:checked:${payload.requestId}`) ?? '{}',
+    ) as CheckedStateMap
+    expect(saved[item.id]).toBe('verified')
+
+    await clickAndFlush(button('確認を戻す'))
+    saved = JSON.parse(
+      window.localStorage.getItem(`otsukai:checked:${payload.requestId}`) ?? '{}',
+    ) as CheckedStateMap
+    expect(saved[item.id]).toBe('inCart')
+
+    await clickAndFlush(button('条件を確認した'))
+    await clickAndFlush(button('買い物を終了する'))
+    await flushAnimationFrames()
+    const completionHeading = [...container.querySelectorAll<HTMLHeadingElement>('h1')].find(
+      (candidate) => candidate.textContent?.trim() === 'おつかい完了',
+    )
+    expect(document.activeElement).toBe(completionHeading)
+
+    await clickAndFlush(button('買い物内容を見直す'))
+    await flushAnimationFrames()
+    const checkoutReview = container.querySelector<HTMLElement>('.checkout-review-card')
+    expect(document.activeElement).toBe(checkoutReview)
+
+    const resetButton = [...checkoutReview!.querySelectorAll<HTMLButtonElement>('button')].find(
+      (candidate) =>
+        candidate.getAttribute('aria-label') ===
+        `${item.productNameSnapshot}を未購入に戻す`,
+    )
+    expect(resetButton).toBeDefined()
+    await clickAndFlush(resetButton!)
+    saved = JSON.parse(
+      window.localStorage.getItem(`otsukai:checked:${payload.requestId}`) ?? '{}',
+    ) as CheckedStateMap
+    expect(saved[item.id]).toBe('pending')
   })
 
   it.each([
