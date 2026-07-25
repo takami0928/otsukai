@@ -3,6 +3,15 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  saveCatalogBackupReceipt,
+  saveHouseholdCatalog,
+} from '../utils/catalogStorage'
+import { createCatalogFingerprint } from '../utils/catalogFingerprint'
+import {
+  createEmptyHouseholdCatalog,
+  updateBaseProduct,
+} from '../utils/householdCatalog'
 import { AboutPage } from './AboutPage'
 import { HomePage } from './HomePage'
 
@@ -13,6 +22,7 @@ describe('home and about pages', () => {
   beforeEach(() => {
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
       true
+    window.localStorage.clear()
     container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)
@@ -21,6 +31,7 @@ describe('home and about pages', () => {
   afterEach(() => {
     act(() => root.unmount())
     container.remove()
+    window.localStorage.clear()
   })
 
   it('keeps the create action on home, adds the about action, and removes technical cards', () => {
@@ -40,6 +51,7 @@ describe('home and about pages', () => {
     expect(container.textContent).toContain('このアプリについて')
     expect(container.textContent).not.toContain('サーバーや外部DB')
     expect(container.textContent).not.toContain('localStorage')
+    expect(container.textContent).not.toContain('未バックアップの変更')
 
     const productsButton = [...container.querySelectorAll('button')].find(
       (candidate) => candidate.textContent?.trim() === '商品リストを編集',
@@ -75,5 +87,69 @@ describe('home and about pages', () => {
     const homeButton = container.querySelector('button')
     act(() => homeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(onBackHome).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a subdued recovery-link reminder only for unbacked catalog changes', () => {
+    const changed = updateBaseProduct(
+      createEmptyHouseholdCatalog('2026-07-26T00:00:00.000Z'),
+      'milk',
+      {
+        name: 'いつもの牛乳',
+        unit: '本',
+        categoryId: 'eggs-dairy',
+        hidden: false,
+      },
+      '2026-07-26T01:00:00.000Z',
+    )
+    expect(saveHouseholdCatalog(changed).ok).toBe(true)
+
+    act(() =>
+      root.render(
+        <HomePage
+          onStartCreate={() => undefined}
+          onOpenProducts={() => undefined}
+          onOpenAbout={() => undefined}
+        />,
+      ),
+    )
+
+    expect(container.textContent).toContain(
+      '商品リストに未バックアップの変更があります。',
+    )
+    expect(container.textContent).toContain('復旧リンクを保存')
+  })
+
+  it('does not show the home reminder after the same catalog is confirmed as backed up', () => {
+    const changed = updateBaseProduct(
+      createEmptyHouseholdCatalog('2026-07-26T00:00:00.000Z'),
+      'milk',
+      {
+        name: 'いつもの牛乳',
+        unit: '本',
+        categoryId: 'eggs-dairy',
+        hidden: false,
+      },
+      '2026-07-26T01:00:00.000Z',
+    )
+    expect(saveHouseholdCatalog(changed).ok).toBe(true)
+    expect(
+      saveCatalogBackupReceipt({
+        catalogFingerprint: createCatalogFingerprint(changed),
+        confirmedAt: '2026-07-26T02:00:00.000Z',
+      }),
+    ).toBe(true)
+
+    act(() =>
+      root.render(
+        <HomePage
+          onStartCreate={() => undefined}
+          onOpenProducts={() => undefined}
+          onOpenAbout={() => undefined}
+        />,
+      ),
+    )
+
+    expect(container.textContent).not.toContain('未バックアップの変更')
+    expect(container.textContent).not.toContain('復旧リンクを保存')
   })
 })

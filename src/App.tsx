@@ -5,11 +5,13 @@ import { CreateRequestPage } from './pages/CreateRequestPage'
 import { ShoppingListPage } from './pages/ShoppingListPage'
 import { AboutPage } from './pages/AboutPage'
 import { ProductCatalogPage } from './pages/ProductCatalogPage'
+import { CatalogRecoveryPage } from './pages/CatalogRecoveryPage'
 
 export type RouteState =
   | { page: 'home' }
   | { page: 'create' }
   | { page: 'products' }
+  | { page: 'catalogRestore'; encoded: string }
   | { page: 'about' }
   | { page: 'list'; encoded: string; format: 'v1' | 'v2' }
   | { page: 'error'; title: string; description: string }
@@ -30,6 +32,19 @@ export function parseHashRoute(rawHash: string): RouteState {
 
   if (path === '/products') {
     return { page: 'products' }
+  }
+
+  if (path.startsWith('/catalog/restore/')) {
+    const encoded = path.slice('/catalog/restore/'.length)
+    if (!encoded) {
+      return {
+        page: 'error',
+        title: '復旧リンクにデータがありません',
+        description:
+          '商品リスト復旧データ付きのURLをもう一度開いてください。',
+      }
+    }
+    return { page: 'catalogRestore', encoded }
   }
 
   if (path === '/about') {
@@ -101,6 +116,15 @@ export default function App() {
         return <CreateRequestPage onBackHome={() => navigate('/')} />
       case 'products':
         return <ProductCatalogPage onBackHome={() => navigate('/')} />
+      case 'catalogRestore':
+        return (
+          <CatalogRecoveryPage
+            key={route.encoded}
+            encoded={route.encoded}
+            onBackHome={() => navigate('/')}
+            onOpenProducts={() => navigate('/products')}
+          />
+        )
       case 'about':
         return <AboutPage onBackHome={() => navigate('/')} />
       case 'list':

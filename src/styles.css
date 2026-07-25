@@ -676,8 +676,144 @@ select:focus {
   font-weight: 700;
 }
 
-.catalog-backup-summary p {
-  margin-bottom: 0;
+.catalog-backup-status {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.catalog-backup-status.is-compact {
+  border-color: #dfd7b8;
+  background: #fffdf4;
+}
+
+.catalog-backup-status h2,
+.catalog-backup-status p,
+.catalog-backup-confirmation p,
+.catalog-recovery-preview h1,
+.catalog-recovery-preview h2,
+.catalog-recovery-preview p,
+.catalog-recovery-success h1,
+.catalog-recovery-success p {
+  margin: 0;
+}
+
+.catalog-backup-state {
+  color: #4f635c;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.catalog-backup-status > button {
+  justify-self: start;
+}
+
+.catalog-backup-confirmation {
+  display: grid;
+  gap: 0.6rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid #dce4e0;
+}
+
+.catalog-backup-confirmation > p {
+  color: #354a43;
+  font-weight: 700;
+}
+
+.catalog-backup-actions,
+.catalog-recovery-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.catalog-backup-actions button,
+.catalog-recovery-actions button {
+  width: 100%;
+  min-width: 0;
+  white-space: normal;
+}
+
+.catalog-json-restore {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.catalog-json-restore input[type='file'] {
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem;
+  border: 1px solid #cad5d0;
+  border-radius: 8px;
+  background: #fff;
+  color: #43564f;
+}
+
+.catalog-recovery-preview,
+.catalog-recovery-success {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.catalog-recovery-preview h1:focus {
+  outline: 3px solid #9bc5b5;
+  outline-offset: 3px;
+}
+
+.catalog-recovery-date {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.8rem;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  background: #f5f8f7;
+}
+
+.catalog-recovery-date span {
+  color: #64736e;
+  font-size: 0.82rem;
+}
+
+.catalog-recovery-counts {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.catalog-recovery-counts > div {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid #e2e8e5;
+}
+
+.catalog-recovery-counts dt,
+.catalog-recovery-counts dd {
+  margin: 0;
+}
+
+.catalog-recovery-counts dd {
+  color: #2f6654;
+  font-weight: 800;
+}
+
+.catalog-recovery-warning,
+.catalog-recovery-error {
+  padding: 0.7rem;
+  border: 1px solid #e4d29c;
+  border-radius: 8px;
+  background: #fff9e8;
+  color: #725b27;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.catalog-recovery-error {
+  border-color: #e8c4c1;
+  background: #fff5f4;
+  color: #943f3d;
 }
 
 .catalog-editor-fields {
@@ -1682,6 +1818,11 @@ select:focus {
 
   .catalog-product-actions button {
     width: 100%;
+  }
+
+  .catalog-backup-actions,
+  .catalog-recovery-actions {
+    grid-template-columns: 1fr;
   }
 }
 
