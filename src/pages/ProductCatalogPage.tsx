@@ -1,9 +1,20 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ChangeEvent } from 'react'
+import { CatalogBackupStatus } from '../components/CatalogBackupStatus'
+import { CatalogRecoveryPreview } from '../components/CatalogRecoveryPreview'
 import { ProductCatalogEditor } from '../components/ProductCatalogEditor'
 import { ProductCatalogList } from '../components/ProductCatalogList'
+import { MAX_CATALOG_RECOVERY_JSON_CHARS } from '../constants/requestLimits'
 import { categories } from '../data/categories'
 import { useHouseholdCatalog } from '../hooks/useHouseholdCatalog'
-import type { EffectiveProduct } from '../types/householdCatalog'
+import type {
+  CatalogRecoveryPayloadV1,
+  EffectiveProduct,
+} from '../types/householdCatalog'
+import {
+  isRecoveryPayloadOlderThanCatalog,
+  parseCatalogRecoveryJson,
+} from '../utils/catalogRecovery'
+import { hasHouseholdCatalogChanges } from '../utils/catalogFingerprint'
 import {
   addHouseholdProduct,
   resetBaseProduct,
@@ -27,11 +38,15 @@ export function ProductCatalogPage({
     visibleProducts,
     backupStatus,
     updateCatalog,
+    confirmCatalogBackup,
+    replaceCatalogFromRecovery,
   } = useHouseholdCatalog()
   const [query, setQuery] = useState('')
   const [editingProductId, setEditingProductId] = useState<
     string | 'new' | null
   >(null)
+  const [recoveryPayload, setRecoveryPayload] =
+    useState<CatalogRecoveryPayloadV1 | null>(null)
   const [notice, setNotice] = useState('')
   const normalizedQuery = query.trim().toLocaleLowerCase('ja')
 
@@ -178,6 +193,65 @@ export function ProductCatalogPage({
     }
   }
 
+  const handleRecoveryJson = async (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) {
+      return
+    }
+    if (file.size > MAX_CATALOG_RECOVERY_JSON_CHARS) {
+      setNotice('商品リスト復旧データが大きすぎます。')
+      return
+    }
+    try {
+      const payload = parseCatalogRecoveryJson(await file.text())
+      setNotice('')
+      setRecoveryPayload(payload)
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : '復旧用JSONファイルを読み込めませんでした。',
+      )
+    }
+  }
+
+  const handleRestoreJson = () => {
+    if (!recoveryPayload) {
+      return
+    }
+    if (!replaceCatalogFromRecovery(recoveryPayload)) {
+      setNotice(
+        '商品リストを復元できませんでした。ブラウザの保存容量を確認してください。',
+      )
+      return
+    }
+    setRecoveryPayload(null)
+    setNotice('復旧用JSONファイルから商品リストを復元しました。')
+  }
+
+  if (recoveryPayload) {
+    return (
+      <main className="page">
+        <CatalogRecoveryPreview
+          payload={recoveryPayload}
+          isOlderThanCurrent={
+            hasHouseholdCatalogChanges(catalog) &&
+            isRecoveryPayloadOlderThanCatalog(recoveryPayload, catalog)
+          }
+          errorMessage={notice}
+          onRestore={handleRestoreJson}
+          onCancel={() => {
+            setNotice('')
+            setRecoveryPayload(null)
+          }}
+        />
+      </main>
+    )
+  }
+
   return (
     <main className="page">
       <section className="top-bar">
@@ -232,15 +306,25 @@ export function ProductCatalogPage({
         </section>
       ) : null}
 
-      <section className="info-card muted-card catalog-backup-summary">
-        <h2>復旧リンクのバックアップ</h2>
+      <CatalogBackupStatus
+        catalog={catalog}
+        backupStatus={backupStatus}
+        onConfirmBackup={confirmCatalogBackup}
+      />
+
+      <section className="info-card muted-card catalog-json-restore">
+        <h2>復旧用JSONファイルから復元</h2>
         <p className="helper-text">
-          {backupStatus === 'standard'
-            ? '商品リストは標準状態です。'
-            : backupStatus === 'backed-up'
-              ? '現在の変更はバックアップ済みです。'
-              : '未バックアップの変更があります。'}
+          復旧リンクが長い場合に保存したJSONファイルを読み込み、内容を確認してから置き換えます。
         </p>
+        <label className="stack-field">
+          <span>JSONファイルを選択</span>
+          <input
+            type="file"
+            accept="application/json,.json"
+            onChange={(event) => void handleRecoveryJson(event)}
+          />
+        </label>
       </section>
 
       {editingProductId ? (

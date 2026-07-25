@@ -3,6 +3,11 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createCatalogRecoveryBundle } from '../utils/catalogRecovery'
+import {
+  createEmptyHouseholdCatalog,
+  updateBaseProduct,
+} from '../utils/householdCatalog'
 import { ProductCatalogPage } from './ProductCatalogPage'
 
 function setNativeInputValue(input: HTMLInputElement, value: string) {
@@ -34,6 +39,7 @@ describe('ProductCatalogPage', () => {
     container.remove()
     window.localStorage.clear()
     delete (window as unknown as Record<string, unknown>).confirm
+    delete (navigator as unknown as { share?: unknown }).share
     vi.restoreAllMocks()
   })
 
@@ -287,5 +293,100 @@ describe('ProductCatalogPage', () => {
     })
     expect(container.querySelector('[role="dialog"]')).toBeNull()
     expect(document.activeElement).toBe(add)
+  })
+
+  it('previews and restores a JSON backup through the shared recovery flow', async () => {
+    const recoveredCatalog = updateBaseProduct(
+      createEmptyHouseholdCatalog('2026-07-26T00:00:00.000Z'),
+      'milk',
+      {
+        name: '復元した牛乳',
+        unit: 'パック',
+        categoryId: 'drinks',
+        hidden: false,
+      },
+      '2026-07-26T01:00:00.000Z',
+    )
+    const bundle = createCatalogRecoveryBundle(
+      'https://example.test/otsukai/',
+      recoveredCatalog,
+      '2026-07-26T02:00:00.000Z',
+    )
+    await renderPage()
+    const input = container.querySelector<HTMLInputElement>(
+      'input[type="file"]',
+    )
+    if (!input) {
+      throw new Error('JSON file input was not rendered')
+    }
+    const file = new File([bundle.json], bundle.fileName, {
+      type: 'application/json',
+    })
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [file],
+    })
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(container.querySelector('h1')?.textContent).toBe(
+      '商品リストを復元',
+    )
+    expect(container.textContent).toContain('名前変更')
+    expect(window.localStorage.getItem('otsukai:householdCatalog:v1')).toBeNull()
+
+    await click(button('この商品リストに置き換える'))
+    expect(savedCatalog().overrides.milk).toEqual({
+      name: '復元した牛乳',
+      unit: 'パック',
+      categoryId: 'drinks',
+    })
+    expect(container.querySelector('h1')?.textContent).toBe(
+      '商品リストを編集',
+    )
+    expect(container.textContent).toContain(
+      '復旧用JSONファイルから商品リストを復元しました。',
+    )
+  })
+
+  it('records a backup receipt only after the user confirms saving the link', async () => {
+    const changed = updateBaseProduct(
+      createEmptyHouseholdCatalog('2026-07-26T00:00:00.000Z'),
+      'milk',
+      {
+        name: 'いつもの牛乳',
+        unit: '本',
+        categoryId: 'eggs-dairy',
+        hidden: false,
+      },
+      '2026-07-26T01:00:00.000Z',
+    )
+    window.localStorage.setItem(
+      'otsukai:householdCatalog:v1',
+      JSON.stringify(changed),
+    )
+    Object.defineProperty(navigator, 'share', {
+      configurable: true,
+      value: vi.fn().mockResolvedValue(undefined),
+    })
+    await renderPage()
+
+    await click(button('復旧リンクを保存'))
+    expect(
+      window.localStorage.getItem('otsukai:catalogBackupReceipt:v1'),
+    ).toBeNull()
+    await click(button('保存した'))
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(
+          'otsukai:catalogBackupReceipt:v1',
+        ) ?? '{}',
+      ).catalogFingerprint,
+    ).toMatch(/^catalog-v1-/)
+    expect(container.textContent).toContain(
+      '現在の変更はバックアップ済みです。',
+    )
   })
 })

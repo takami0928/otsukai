@@ -1,3 +1,6 @@
+import { CatalogBackupStatus } from '../components/CatalogBackupStatus'
+import { useHouseholdCatalog } from '../hooks/useHouseholdCatalog'
+
 type HomePageProps = {
   onStartCreate: () => void
   onOpenProducts: () => void
@@ -9,6 +12,9 @@ export function HomePage({
   onOpenProducts,
   onOpenAbout,
 }: HomePageProps) {
+  const { catalog, backupStatus, confirmCatalogBackup } =
+    useHouseholdCatalog()
+
   return (
     <main className="page">
       <section className="hero-card">
@@ -31,6 +37,15 @@ export function HomePage({
           このアプリについて
         </button>
       </section>
+
+      {backupStatus === 'unbacked' ? (
+        <CatalogBackupStatus
+          catalog={catalog}
+          backupStatus={backupStatus}
+          compact
+          onConfirmBackup={confirmCatalogBackup}
+        />
+      ) : null}
 
       <section className="info-card">
         <h2>使い方</h2>
