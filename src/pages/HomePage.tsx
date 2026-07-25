@@ -26,8 +26,8 @@ export function HomePage({ onStartCreate, onOpenAbout }: HomePageProps) {
           <li>依頼者が商品と数量を選ぶ</li>
           <li>共有URLを作って LINE などで送る</li>
           <li>お使いする人がスマホで URL を開く</li>
-          <li>二段階操作でかご投入を記録し、買えない商品は相談する</li>
-          <li>会計前チェック後に買い物を終了し、結果を共有する</li>
+          <li>必要な数量と条件を確認してかご投入を記録し、迷った商品は相談する</li>
+          <li>会計前に未処理や未解決の相談を確認し、結果を共有する</li>
         </ol>
       </section>
     </main>

@@ -1,9 +1,11 @@
 import type {
   CartOrderList,
   CheckedStateMap,
+  ConsultationMap,
   CreateDraftState,
   ItemIssueMap,
 } from '../types/shopping'
+import { normalizeConsultations } from './consultationState'
 import { normalizeCartOrder, normalizeCheckedState, normalizeItemIssues } from './shoppingState'
 
 const CREATE_DRAFT_KEY = 'otsukai:createDraft'
@@ -56,6 +58,19 @@ export function loadItemIssues(requestId: string): ItemIssueMap {
 
 export function saveItemIssues(requestId: string, issues: ItemIssueMap) {
   writeJson(`otsukai:itemIssues:${requestId}`, normalizeItemIssues(issues))
+}
+
+export function loadConsultations(requestId: string): ConsultationMap {
+  return normalizeConsultations(
+    readJson<unknown>(`otsukai:consultations:${requestId}`, {}),
+  )
+}
+
+export function saveConsultations(requestId: string, consultations: ConsultationMap) {
+  writeJson(
+    `otsukai:consultations:${requestId}`,
+    normalizeConsultations(consultations),
+  )
 }
 
 export function loadLastSharedUrl(): string {

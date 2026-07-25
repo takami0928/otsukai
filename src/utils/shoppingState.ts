@@ -3,6 +3,7 @@ import type {
   CheckedItemStatus,
   CheckedStateMap,
   CheckedStatusChange,
+  ConsultationMap,
   ItemIssue,
   ItemIssueMap,
   ShoppingRequestItemPayload,
@@ -281,12 +282,23 @@ export function hasCondition(item: ShoppingRequestItemPayload): boolean {
 export function getShoppingCompletionState(
   items: ShoppingRequestItemPayload[],
   checkedState: CheckedStateMap,
+  consultations: ConsultationMap = {},
 ): ShoppingCompletionState {
   let pendingCount = 0
-  let consultingCount = 0
   let needsVerificationCount = 0
   let purchasedCount = 0
   let notBuyingCount = 0
+  const itemIds = new Set(items.map((item) => item.id))
+  const unresolvedConsultationIds = new Set(
+    Object.entries(consultations)
+      .filter(
+        ([itemId, consultation]) =>
+          itemIds.has(itemId) &&
+          consultation.itemId === itemId &&
+          (consultation.status === 'queued' || consultation.status === 'shared'),
+      )
+      .map(([itemId]) => itemId),
+  )
 
   for (const item of items) {
     const status = getItemStatus(checkedState, item.id)
@@ -294,7 +306,7 @@ export function getShoppingCompletionState(
     if (status === 'pending') {
       pendingCount += 1
     } else if (status === 'consulting') {
-      consultingCount += 1
+      unresolvedConsultationIds.add(item.id)
     } else if (status === 'notBuying') {
       notBuyingCount += 1
     } else if (isCartStatus(status)) {
@@ -308,14 +320,14 @@ export function getShoppingCompletionState(
 
   return {
     pendingCount,
-    consultingCount,
+    consultingCount: unresolvedConsultationIds.size,
     needsVerificationCount,
     purchasedCount,
     notBuyingCount,
     canFinish:
       items.length > 0 &&
       pendingCount === 0 &&
-      consultingCount === 0 &&
+      unresolvedConsultationIds.size === 0 &&
       needsVerificationCount === 0,
   }
 }

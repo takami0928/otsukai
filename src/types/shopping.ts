@@ -41,6 +41,17 @@ export type ItemIssue = {
 
 export type ItemIssueMap = Record<string, ItemIssue>
 
+export type ConsultationStatus = 'queued' | 'shared' | 'resolved'
+
+export type ConsultationEntry = {
+  itemId: string
+  reason: UnavailableReason
+  note?: string
+  status: ConsultationStatus
+}
+
+export type ConsultationMap = Record<string, ConsultationEntry>
+
 export type ShoppingStateChange = {
   itemId: string
   previousStatus: CheckedItemStatus
