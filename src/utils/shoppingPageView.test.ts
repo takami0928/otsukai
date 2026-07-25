@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type {
   CheckedStateMap,
+  ConsultationMap,
   ShoppingRequestItemPayload,
 } from '../types/shopping'
 import {
@@ -49,6 +50,13 @@ const checkedState: CheckedStateMap = {
   [cartItem.id]: 'inCart',
   [verifiedItem.id]: 'verified',
 }
+const consultations: ConsultationMap = {
+  [consultingItem.id]: {
+    itemId: consultingItem.id,
+    reason: 'notFound',
+    status: 'queued',
+  },
+}
 
 describe('shopping page view selectors', () => {
   it('derives snapshot order, sales-floor order, status groups, checkout order, and counts', () => {
@@ -57,6 +65,7 @@ describe('shopping page view selectors', () => {
     const view = selectShoppingPageView({
       items: sourceItems,
       checkedState,
+      consultations,
       cartOrder: [verifiedItem.id, cartItem.id],
       filterMode: 'all',
     })
@@ -83,7 +92,7 @@ describe('shopping page view selectors', () => {
       cartItem.id,
       verifiedItem.id,
     ])
-    expect(view.consultingItems.map((item) => item.id)).toEqual([
+    expect(view.consultationItems.map(({ item }) => item.id)).toEqual([
       consultingItem.id,
     ])
     expect(view.notBuyingItems.map((item) => item.id)).toEqual([
@@ -108,6 +117,7 @@ describe('shopping page view selectors', () => {
     const view = selectShoppingPageView({
       items: sourceItems,
       checkedState,
+      consultations,
       cartOrder: [],
       filterMode: 'remaining',
     })
@@ -120,6 +130,27 @@ describe('shopping page view selectors', () => {
       { id: 'fruits', name: '果物', items: [pendingItem] },
       { id: 'vegetables', name: '野菜', items: [consultingItem] },
     ])
+  })
+
+  it('keeps a purchased item visible in remaining mode while its consultation is unresolved', () => {
+    const view = selectShoppingPageView({
+      items: [verifiedItem],
+      checkedState: { [verifiedItem.id]: 'verified' },
+      consultations: {
+        [verifiedItem.id]: {
+          itemId: verifiedItem.id,
+          reason: 'notFound',
+          status: 'shared',
+        },
+      },
+      cartOrder: [verifiedItem.id],
+      filterMode: 'remaining',
+    })
+
+    expect(view.remainingItems).toEqual([verifiedItem])
+    expect(view.completionState.purchasedCount).toBe(1)
+    expect(view.completionState.consultingCount).toBe(1)
+    expect(view.unresolvedCount).toBe(1)
   })
 
   it('keeps same-category items together and reports a fully resolved request', () => {

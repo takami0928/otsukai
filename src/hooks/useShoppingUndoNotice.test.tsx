@@ -22,10 +22,10 @@ const secondNotice: ShoppingUndoNoticeState = {
   change: {
     itemId: 'item-2',
     previousStatus: 'pending',
-    nextStatus: 'consulting',
+    nextStatus: 'notBuying',
     nextIssue: { reason: 'soldOut' },
   },
-  message: '卵を相談リストに追加しました',
+  message: '卵を今回は買わないにしました',
   previousCartOrder: ['item-1'],
 }
 

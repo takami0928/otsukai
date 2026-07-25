@@ -1,12 +1,16 @@
 import type {
   CartOrderList,
   CheckedStateMap,
+  ConsultationEntry,
+  ConsultationMap,
   ShoppingRequestItemPayload,
 } from '../types/shopping'
+import { isUnresolvedConsultation } from './consultationState'
 import {
   getCartItemsForCheckout,
   getItemStatus,
   getShoppingCompletionState,
+  hasCondition,
 } from './shoppingState'
 import { compareItemsByStoreOrder } from './storeOrder'
 
@@ -16,6 +20,11 @@ export type ShoppingItemGroup = {
   id: string
   name: string
   items: ShoppingRequestItemPayload[]
+}
+
+export type ShoppingConsultationItem = {
+  item: ShoppingRequestItemPayload
+  consultation: ConsultationEntry
 }
 
 export function selectSnapshotSortedItems(
@@ -35,10 +44,15 @@ export function selectStoreOrderedItems(
 export function selectRemainingItems(
   storeOrderedItems: readonly ShoppingRequestItemPayload[],
   checkedState: CheckedStateMap,
+  consultations: ConsultationMap = {},
 ): ShoppingRequestItemPayload[] {
   return storeOrderedItems.filter((item) => {
     const status = getItemStatus(checkedState, item.id)
-    return status === 'pending' || status === 'consulting'
+    return (
+      status === 'pending' ||
+      status === 'consulting' ||
+      isUnresolvedConsultation(consultations[item.id])
+    )
   })
 }
 
@@ -48,6 +62,18 @@ export function selectItemsWithStatus(
   status: 'consulting' | 'notBuying',
 ): ShoppingRequestItemPayload[] {
   return items.filter((item) => getItemStatus(checkedState, item.id) === status)
+}
+
+export function selectConsultationItems(
+  items: readonly ShoppingRequestItemPayload[],
+  consultations: ConsultationMap,
+): ShoppingConsultationItem[] {
+  return items.flatMap((item) => {
+    const consultation = consultations[item.id]
+    return isUnresolvedConsultation(consultation)
+      ? [{ item, consultation }]
+      : []
+  })
 }
 
 export function selectVisibleItems(
@@ -89,6 +115,7 @@ export function groupVisibleItems(
 type SelectShoppingPageViewInput = {
   items: readonly ShoppingRequestItemPayload[]
   checkedState: CheckedStateMap
+  consultations?: ConsultationMap
   cartOrder: CartOrderList
   filterMode: ShoppingFilterMode
 }
@@ -96,21 +123,25 @@ type SelectShoppingPageViewInput = {
 export function selectShoppingPageView({
   items,
   checkedState,
+  consultations = {},
   cartOrder,
   filterMode,
 }: SelectShoppingPageViewInput) {
   const sortedItems = selectSnapshotSortedItems(items)
   const storeOrderedItems = selectStoreOrderedItems(items)
-  const remainingItems = selectRemainingItems(storeOrderedItems, checkedState)
+  const remainingItems = selectRemainingItems(
+    storeOrderedItems,
+    checkedState,
+    consultations,
+  )
   const cartItems = getCartItemsForCheckout(
     sortedItems,
     checkedState,
     cartOrder,
   )
-  const consultingItems = selectItemsWithStatus(
-    sortedItems,
-    checkedState,
-    'consulting',
+  const consultationItems = selectConsultationItems(sortedItems, consultations)
+  const queuedConsultationItems = consultationItems.filter(
+    ({ consultation }) => consultation.status === 'queued',
   )
   const notBuyingItems = selectItemsWithStatus(
     sortedItems,
@@ -123,22 +154,36 @@ export function selectShoppingPageView({
     remainingItems,
   )
   const groupedVisibleItems = groupVisibleItems(visibleItems)
-  const completionState = getShoppingCompletionState(sortedItems, checkedState)
-  const unresolvedCount =
-    completionState.pendingCount +
-    completionState.consultingCount +
-    completionState.needsVerificationCount
+  const completionState = getShoppingCompletionState(
+    sortedItems,
+    checkedState,
+    consultations,
+  )
+  const unresolvedItemIds = new Set(
+    consultationItems.map(({ item }) => item.id),
+  )
+  for (const item of sortedItems) {
+    const status = getItemStatus(checkedState, item.id)
+    if (
+      status === 'pending' ||
+      status === 'consulting' ||
+      (status === 'inCart' && hasCondition(item))
+    ) {
+      unresolvedItemIds.add(item.id)
+    }
+  }
 
   return {
     sortedItems,
     storeOrderedItems,
     remainingItems,
     cartItems,
-    consultingItems,
+    consultationItems,
+    queuedConsultationItems,
     notBuyingItems,
     visibleItems,
     groupedVisibleItems,
     completionState,
-    unresolvedCount,
+    unresolvedCount: unresolvedItemIds.size,
   }
 }

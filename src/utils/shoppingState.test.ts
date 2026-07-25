@@ -153,6 +153,41 @@ describe('shopping completion state', () => {
     expect(result.canFinish).toBe(false)
   })
 
+  it('blocks an unresolved consultation without replacing the purchase state', () => {
+    const result = getShoppingCompletionState(
+      [createItem('milk')],
+      { milk: 'inCart' },
+      {
+        milk: {
+          itemId: 'milk',
+          reason: 'notFound',
+          status: 'shared',
+        },
+      },
+    )
+
+    expect(result.purchasedCount).toBe(1)
+    expect(result.consultingCount).toBe(1)
+    expect(result.canFinish).toBe(false)
+  })
+
+  it('ignores resolved consultations when deciding whether shopping can finish', () => {
+    const result = getShoppingCompletionState(
+      [createItem('milk')],
+      { milk: 'inCart' },
+      {
+        milk: {
+          itemId: 'milk',
+          reason: 'notFound',
+          status: 'resolved',
+        },
+      },
+    )
+
+    expect(result.consultingCount).toBe(0)
+    expect(result.canFinish).toBe(true)
+  })
+
   it('does not allow an inCart item with a condition to finish', () => {
     const result = getShoppingCompletionState([createItem('milk', '低脂肪')], { milk: 'inCart' })
     expect(result.needsVerificationCount).toBe(1)
