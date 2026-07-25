@@ -25,15 +25,27 @@ describe('home and about pages', () => {
 
   it('keeps the create action on home, adds the about action, and removes technical cards', () => {
     const onStartCreate = vi.fn()
+    const onOpenProducts = vi.fn()
     const onOpenAbout = vi.fn()
     act(() => root.render(
-      <HomePage onStartCreate={onStartCreate} onOpenAbout={onOpenAbout} />,
+      <HomePage
+        onStartCreate={onStartCreate}
+        onOpenProducts={onOpenProducts}
+        onOpenAbout={onOpenAbout}
+      />,
     ))
 
     expect(container.textContent).toContain('依頼を作る')
+    expect(container.textContent).toContain('商品リストを編集')
     expect(container.textContent).toContain('このアプリについて')
     expect(container.textContent).not.toContain('サーバーや外部DB')
     expect(container.textContent).not.toContain('localStorage')
+
+    const productsButton = [...container.querySelectorAll('button')].find(
+      (candidate) => candidate.textContent?.trim() === '商品リストを編集',
+    )
+    act(() => productsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(onOpenProducts).toHaveBeenCalledTimes(1)
 
     const aboutButton = [...container.querySelectorAll('button')].find(
       (candidate) => candidate.textContent?.trim() === 'このアプリについて',

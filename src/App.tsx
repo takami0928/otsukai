@@ -4,10 +4,12 @@ import { HomePage } from './pages/HomePage'
 import { CreateRequestPage } from './pages/CreateRequestPage'
 import { ShoppingListPage } from './pages/ShoppingListPage'
 import { AboutPage } from './pages/AboutPage'
+import { ProductCatalogPage } from './pages/ProductCatalogPage'
 
 export type RouteState =
   | { page: 'home' }
   | { page: 'create' }
+  | { page: 'products' }
   | { page: 'about' }
   | { page: 'list'; encoded: string; format: 'v1' | 'v2' }
   | { page: 'error'; title: string; description: string }
@@ -24,6 +26,10 @@ export function parseHashRoute(rawHash: string): RouteState {
 
   if (path === '/create') {
     return { page: 'create' }
+  }
+
+  if (path === '/products') {
+    return { page: 'products' }
   }
 
   if (path === '/about') {
@@ -87,11 +93,14 @@ export default function App() {
         return (
           <HomePage
             onStartCreate={() => navigate('/create')}
+            onOpenProducts={() => navigate('/products')}
             onOpenAbout={() => navigate('/about')}
           />
         )
       case 'create':
         return <CreateRequestPage onBackHome={() => navigate('/')} />
+      case 'products':
+        return <ProductCatalogPage onBackHome={() => navigate('/')} />
       case 'about':
         return <AboutPage onBackHome={() => navigate('/')} />
       case 'list':

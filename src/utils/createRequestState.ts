@@ -186,6 +186,10 @@ export function createRequestContentSnapshot({
     .sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id, 'ja'))
     .map((product) => ({
       productId: product.id,
+      name: product.name,
+      unit: product.unit,
+      categoryId: product.categoryId,
+      sortOrder: product.sortOrder,
       quantity: normalizeQuantity(draft[product.id]?.quantity),
       memo: draft[product.id]?.memo.trim() ?? '',
     }))

@@ -4,7 +4,13 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { products } from '../data/products'
-import { decodeCompactRequest } from '../utils/compactRequest'
+import { decodeCompactRequestV2OrV3 } from '../utils/compactRequestV3'
+import {
+  addHouseholdProduct,
+  createEmptyHouseholdCatalog,
+  updateBaseProduct,
+} from '../utils/householdCatalog'
+import { categories } from '../data/categories'
 import { CreateRequestPage } from './CreateRequestPage'
 
 function setNativeInputValue(input: HTMLInputElement, value: string) {
@@ -232,7 +238,7 @@ describe('CreateRequestPage simplified request form', () => {
 
     const requestUrl = share.mock.calls[0][0].text?.split('\n').at(-1) ?? ''
     const encoded = new URL(requestUrl).hash.slice('#/l/'.length)
-    expect(decodeCompactRequest(encoded).items[0]).toMatchObject({
+    expect(decodeCompactRequestV2OrV3(encoded).items[0]).toMatchObject({
       productNameSnapshot: 'お米',
       unit: '袋',
     })
@@ -254,7 +260,7 @@ describe('CreateRequestPage simplified request form', () => {
     ).toBe('個')
   })
 
-  it('creates and reuses a v2 URL whose internal title is fixed', async () => {
+  it('creates and reuses a v3 URL whose internal title is fixed', async () => {
     const share = vi.fn(async (_data: ShareData) => undefined)
     Object.defineProperty(window.navigator, 'share', {
       configurable: true,
@@ -276,11 +282,106 @@ describe('CreateRequestPage simplified request form', () => {
     const urls = share.mock.calls.map(([data]) => data.text?.split('\n').at(-1) ?? '')
     expect(urls[0]).toBe(urls[1])
     const encoded = new URL(urls[0]).hash.slice('#/l/'.length)
-    expect(decodeCompactRequest(encoded).title).toBe('おつかいリスト')
+    expect(decodeCompactRequestV2OrV3(encoded)).toMatchObject({
+      requestId: expect.stringMatching(/^v3-/),
+      title: 'おつかいリスト',
+    })
     expect(share.mock.calls[0][0].title).toBe('おつかい依頼')
 
     const returnState = window.history.state?.otsukaiCreateRequestReturnState
     expect(returnState).not.toHaveProperty('title')
+  })
+
+  it('preserves hidden selected drafts and snapshots household catalog changes in v3', async () => {
+    const householdId =
+      'household:123e4567-e89b-42d3-a456-426614174000'
+    let catalog = updateBaseProduct(
+      createEmptyHouseholdCatalog('2026-07-26T00:00:00.000Z'),
+      'cabbage',
+      {
+        name: '家庭キャベツ',
+        unit: '玉',
+        categoryId: 'fruits',
+        hidden: true,
+      },
+      '2026-07-26T01:00:00.000Z',
+    )
+    catalog = addHouseholdProduct(
+      catalog,
+      {
+        name: '麦茶パック',
+        unit: '袋',
+        categoryId: 'drinks',
+      },
+      '2026-07-26T02:00:00.000Z',
+      products,
+      categories,
+      householdId,
+    )
+    window.localStorage.setItem(
+      'otsukai:householdCatalog:v1',
+      JSON.stringify(catalog),
+    )
+    window.localStorage.setItem(
+      'otsukai:createDraft',
+      JSON.stringify({
+        cabbage: { quantity: 2, memo: '半玉で' },
+        [householdId]: { quantity: 1, memo: '水出し用' },
+      }),
+    )
+    const share = vi.fn(async (_data: ShareData) => undefined)
+    Object.defineProperty(window.navigator, 'share', {
+      configurable: true,
+      value: share,
+    })
+
+    await renderPage()
+    expect(container.textContent).toContain(
+      '今回の依頼に残っている非表示商品',
+    )
+    expect(container.textContent).toContain('家庭キャベツ')
+    expect(container.textContent).toContain('麦茶パック')
+
+    await clickAndFlush(button('確認へ'))
+    expect(container.textContent).toContain('家庭キャベツ 2玉')
+    expect(container.textContent).toContain('麦茶パック 1袋')
+    await clickAndFlush(button('LINEで送る'))
+    const requestUrl = share.mock.calls[0][0].text?.split('\n').at(-1) ?? ''
+    const decoded = decodeCompactRequestV2OrV3(
+      new URL(requestUrl).hash.slice('#/l/'.length),
+    )
+    expect(decoded.requestId).toMatch(/^v3-/)
+    expect(decoded.items).toMatchObject([
+      {
+        productId: 'cabbage',
+        productNameSnapshot: '家庭キャベツ',
+        unit: '玉',
+        categoryIdSnapshot: 'fruits',
+        quantity: 2,
+        memo: '半玉で',
+      },
+      {
+        productId: householdId,
+        productNameSnapshot: '麦茶パック',
+        unit: '袋',
+        categoryIdSnapshot: 'drinks',
+        quantity: 1,
+        memo: '水出し用',
+      },
+    ])
+
+    await clickAndFlush(button('修正する'))
+    const decrease = container.querySelector<HTMLButtonElement>(
+      '[aria-label^="家庭キャベツを1玉減らす"]',
+    )
+    if (!decrease) {
+      throw new Error('Hidden selected product decrement was not rendered')
+    }
+    await clickAndFlush(decrease)
+    await clickAndFlush(decrease)
+    expect(container.textContent).not.toContain(
+      '今回の依頼に残っている非表示商品',
+    )
   })
 
   it.each([

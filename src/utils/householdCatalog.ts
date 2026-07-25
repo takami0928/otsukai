@@ -561,18 +561,7 @@ export function buildAllEffectiveProductCatalog(
       )
     const added = addedEffective
       .filter((product) => product.categoryId === category.id)
-      .sort((left, right) => {
-        const leftSource = normalized.addedProducts.find(
-          (product) => product.id === left.id,
-        )
-        const rightSource = normalized.addedProducts.find(
-          (product) => product.id === right.id,
-        )
-        return (
-          (leftSource?.createdAt ?? '').localeCompare(rightSource?.createdAt ?? '') ||
-          left.id.localeCompare(right.id)
-        )
-      })
+      .sort((left, right) => left.id.localeCompare(right.id))
 
     const categoryTailStart = Math.max(
       category.sortOrder * 100,

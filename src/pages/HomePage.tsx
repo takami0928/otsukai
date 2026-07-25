@@ -1,9 +1,14 @@
 type HomePageProps = {
   onStartCreate: () => void
+  onOpenProducts: () => void
   onOpenAbout: () => void
 }
 
-export function HomePage({ onStartCreate, onOpenAbout }: HomePageProps) {
+export function HomePage({
+  onStartCreate,
+  onOpenProducts,
+  onOpenAbout,
+}: HomePageProps) {
   return (
     <main className="page">
       <section className="hero-card">
@@ -14,6 +19,13 @@ export function HomePage({ onStartCreate, onOpenAbout }: HomePageProps) {
         </p>
         <button type="button" className="primary-button large-button" onClick={onStartCreate}>
           依頼を作る
+        </button>
+        <button
+          type="button"
+          className="secondary-button large-button"
+          onClick={onOpenProducts}
+        >
+          商品リストを編集
         </button>
         <button type="button" className="ghost-button large-button" onClick={onOpenAbout}>
           このアプリについて
