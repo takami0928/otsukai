@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { products } from '../data/products'
 import { categories } from '../data/categories'
 import { FIXED_REQUEST_TITLE } from '../constants/request'
 import type { CreateDraftState } from '../types/shopping'
@@ -9,6 +8,7 @@ import { CustomItemsSection } from '../components/CustomItemsSection'
 import { ProductSelectionSections } from '../components/ProductSelectionSections'
 import { RequestLimitNotice } from '../components/RequestLimitNotice'
 import { RequestReviewView } from '../components/RequestReviewView'
+import { HiddenSelectedProductsSection } from '../components/HiddenSelectedProductsSection'
 import {
   loadCreateDraft,
   loadLastSharedUrl,
@@ -79,6 +79,9 @@ import {
   type ShareMessageStatus,
 } from '../utils/requestNoticeMessages'
 import { useCustomItemEditor } from '../hooks/useCustomItemEditor'
+import { useHouseholdCatalog } from '../hooks/useHouseholdCatalog'
+import type { EffectiveProduct } from '../types/householdCatalog'
+import { buildSelectedRequestItems } from '../utils/selectedRequestItems'
 
 type CreateRequestPageProps = {
   onBackHome: () => void
@@ -96,13 +99,19 @@ type InitialPageState = {
   wasNormalized: boolean
 }
 
-function createInitialPageState(): InitialPageState {
+function createInitialPageState(
+  effectiveProducts: readonly EffectiveProduct[],
+): InitialPageState {
   const returnState = loadCreateRequestReturnState()
-  const initialDraft = createInitialCreateRequestState(loadCreateDraft(), products)
+  const initialDraft = createInitialCreateRequestState(
+    loadCreateDraft(),
+    effectiveProducts,
+  )
   const normalized = normalizeRequestDraftData({
     title: FIXED_REQUEST_TITLE,
     draft: initialDraft.draft,
     customItems: returnState?.customItems ?? [],
+    effectiveProducts,
   })
 
   return {
@@ -117,7 +126,10 @@ function createInitialPageState(): InitialPageState {
 }
 
 export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
-  const [initialPageState] = useState(createInitialPageState)
+  const { effectiveProducts, visibleProducts } = useHouseholdCatalog()
+  const [initialPageState] = useState(() =>
+    createInitialPageState(effectiveProducts),
+  )
   const [draft, setDraft] = useState<CreateDraftState>(initialPageState.draft)
   const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(
     initialPageState.expandedProductIds,
@@ -175,8 +187,13 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     [requestBaseUrl, requestKey],
   )
   const requestData = useMemo<RequestDraftData>(
-    () => ({ title: FIXED_REQUEST_TITLE, draft, customItems }),
-    [customItems, draft],
+    () => ({
+      title: FIXED_REQUEST_TITLE,
+      draft,
+      customItems,
+      effectiveProducts,
+    }),
+    [customItems, draft, effectiveProducts],
   )
 
   useEffect(() => {
@@ -191,12 +208,11 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     return () => window.removeEventListener('pageshow', clearReturnState)
   }, [])
 
-  const selectedCount = useMemo(
-    () =>
-      Object.values(draft).filter((item) => item.quantity > 0).length +
-      customItems.length,
-    [customItems, draft],
+  const selectedItems = useMemo(
+    () => buildSelectedRequestItems(effectiveProducts, draft, customItems),
+    [customItems, draft, effectiveProducts],
   )
+  const selectedCount = selectedItems.length
 
   const totalConditionCharacters = useMemo(
     () => countTotalConditionCharacters(requestData),
@@ -224,10 +240,10 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       createRequestContentSnapshot({
         title: FIXED_REQUEST_TITLE,
         draft,
-        productList: products,
+        productList: effectiveProducts,
         customItems,
       }),
-    [customItems, draft],
+    [customItems, draft, effectiveProducts],
   )
 
   const hasResettableInput = useMemo(
@@ -236,7 +252,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
         title: FIXED_REQUEST_TITLE,
         defaultTitle: FIXED_REQUEST_TITLE,
         draft,
-        productList: products,
+        productList: effectiveProducts,
         customItemCount: customItems.length,
         isCustomFormOpen,
         customName,
@@ -255,6 +271,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       customQuantity,
       customUnit,
       draft,
+      effectiveProducts,
       isCustomFormOpen,
       lastSharedUrl,
       mode,
@@ -268,25 +285,36 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       categories
         .map((category) => ({
           category,
-          items: products
+          items: visibleProducts
             .filter((product) => product.categoryId === category.id)
             .sort((a, b) => a.sortOrder - b.sortOrder),
         }))
         .filter((group) => group.items.length > 0),
-    [],
+    [visibleProducts],
+  )
+
+  const hiddenSelectedProducts = useMemo(
+    () =>
+      effectiveProducts.filter(
+        (product) =>
+          product.hidden && (draft[product.id]?.quantity ?? 0) > 0,
+      ),
+    [draft, effectiveProducts],
   )
 
   const groupedSelectedProducts = useMemo(
     () =>
-      groupedProducts
-        .map(({ category, items }) => ({
+      categories
+        .map((category) => ({
           category,
-          items: items.filter(
-            (product) => (draft[product.id]?.quantity ?? 0) > 0,
+          items: effectiveProducts.filter(
+            (product) =>
+              product.categoryId === category.id &&
+              (draft[product.id]?.quantity ?? 0) > 0,
           ),
         }))
         .filter((group) => group.items.length > 0),
-    [draft, groupedProducts],
+    [draft, effectiveProducts],
   )
 
   const applyRequestData = (next: RequestDraftData) => {
@@ -587,7 +615,7 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
       return
     }
 
-    const emptyDraft = createEmptyDraftState(products)
+    const emptyDraft = createEmptyDraftState(effectiveProducts)
     setDraft(emptyDraft)
     saveCreateDraft(emptyDraft)
     setExpandedProductIds(new Set())
@@ -679,6 +707,20 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
         draft={draft}
         expandedProductIds={expandedProductIds}
         groups={groupedProducts}
+        onConditionCommit={handleConditionCommit}
+        onDecrease={handleDecrease}
+        onIncrease={handleIncrease}
+        onToggleDetails={(productId) =>
+          setExpandedProductIds((current) =>
+            toggleExpandedProductId(current, productId),
+          )
+        }
+      />
+
+      <HiddenSelectedProductsSection
+        products={hiddenSelectedProducts}
+        draft={draft}
+        expandedProductIds={expandedProductIds}
         onConditionCommit={handleConditionCommit}
         onDecrease={handleDecrease}
         onIncrease={handleIncrease}

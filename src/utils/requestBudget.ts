@@ -10,15 +10,16 @@ import {
   MAX_TOTAL_CONDITION_CHARS,
   TOTAL_CONDITION_WARNING_THRESHOLD,
 } from '../constants/requestLimits'
-import { SHARE_PRODUCT_IDS_V2 } from '../data/shareProductIdsV2'
+import { products } from '../data/products'
+import type { EffectiveProduct } from '../types/householdCatalog'
 import type { CreateDraftState } from '../types/shopping'
 import {
-  buildCompactRequestPayload,
-  buildCompactRequestUrl,
-  encodeCompactRequest,
-  type CompactCustomItemInput,
-} from './compactRequest'
+  buildCompactRequestV3Payload,
+  encodeCompactRequestV3,
+} from './compactRequestV3'
+import { buildCompactRequestUrl, type CompactCustomItemInput } from './compactRequest'
 import { buildLineDeliveryRequestUrl } from './lineDeliveryUrl'
+import { buildSelectedRequestItems } from './selectedRequestItems'
 import { countUserCharacters } from './textLength'
 
 export type CustomRequestDraftItem = CompactCustomItemInput & { id: string }
@@ -27,6 +28,7 @@ export type RequestDraftData = {
   title: string
   draft: CreateDraftState
   customItems: readonly CustomRequestDraftItem[]
+  effectiveProducts?: readonly EffectiveProduct[]
 }
 export type RequestBudgetContext = {
   baseUrl: string
@@ -63,13 +65,11 @@ export function isShareUrlWarning(urlLength: number): boolean {
 }
 
 export function countTotalConditionCharacters(data: RequestDraftData): number {
-  const regularTotal = SHARE_PRODUCT_IDS_V2.reduce((total, productId) => {
-    const item = data.draft[productId]
-    return item && item.quantity > 0
-      ? total + countUserCharacters(item.memo.trim())
-      : total
-  }, 0)
-  return regularTotal + data.customItems.reduce(
+  return buildSelectedRequestItems(
+    getEffectiveProducts(data),
+    data.draft,
+    data.customItems,
+  ).reduce(
     (total, item) => total + countUserCharacters(item.memo.trim()),
     0,
   )
@@ -77,24 +77,45 @@ export function countTotalConditionCharacters(data: RequestDraftData): number {
 
 export function hasSelectedRequestItems(data: RequestDraftData): boolean {
   return (
-    SHARE_PRODUCT_IDS_V2.some((productId) => (data.draft[productId]?.quantity ?? 0) > 0) ||
-    data.customItems.length > 0
+    buildSelectedRequestItems(
+      getEffectiveProducts(data),
+      data.draft,
+      data.customItems,
+    ).length > 0
   )
+}
+
+const DEFAULT_EFFECTIVE_PRODUCTS: readonly EffectiveProduct[] = products.map(
+  (product) => ({
+    ...product,
+    source: 'base',
+    hidden: false,
+    isCustomized: false,
+  }),
+)
+
+export function getEffectiveProducts(
+  data: RequestDraftData,
+): readonly EffectiveProduct[] {
+  return data.effectiveProducts ?? DEFAULT_EFFECTIVE_PRODUCTS
 }
 
 export function calculateRequestBudget(
   data: RequestDraftData,
   context: RequestBudgetContext,
 ): RequestBudget {
-  const payload = buildCompactRequestPayload({
+  const payload = buildCompactRequestV3Payload({
     requestKey: context.requestKey,
     title: data.title,
-    draft: data.draft,
-    customItems: data.customItems,
+    items: buildSelectedRequestItems(
+      getEffectiveProducts(data),
+      data.draft,
+      data.customItems,
+    ),
   })
   const compactUrl = buildCompactRequestUrl(
     context.baseUrl,
-    encodeCompactRequest(payload),
+    encodeCompactRequestV3(payload),
   )
   const url = buildLineDeliveryRequestUrl(compactUrl)
   return {
@@ -113,7 +134,8 @@ export function validateDraftLimits(
     return { valid: false, reason: 'title-limit' }
   }
 
-  for (const productId of SHARE_PRODUCT_IDS_V2) {
+  for (const product of getEffectiveProducts(data)) {
+    const productId = product.id
     const item = data.draft[productId]
     if (!item) {
       continue

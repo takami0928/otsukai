@@ -29,6 +29,7 @@ body {
 button,
 input,
 textarea,
+select,
 a {
   font: inherit;
 }
@@ -39,7 +40,8 @@ a {
 }
 
 textarea,
-input {
+input,
+select {
   width: 100%;
   border: 1px solid #cbd5d0;
   border-radius: 8px;
@@ -49,7 +51,8 @@ input {
 }
 
 textarea:focus,
-input:focus {
+input:focus,
+select:focus {
   border-color: #679685;
   outline: 2px solid #dcece5;
 }
@@ -588,6 +591,110 @@ input:focus {
   border: 1px solid #e0e7e3;
   border-radius: 8px;
   background: #f8faf9;
+}
+
+.catalog-summary-card {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.catalog-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.catalog-counts span {
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  background: #eef3f1;
+  color: #536b63;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.catalog-add-button {
+  justify-self: start;
+}
+
+.catalog-product-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid #dfe5e2;
+  list-style: none;
+}
+
+.catalog-product-row {
+  display: flex;
+  min-width: 0;
+  gap: 0.65rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 0.2rem;
+  border-bottom: 1px solid #dfe5e2;
+  background: #fff;
+}
+
+.catalog-product-main {
+  display: flex;
+  min-width: 0;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.catalog-product-main > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+
+.catalog-product-main strong {
+  overflow-wrap: anywhere;
+}
+
+.catalog-product-main small {
+  color: #73817c;
+  font-size: 0.76rem;
+}
+
+.catalog-product-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.catalog-hidden-card {
+  border-color: #d8dedb;
+  background: #f8faf9;
+}
+
+.catalog-notice {
+  color: #4f685f;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.catalog-backup-summary p {
+  margin-bottom: 0;
+}
+
+.catalog-editor-fields {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.catalog-editor-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.catalog-editor-actions button {
+  width: 100%;
+}
+
+.hidden-selected-products > .helper-text {
+  margin-bottom: 0.55rem;
 }
 
 .bottom-bar {
@@ -1560,6 +1667,20 @@ input:focus {
   }
 
   .bottom-bar-actions button {
+    width: 100%;
+  }
+
+  .catalog-product-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .catalog-product-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .catalog-product-actions button {
     width: 100%;
   }
 }

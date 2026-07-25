@@ -314,6 +314,20 @@ describe('shared request URL reuse', () => {
     expect(createSnapshot(overrides)).not.toBe(createSnapshot())
   })
 
+  it.each([
+    ['name', { name: '家庭のりんご' }],
+    ['unit', { unit: '袋' }],
+    ['category', { categoryId: 'other' }],
+    ['sort order', { sortOrder: 99 }],
+  ])('changes the snapshot after selected product %s changes', (_, change) => {
+    const changedProducts = productList.map((product) =>
+      product.id === 'apple' ? { ...product, ...change } : product,
+    )
+    expect(createSnapshot({ productList: changedProducts })).not.toBe(
+      createSnapshot(),
+    )
+  })
+
   it('reuses a URL only when both the URL and matching snapshot exist', () => {
     const snapshot = createSnapshot()
 

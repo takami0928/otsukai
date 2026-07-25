@@ -20,7 +20,7 @@ import type {
   ShoppingStateChange,
   UnavailableReason,
 } from '../types/shopping'
-import { decodeCompactRequest } from '../utils/compactRequest'
+import { decodeCompactRequestV2OrV3 } from '../utils/compactRequestV3'
 import {
   createConsultationEntry,
   getConsultationIssue,
@@ -216,7 +216,7 @@ export function ShoppingListPage({
     try {
       const decoded =
         payloadFormat === 'v2'
-          ? decodeCompactRequest(encodedPayload)
+          ? decodeCompactRequestV2OrV3(encodedPayload)
           : decodeShoppingRequest(encodedPayload)
       const migration = migrateLegacyConsultingState(
         loadCheckedState(decoded.requestId),

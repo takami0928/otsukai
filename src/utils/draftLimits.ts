@@ -8,10 +8,10 @@ import {
   MAX_TITLE_CHARS,
   MAX_TOTAL_CONDITION_CHARS,
 } from '../constants/requestLimits'
-import { SHARE_PRODUCT_IDS_V2 } from '../data/shareProductIdsV2'
 import {
   calculateRequestBudget,
   countTotalConditionCharacters,
+  getEffectiveProducts,
   type CustomRequestDraftItem,
   type DraftLimitReason,
   type RequestBudgetContext,
@@ -92,7 +92,8 @@ export function normalizeRequestDraftData(data: RequestDraftData): {
     .filter((item) => item.name.trim())
   let remainingConditionCharacters = MAX_TOTAL_CONDITION_CHARS
 
-  for (const productId of SHARE_PRODUCT_IDS_V2) {
+  for (const product of getEffectiveProducts(data)) {
+    const productId = product.id
     const item = draft[productId]
     if (!item || item.quantity <= 0) {
       continue
@@ -109,6 +110,7 @@ export function normalizeRequestDraftData(data: RequestDraftData): {
     title: truncateUserCharacters(data.title, MAX_TITLE_CHARS),
     draft,
     customItems,
+    effectiveProducts: data.effectiveProducts,
   }
   return {
     value,
