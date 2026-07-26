@@ -42,9 +42,20 @@ export function decodeShoppingSessionPayload(input: {
 export function restoreShoppingSession(
   payload: ShoppingRequestPayload,
 ): LoadedShoppingSession {
+  const requestItemIds = new Set(payload.items.map((item) => item.id))
+  const storedCheckedState = Object.fromEntries(
+    Object.entries(loadCheckedState(payload.requestId)).filter(([itemId]) =>
+      requestItemIds.has(itemId),
+    ),
+  )
+  const storedItemIssues = Object.fromEntries(
+    Object.entries(loadItemIssues(payload.requestId)).filter(([itemId]) =>
+      requestItemIds.has(itemId),
+    ),
+  )
   const migration = migrateLegacyConsultingState(
-    loadCheckedState(payload.requestId),
-    loadItemIssues(payload.requestId),
+    storedCheckedState,
+    storedItemIssues,
     loadConsultations(payload.requestId),
   )
   const checkedState = reconcileCheckedStateWithIssues(
@@ -57,10 +68,12 @@ export function restoreShoppingSession(
   )
   const consultations = reconcileConsultations(
     migration.consultations,
-    payload.items.map((item) => item.id),
+    [...requestItemIds],
   )
-  const cartOrder = loadCartOrder(payload.requestId).filter((itemId) =>
-    isCartStatus(getItemStatus(checkedState, itemId)),
+  const cartOrder = loadCartOrder(payload.requestId).filter(
+    (itemId) =>
+      requestItemIds.has(itemId) &&
+      isCartStatus(getItemStatus(checkedState, itemId)),
   )
 
   return {

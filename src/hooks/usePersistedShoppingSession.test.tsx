@@ -3,14 +3,45 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ConsultationMap } from '../types/shopping'
-import type { ShoppingStateSnapshot } from '../utils/shoppingState'
+import type {
+  CheckedItemStatus,
+  ConsultationMap,
+  ItemIssue,
+} from '../types/shopping'
+import {
+  isCartStatus,
+  keepsItemIssue,
+  type ShoppingStateSnapshot,
+} from '../utils/shoppingState'
 import { usePersistedShoppingSession } from './usePersistedShoppingSession'
 
 const EMPTY_SHOPPING_STATE: ShoppingStateSnapshot = {
   checkedState: {},
   itemIssues: {},
   cartOrder: [],
+}
+
+const CHECKED_STATUSES: CheckedItemStatus[] = [
+  'pending',
+  'inCart',
+  'verified',
+  'consulting',
+  'notBuying',
+]
+
+const STATUS_TRANSITIONS = CHECKED_STATUSES.flatMap((previousStatus) =>
+  CHECKED_STATUSES.filter(
+    (nextStatus) => nextStatus !== previousStatus,
+  ).map((nextStatus) => ({ previousStatus, nextStatus })),
+)
+
+function issueForStatus(
+  status: CheckedItemStatus,
+  note: string,
+): ItemIssue | undefined {
+  return keepsItemIssue(status)
+    ? { reason: 'conditionMismatch', note }
+    : undefined
 }
 
 function readStored(key: string): unknown {
@@ -249,6 +280,64 @@ describe('usePersistedShoppingSession', () => {
     expect(readStored('otsukai:cartOrder:request-a')).toEqual(['milk'])
   })
 
+  it.each(STATUS_TRANSITIONS)(
+    'preserves state invariants across $previousStatus -> $nextStatus and Undo',
+    ({ previousStatus, nextStatus }) => {
+      const itemId = 'subject'
+      const previousIssue = issueForStatus(
+        previousStatus,
+        'before transition',
+      )
+      const nextIssue = issueForStatus(nextStatus, 'after transition')
+      const previousCartOrder = isCartStatus(previousStatus)
+        ? ['before', itemId, 'after']
+        : ['before', 'after']
+      const initialState: ShoppingStateSnapshot = {
+        checkedState: {
+          before: 'inCart',
+          [itemId]: previousStatus,
+          after: 'verified',
+        },
+        itemIssues: previousIssue
+          ? { [itemId]: previousIssue }
+          : {},
+        cartOrder: previousCartOrder,
+      }
+      replaceSession('transition-request', initialState)
+
+      let committed: ReturnType<typeof session.commitShoppingChange>
+      act(() => {
+        committed = session.commitShoppingChange(
+          itemId,
+          nextStatus,
+          nextIssue,
+        )
+      })
+
+      expect(committed!).not.toBeNull()
+      expect(session.shoppingState.checkedState[itemId]).toBe(nextStatus)
+      expect(
+        session.shoppingState.cartOrder.filter((id) => id === itemId),
+      ).toHaveLength(isCartStatus(nextStatus) ? 1 : 0)
+      expect(session.shoppingState.itemIssues[itemId]).toEqual(nextIssue)
+
+      act(() => {
+        session.undoShoppingChange(
+          committed!.change,
+          committed!.previousCartOrder,
+        )
+      })
+
+      expect(session.shoppingState.checkedState[itemId]).toBe(
+        previousStatus,
+      )
+      expect(session.shoppingState.itemIssues[itemId]).toEqual(
+        previousIssue,
+      )
+      expect(session.shoppingState.cartOrder).toEqual(previousCartOrder)
+    },
+  )
+
   it('does not save later changes under a replaced request ID', () => {
     replaceSession('request-a')
     act(() => {
@@ -273,6 +362,62 @@ describe('usePersistedShoppingSession', () => {
     })
     expect(readStored('otsukai:itemIssues:request-b')).toEqual({
       eggs: { reason: 'soldOut' },
+    })
+  })
+
+  it('documents last-writer storage behavior for concurrent sessions', () => {
+    act(() => root.unmount())
+    root = createRoot(container)
+    let firstSession: ReturnType<typeof usePersistedShoppingSession>
+    let secondSession: ReturnType<typeof usePersistedShoppingSession>
+
+    function FirstSessionHarness() {
+      firstSession = usePersistedShoppingSession()
+      return null
+    }
+
+    function SecondSessionHarness() {
+      secondSession = usePersistedShoppingSession()
+      return null
+    }
+
+    act(() => {
+      root.render(
+        <>
+          <FirstSessionHarness />
+          <SecondSessionHarness />
+        </>,
+      )
+    })
+    act(() => {
+      firstSession!.replaceSession({
+        requestId: 'shared-request',
+        shoppingState: EMPTY_SHOPPING_STATE,
+        consultations: {},
+      })
+      secondSession!.replaceSession({
+        requestId: 'shared-request',
+        shoppingState: EMPTY_SHOPPING_STATE,
+        consultations: {},
+      })
+    })
+    act(() => {
+      firstSession!.commitShoppingChange('milk', 'inCart')
+    })
+    expect(readStored('otsukai:checked:shared-request')).toEqual({
+      milk: 'inCart',
+    })
+
+    act(() => {
+      secondSession!.commitShoppingChange(
+        'eggs',
+        'notBuying',
+        { reason: 'soldOut' },
+      )
+    })
+
+    expect(readStored('otsukai:checked:shared-request')).toEqual({
+      eggs: 'notBuying',
     })
   })
 

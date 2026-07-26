@@ -34,11 +34,17 @@
 
 PR 1では、失敗する回帰テストを先に追加して上記を再現した。v3の構造上限303商品を最大長ID・名称・単位と条件合計1,000文字で低圧縮データ化した実測値は、展開後JSON 57,868文字、encoded 51,176文字だった。公開配送URLの2,200文字制限を維持しつつ、decoder側は最大構造と過去データへ余裕を持たせてencoded 64,000文字、展開後JSON 200,000文字を上限とした。後続PRで固定fixtureと公開形式を再検証する。
 
+## PR 3で再現した確認済み不具合
+
+買い物セッション復元時、consultationsは依頼内の商品IDへ絞り込まれていた一方、checked state、item issues、cart orderは現在のpayloadに存在しない商品IDを保持していた。失敗する回帰テストでは、別依頼由来の`inCart`と`notBuying`、理由、かご順がそのまま復元されることを確認した。
+
+復元直後にpayloadの商品ID集合でchecked stateとitem issuesを絞り込み、cart orderも同じ集合と購入状態の両方を満たすIDだけへ限定した。URL形式、保存キー、保存値、正常な復元動作は変更していない。
+
 ## 仕様判断を要する設計リスク
 
 ### 複数タブでの同時編集
 
-現行実装は買い物状態と家庭用商品リストをタブ間で同期せず、最後に保存したタブの値が残る。自動同期や競合解決は保存タイミングと利用者向け仕様を変えるため、今回の回帰修正には含めない。
+現行実装は買い物状態と家庭用商品リストをタブ間で同期せず、最後に保存したタブの値が残る。2つの独立した買い物session hookで同じrequestIdを開くcharacterization testを追加し、先のsessionが保存した`milk: inCart`が、古いstateを持つ後のsessionによる`eggs: notBuying`の保存で置き換わることを確認した。自動同期や競合解決は保存タイミングと利用者向け仕様を変えるため、今回の回帰修正には含めない。
 
 - 想定被害: 同じ依頼または商品リストを複数タブで同時編集した場合、古いタブの操作が新しい保存を上書きし得る。
 - 現行回避策: 同一依頼・商品リストは1タブで操作する。
@@ -57,3 +63,15 @@ PR 1では、失敗する回帰テストを先に追加して上記を再現し�
 - hidden selected商品、家庭追加商品、通常商品、一回限り商品を同じ依頼作成レビューとv3 decodeへ通す。
 
 PR 2終了時点のcoverageは statements 89.35%、branches 83.31%、functions 93.70%、lines 89.34%（44 files / 366 tests）。このPRで新しい製品不具合は再現せず、分類Bの回帰リスクを恒久テスト化した。
+
+## PR 3の回帰保護
+
+- `pending`、`inCart`、`verified`、`consulting`、`notBuying`の異なる全20遷移をtable-driven testで実行し、状態、理由、かご順、重複防止とUndoによる完全復元を検証する。
+- 同一状態・同一issueのno-op、同一状態でのissue変更、不正issueを保存しない正規化を検証する。
+- payload外の商品IDをchecked state、item issues、cart orderから除外する失敗回帰テストを追加し、復元処理を修正する。
+- `ShoppingDialog`の前後Tab循環、disabled除外、focus対象なし、backdrop、内部mousedown、Escape、元focusとbody overflowの復元、listener cleanupを検証する。
+- 商品カタログ復旧UIで、ファイル未選択、サイズ超過、`file.text()`失敗、不正JSON、未知version、危険キー、古いデータ警告、preview cancelを検証する。
+- 復旧リンクとJSONの両方でlocalStorage保存失敗時にpreviewと現在catalogを維持し、正常復元時だけbackup receiptを記録することを検証する。
+- 複数sessionのlast-writer動作を再現し、製品判断が必要な分類Cとして単一タブ制約を記録する。
+
+PR 3のローカル検証時点は45 files / 410 testsで、coverageは statements 90.54%、branches 84.60%、functions 94.03%、lines 90.55%。全テスト、build（102 modules）、diff check、production auditが成功した。

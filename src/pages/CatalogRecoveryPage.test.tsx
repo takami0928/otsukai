@@ -165,6 +165,53 @@ describe('CatalogRecoveryPage', () => {
     ).toEqual(current)
   })
 
+  it('keeps the preview and current catalog when recovery persistence fails', async () => {
+    const current = changedCatalog(
+      '現在の牛乳',
+      '2026-07-27T00:00:00.000Z',
+    )
+    const recovered = changedCatalog(
+      '復元対象の牛乳',
+      '2026-07-25T00:00:00.000Z',
+    )
+    expect(saveHouseholdCatalog(current).ok).toBe(true)
+    const bundle = createCatalogRecoveryBundle(
+      'https://example.test/otsukai/',
+      recovered,
+      '2026-07-25T01:00:00.000Z',
+    )
+    await renderPage(bundle.encoded)
+    const originalSetItem = window.localStorage.setItem.bind(
+      window.localStorage,
+    )
+    const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(
+      (key: string, value: string) => {
+        if (key === HOUSEHOLD_CATALOG_KEY) {
+          throw new DOMException('storage full', 'QuotaExceededError')
+        }
+        originalSetItem(key, value)
+      },
+    )
+
+    await click(button('この商品リストに置き換える'))
+    setItem.mockRestore()
+
+    expect(container.querySelector('h1')?.textContent).toBe(
+      '商品リストを復元',
+    )
+    expect(container.textContent).toContain(
+      '商品リストを復元できませんでした。',
+    )
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(HOUSEHOLD_CATALOG_KEY) ?? '{}',
+      ),
+    ).toEqual(current)
+    expect(
+      window.localStorage.getItem(CATALOG_BACKUP_RECEIPT_KEY),
+    ).toBeNull()
+  })
+
   it('shows a safe error for a broken recovery link', async () => {
     await renderPage('broken-data')
     expect(container.textContent).toContain('復旧データを確認できません')
