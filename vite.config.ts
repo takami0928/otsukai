@@ -19,6 +19,7 @@ export default defineConfig(({ mode }) => {
           'src/main.tsx',
           'src/vite-env.d.ts',
           'src/data/**',
+          'src/testFixtures/**',
           'src/types/**',
         ],
       },
