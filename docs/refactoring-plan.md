@@ -519,9 +519,17 @@ Context、外部store、アプリ全体のReducer、状態機械、汎用共有h
 
 | Phase | 内容 | 状態 | branch | PR |
 |---|---|---|---|---|
-| 1 | route意味と買い物セッション読込 | PR検証中 | `refactor/shopping-session-phase-1-loading` | #24 |
-| 2 | 買い物状態と永続化の専用hook化 | PR検証中 | `refactor/shopping-session-phase-2-persistence` | #25 |
-| 3 | 相談workflowの専用hook化 | PR検証中 | `refactor/shopping-session-phase-3-consultations` | #26 |
+| 1 | route意味と買い物セッション読込 | 完了 | `refactor/shopping-session-phase-1-loading` | #24 |
+| 2 | 買い物状態と永続化の専用hook化 | 完了 | `refactor/shopping-session-phase-2-persistence` | #25 |
+| 3 | 相談workflowの専用hook化 | 完了 | `refactor/shopping-session-phase-3-consultations` | #26 |
+
+### Delivery記録
+
+| Phase | 最終head SHA | CI run | Squash SHA | Pages run |
+|---|---|---|---|---|
+| 1 | `4617f1673f2dbba0e3a71f1df4dab851c6a564e4` | `30182898427` success | `f72b06de7a56f96a8d45a1e1554c1d95e19fc13b` | `30182935915` success |
+| 2 | `eea8cbf51fa5ab388ae21def4806df1f7879ce3d` | `30183154615` success | `0765a79926740d7a2e2487489eac4a57228b5b1a` | `30183187324` success |
+| 3 | `6323e6863800df31158e918013a75f148ac03c3f` | `30183468861` success | `d619b8411f976af0c85a45be90bd280aaae2e53c` | `30183495426` success |
 
 ## Phase 1: route意味と買い物セッション読込
 
@@ -559,19 +567,19 @@ Context、外部store、アプリ全体のReducer、状態機械、汎用共有h
 - branch: `refactor/shopping-session-phase-1-loading`
 - PR: #24
 - implementation head SHA: `a354b2ffe441c5b8096df76df6beabe562ab97b9`
-- 最終head SHA: GitHub PR metadataと最終報告に記録
+- 最終head SHA: `4617f1673f2dbba0e3a71f1df4dab851c6a564e4`
 - `RequestRouteCodec`を`legacy-query | compact-path`として導入し、routeと`ShoppingListPage` propsから`format: 'v2'`という誤解を招く表現を除去した。
 - `shoppingSession`へcodec別復号と、4保存値の読込、legacy migration、3種のreconcile、cart order整合を移した。
 - decoderと復元処理は別関数に保ち、browser I/Oを純粋なcodec dispatchへ混入させていない。
 - ページにはloader結果のstate反映と、Phase 2以降で扱うstate／ref／保存effectを残した。
 - focused test: v1、同一compact routeのv2／v3、安定ID、legacy migration、不正status／issue整合、不正consultation、request外consultation、cart order、破損保存値、不正URL、session切替。
 - ローカル検証: 37 test files / 309 tests、build 99 modules成功、`git diff --check`成功、production audit 0 vulnerabilities。
-- CI結果: PR作成後に確定
-- Squash SHA: merge後に確定
-- Pages run: merge後に確定
-- 公開スモーク: merge後にホーム、依頼作成、v3、v2、v1、不正URL、console errorを確認
+- CI結果: run `30182898427`、completed / success。
+- Squash SHA: `f72b06de7a56f96a8d45a1e1554c1d95e19fc13b`。
+- Pages run: `30182935915`、build／deployともsuccess。
+- 公開スモーク: ホーム、依頼作成、v3、v2、v1、不正URLを確認し、console errorは0件。配信JS／CSSは同じmainから作成したローカルbuildとSHA-256が一致した。
 - 意図的に残した責務: state、ref、4保存effect、状態更新、相談workflow。Phase 2／3の境界を守るため。
-- 残存リスク: loader接続後の公開ブラウザでcodec familyごとの直リンクを確認するまで、配信環境固有の回帰リスクが残る。
+- 残存リスク: codec familyごとの公開直リンクに既知の回帰はない。物理端末固有のブラウザ差異は未確認。
 
 ## Phase 2: 買い物状態と永続化の専用hook化
 
@@ -608,16 +616,19 @@ Context、外部store、アプリ全体のReducer、状態機械、汎用共有h
 - baseline main: `f72b06de7a56f96a8d45a1e1554c1d95e19fc13b`
 - PR: #25
 - implementation head SHA: `1fa25c8a858ddc19295ec0b936c40f217a095b26`
-- 最終head SHA: GitHub PR metadataと最終報告に記録
+- 最終head SHA: `eea8cbf51fa5ab388ae21def4806df1f7879ce3d`
 - `usePersistedShoppingSession`へ買い物状態、相談状態、同期的な最新値参照、session置換、4保存effectを移した。
 - `createShoppingStateChange`／`applyShoppingStateChange`をhook内で再利用し、commitはUndoに必要なchangeと直前のcart orderを返す。
 - Undo適用もhookの状態更新APIへ移し、ページは通知のconsume、文言、timer、ダイアログ整理だけを担当する。
 - consultation updaterはhook内の最新値を基準に連続更新し、requestIdと全保存対象を一つのsession境界で置換する。
 - focused test: loader由来初期値、session置換、checked／issues／cart order／consultations保存、最新値参照、連続更新、no-op、consultation updater、Undo用cart order、request切替後の保存先分離。
 - ローカル検証: 38 test files / 316 tests、build 100 modules成功、`git diff --check`成功、production audit 0 vulnerabilities。
-- CI結果／Squash SHA／Pages run／公開スモーク: PR作成・merge後に確定
+- CI結果: run `30183154615`、completed / success。
+- Squash SHA: `0765a79926740d7a2e2487489eac4a57228b5b1a`。
+- Pages run: `30183187324`、build／deployともsuccess。
+- 公開スモーク: かご投入、数量／条件確認、今回は買わない、5秒Undo、再読込後の状態・かご順復元、別依頼への状態分離を確認し、console errorは0件。
 - 意図的に残した責務: Undo timer／文言、相談ダイアログと共有、結果共有、focus／scroll、selector、描画。Phase 2のdomain境界外であるため。
-- 残存リスク: 公開環境で状態変更直後の保存、再読込、別依頼切替を確認するまで配信環境固有の回帰リスクが残る。
+- 残存リスク: 永続化と依頼切替の公開確認で既知の回帰はない。ブラウザのprivate modeや容量制限など環境固有のstorage制約は従来どおり。
 
 ## Phase 3: 相談workflowの専用hook化
 
@@ -656,7 +667,7 @@ Context、外部store、アプリ全体のReducer、状態機械、汎用共有h
 - baseline main: `0765a79926740d7a2e2487489eac4a57228b5b1a`
 - PR: #26
 - implementation head SHA: `1db4608729dc4d077ea3637d78faf2e6168027db`
-- 最終head SHA: GitHub PR metadataと最終報告に記録
+- 最終head SHA: `6323e6863800df31158e918013a75f148ac03c3f`
 - `useConsultationWorkflow`へdraft、既存consultation／legacy issue復元、reason／note、close、queue追加、即時個別共有、既存個別共有、queued一括共有、削除、解決を移した。
 - 相談共有中状態、個別busy item ID、二重実行防止、request切替／unmount世代無効化をhookへ局所化した。
 - shared／copied時だけ対象相談を`shared`へ変更し、cancelled／failed時はqueued内容とdraftを保持する。
@@ -664,7 +675,10 @@ Context、外部store、アプリ全体のReducer、状態機械、汎用共有h
 - focused test: 新規／既存／legacy draft、reason必須、queue更新、即時queue保存、shared／copied／cancelled／failed、個別、一括queued限定、resolved除外、削除、解決、二重押下、共有lock、request切替、unmount、購入状態非変更。
 - 既存ページcharacterization testで購入状態維持、今回は買わない＋Undo、未解決相談による完了block、解決後完了、結果共有による相談状態不変を維持した。
 - ローカル検証: 39 test files / 332 tests、build 101 modules成功、`git diff --check`成功、production audit 0 vulnerabilities。
-- CI結果／Squash SHA／Pages run／公開スモーク: PR作成・merge後に確定
+- CI結果: run `30183468861`、completed / success。
+- Squash SHA: `d619b8411f976af0c85a45be90bd280aaae2e53c`。
+- Pages run: `30183495426`、build／deployともsuccess。
+- 公開スモーク: 相談の追加・内容復元・編集・削除・解決、購入状態維持、今回は買わない＋Undo、未解決件数、結果共有導線、dialogのfocus／Escape／scroll lockを確認した。320px／360px／390pxで横スクロールはなく、console errorは0件。
 - 意図的に残した責務: `notBuying`購入状態遷移、Undo、結果共有、完了、checkout／completion focus、notice描画、selector、dialog／card描画。
 - generic共有抽象化を導入しなかった理由: 相談はqueue保存とshared遷移を伴い、結果共有は完了集計だけを共有するため、同じhookへ統合するとsubject分岐とcallbackが増える。相互排他に必要な最小lockだけをページで共有した。
-- 残存リスク: OS共有UIと物理端末での実送信は自動化できず、公開環境では共有画面到達またはclipboard fallbackまでの確認となる。
+- 残存リスク: OS共有UIと物理端末での実送信は自動化できず、公開環境では共有UI到達とキャンセル後の状態保持までの確認となる。
