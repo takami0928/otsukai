@@ -178,6 +178,37 @@ describe('shopping session loading', () => {
     })
   })
 
+  it('drops shopping data for item IDs that are not part of the request', () => {
+    const payload = createPayload('stale-item-session')
+    const validItemId = payload.items[0].id
+    window.localStorage.setItem(
+      `otsukai:checked:${payload.requestId}`,
+      JSON.stringify({
+        [validItemId]: 'inCart',
+        'stale-cart-item': 'inCart',
+        'stale-issue-item': 'notBuying',
+      }),
+    )
+    window.localStorage.setItem(
+      `otsukai:itemIssues:${payload.requestId}`,
+      JSON.stringify({
+        'stale-issue-item': { reason: 'soldOut' },
+      }),
+    )
+    window.localStorage.setItem(
+      `otsukai:cartOrder:${payload.requestId}`,
+      JSON.stringify(['stale-cart-item', validItemId]),
+    )
+
+    const session = restoreShoppingSession(payload)
+
+    expect(session.shoppingState).toEqual({
+      checkedState: { [validItemId]: 'inCart' },
+      itemIssues: {},
+      cartOrder: [validItemId],
+    })
+  })
+
   it('falls back safely when every shopping storage value is malformed', () => {
     const payload = createPayload('broken-storage')
     for (const key of [

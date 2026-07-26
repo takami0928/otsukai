@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { CheckedStateMap, ShoppingRequestItemPayload } from '../types/shopping'
+import type {
+  CheckedItemStatus,
+  CheckedStateMap,
+  ItemIssue,
+  ShoppingRequestItemPayload,
+} from '../types/shopping'
 import {
   addToCartOrder,
   applyShoppingStateChange,
@@ -34,6 +39,14 @@ const createItem = (
   iconSnapshot: '🛒',
   sortOrderSnapshot,
 })
+
+const CHECKED_STATUSES: CheckedItemStatus[] = [
+  'pending',
+  'inCart',
+  'verified',
+  'consulting',
+  'notBuying',
+]
 
 describe('shopping state normalization', () => {
   it('keeps legacy and new checked statuses', () => {
@@ -325,6 +338,70 @@ describe('cart order', () => {
 })
 
 describe('shopping state changes and undo', () => {
+  it.each(CHECKED_STATUSES)(
+    'treats an identical %s status and issue as a no-op',
+    (status) => {
+      const issue = status === 'consulting' || status === 'notBuying'
+        ? { reason: 'soldOut' as const, note: 'same issue' }
+        : undefined
+
+      expect(
+        createShoppingStateChange(
+          { subject: status },
+          issue ? { subject: issue } : {},
+          'subject',
+          status,
+          issue,
+        ),
+      ).toBeNull()
+    },
+  )
+
+  it.each(['consulting', 'notBuying'] as const)(
+    'creates a %s change when only the issue changes',
+    (status) => {
+      const change = createShoppingStateChange(
+        { subject: status },
+        { subject: { reason: 'soldOut', note: 'before' } },
+        'subject',
+        status,
+        { reason: 'notFound', note: 'after' },
+      )
+
+      expect(change).toMatchObject({
+        previousStatus: status,
+        nextStatus: status,
+        previousIssue: { reason: 'soldOut', note: 'before' },
+        nextIssue: { reason: 'notFound', note: 'after' },
+      })
+    },
+  )
+
+  it('does not save an invalid issue in an applied change', () => {
+    const invalidIssue = {
+      reason: 'not-a-reason',
+      note: 'must not persist',
+    } as unknown as ItemIssue
+    const change = createShoppingStateChange(
+      {},
+      {},
+      'subject',
+      'notBuying',
+      invalidIssue,
+    )
+    if (!change) {
+      throw new Error('Expected a status change')
+    }
+
+    const applied = applyShoppingStateChange(
+      { checkedState: {}, itemIssues: {}, cartOrder: [] },
+      change,
+    )
+
+    expect(change.nextIssue).toBeUndefined()
+    expect(applied.itemIssues).toEqual({})
+  })
+
   it('keeps the legacy status-only change helper', () => {
     expect(createCheckedStatusChange({}, 'milk', 'inCart')).toEqual({
       itemId: 'milk',

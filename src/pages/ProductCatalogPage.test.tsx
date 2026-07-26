@@ -3,6 +3,12 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MAX_CATALOG_RECOVERY_JSON_CHARS } from '../constants/requestLimits'
+import {
+  CATALOG_BACKUP_RECEIPT_KEY,
+  HOUSEHOLD_CATALOG_KEY,
+  saveHouseholdCatalog,
+} from '../utils/catalogStorage'
 import { createCatalogRecoveryBundle } from '../utils/catalogRecovery'
 import {
   createEmptyHouseholdCatalog,
@@ -64,6 +70,28 @@ describe('ProductCatalogPage', () => {
     await act(async () => {
       element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
+    })
+  }
+
+  function recoveryFileInput(): HTMLInputElement {
+    const input = container.querySelector<HTMLInputElement>(
+      'input[type="file"]',
+    )
+    if (!input) {
+      throw new Error('JSON file input was not rendered')
+    }
+    return input
+  }
+
+  async function selectRecoveryFile(file?: File) {
+    const input = recoveryFileInput()
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: file ? [file] : [],
+    })
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      await new Promise((resolve) => setTimeout(resolve, 0))
     })
   }
 
@@ -313,23 +341,10 @@ describe('ProductCatalogPage', () => {
       '2026-07-26T02:00:00.000Z',
     )
     await renderPage()
-    const input = container.querySelector<HTMLInputElement>(
-      'input[type="file"]',
-    )
-    if (!input) {
-      throw new Error('JSON file input was not rendered')
-    }
     const file = new File([bundle.json], bundle.fileName, {
       type: 'application/json',
     })
-    Object.defineProperty(input, 'files', {
-      configurable: true,
-      value: [file],
-    })
-    await act(async () => {
-      input.dispatchEvent(new Event('change', { bubbles: true }))
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
+    await selectRecoveryFile(file)
 
     expect(container.querySelector('h1')?.textContent).toBe(
       '商品リストを復元',
@@ -349,6 +364,210 @@ describe('ProductCatalogPage', () => {
     expect(container.textContent).toContain(
       '復旧用JSONファイルから商品リストを復元しました。',
     )
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(CATALOG_BACKUP_RECEIPT_KEY) ?? '{}',
+      ).catalogFingerprint,
+    ).toMatch(/^catalog-v1-/)
+  })
+
+  it('ignores a JSON change event when no file is selected', async () => {
+    await renderPage()
+
+    await selectRecoveryFile()
+
+    expect(container.querySelector('h1')?.textContent).toBe(
+      '商品リストを編集',
+    )
+    expect(container.querySelector('.catalog-notice')).toBeNull()
+  })
+
+  it('rejects an oversized JSON file before reading it', async () => {
+    await renderPage()
+    const file = new File(
+      ['x'.repeat(MAX_CATALOG_RECOVERY_JSON_CHARS + 1)],
+      'oversized.json',
+      { type: 'application/json' },
+    )
+    const text = vi.spyOn(file, 'text')
+
+    await selectRecoveryFile(file)
+
+    expect(text).not.toHaveBeenCalled()
+    expect(container.textContent).toContain(
+      '商品リスト復旧データが大きすぎます。',
+    )
+  })
+
+  it('shows a safe notice when reading the JSON file fails', async () => {
+    await renderPage()
+    const file = new File(['{}'], 'unreadable.json', {
+      type: 'application/json',
+    })
+    vi.spyOn(file, 'text').mockRejectedValue(
+      new Error('ファイルを読み込めませんでした。'),
+    )
+
+    await selectRecoveryFile(file)
+
+    expect(container.textContent).toContain(
+      'ファイルを読み込めませんでした。',
+    )
+    expect(container.querySelector('h1')?.textContent).toBe(
+      '商品リストを編集',
+    )
+  })
+
+  it.each([
+    {
+      label: 'invalid JSON',
+      json: '{broken',
+      expected: '商品リスト復旧JSONの形式が正しくありません。',
+    },
+    {
+      label: 'unsupported version',
+      json: JSON.stringify({
+        version: 2,
+        createdAt: '2026-07-26T02:00:00.000Z',
+        catalog: createEmptyHouseholdCatalog(
+          '2026-07-26T01:00:00.000Z',
+        ),
+      }),
+      expected: '商品リスト復旧データの形式が正しくありません。',
+    },
+    {
+      label: 'dangerous object key',
+      json: `{"version":1,"createdAt":"2026-07-26T02:00:00.000Z","catalog":{"schemaVersion":1,"revision":1,"updatedAt":"2026-07-26T01:00:00.000Z","overrides":{"__proto__":{"hidden":true}},"addedProducts":[]}}`,
+      expected: '商品リスト復旧データの形式が正しくありません。',
+    },
+  ])('rejects $label without opening a recovery preview', async ({ json, expected }) => {
+    await renderPage()
+
+    await selectRecoveryFile(
+      new File([json], 'invalid.json', { type: 'application/json' }),
+    )
+
+    expect(container.textContent).toContain(expected)
+    expect(container.querySelector('h1')?.textContent).toBe(
+      '商品リストを編集',
+    )
+  })
+
+  it('warns for older JSON data and cancels without replacing the current catalog', async () => {
+    const currentCatalog = updateBaseProduct(
+      createEmptyHouseholdCatalog('2026-07-27T00:00:00.000Z'),
+      'milk',
+      {
+        name: '現在の牛乳',
+        unit: '本',
+        categoryId: 'eggs-dairy',
+        hidden: false,
+      },
+      '2026-07-27T01:00:00.000Z',
+    )
+    const recoveredCatalog = updateBaseProduct(
+      createEmptyHouseholdCatalog('2026-07-25T00:00:00.000Z'),
+      'milk',
+      {
+        name: '古い牛乳',
+        unit: 'パック',
+        categoryId: 'drinks',
+        hidden: false,
+      },
+      '2026-07-25T01:00:00.000Z',
+    )
+    expect(saveHouseholdCatalog(currentCatalog).ok).toBe(true)
+    const bundle = createCatalogRecoveryBundle(
+      'https://example.test/otsukai/',
+      recoveredCatalog,
+      '2026-07-25T02:00:00.000Z',
+    )
+    await renderPage()
+
+    await selectRecoveryFile(
+      new File([bundle.json], bundle.fileName, {
+        type: 'application/json',
+      }),
+    )
+
+    expect(container.textContent).toContain(
+      'この復旧データは、現在の商品リストより古い可能性があります。',
+    )
+    await click(button('キャンセル'))
+    expect(container.querySelector('h1')?.textContent).toBe(
+      '商品リストを編集',
+    )
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(HOUSEHOLD_CATALOG_KEY) ?? '{}',
+      ),
+    ).toEqual(currentCatalog)
+  })
+
+  it('keeps the current catalog on screen when JSON recovery persistence fails', async () => {
+    const currentCatalog = updateBaseProduct(
+      createEmptyHouseholdCatalog('2026-07-26T00:00:00.000Z'),
+      'milk',
+      {
+        name: '現在の牛乳',
+        unit: '本',
+        categoryId: 'eggs-dairy',
+        hidden: false,
+      },
+      '2026-07-26T01:00:00.000Z',
+    )
+    const recoveredCatalog = updateBaseProduct(
+      createEmptyHouseholdCatalog('2026-07-26T00:00:00.000Z'),
+      'milk',
+      {
+        name: '復元対象の牛乳',
+        unit: 'パック',
+        categoryId: 'drinks',
+        hidden: false,
+      },
+      '2026-07-26T02:00:00.000Z',
+    )
+    expect(saveHouseholdCatalog(currentCatalog).ok).toBe(true)
+    const bundle = createCatalogRecoveryBundle(
+      'https://example.test/otsukai/',
+      recoveredCatalog,
+      '2026-07-26T03:00:00.000Z',
+    )
+    await renderPage()
+    await selectRecoveryFile(
+      new File([bundle.json], bundle.fileName, {
+        type: 'application/json',
+      }),
+    )
+    const originalSetItem = window.localStorage.setItem.bind(
+      window.localStorage,
+    )
+    const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(
+      (key: string, value: string) => {
+        if (key === HOUSEHOLD_CATALOG_KEY) {
+          throw new DOMException('storage full', 'QuotaExceededError')
+        }
+        originalSetItem(key, value)
+      },
+    )
+
+    await click(button('この商品リストに置き換える'))
+    setItem.mockRestore()
+
+    expect(container.querySelector('h1')?.textContent).toBe(
+      '商品リストを復元',
+    )
+    expect(container.textContent).toContain(
+      '商品リストを復元できませんでした。',
+    )
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(HOUSEHOLD_CATALOG_KEY) ?? '{}',
+      ),
+    ).toEqual(currentCatalog)
+    expect(
+      window.localStorage.getItem(CATALOG_BACKUP_RECEIPT_KEY),
+    ).toBeNull()
   })
 
   it('records a backup receipt only after the user confirms saving the link', async () => {
