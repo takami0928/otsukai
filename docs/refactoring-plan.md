@@ -521,7 +521,7 @@ Context、外部store、アプリ全体のReducer、状態機械、汎用共有h
 |---|---|---|---|---|
 | 1 | route意味と買い物セッション読込 | PR検証中 | `refactor/shopping-session-phase-1-loading` | #24 |
 | 2 | 買い物状態と永続化の専用hook化 | PR検証中 | `refactor/shopping-session-phase-2-persistence` | #25 |
-| 3 | 相談workflowの専用hook化 | 未着手 | `refactor/shopping-session-phase-3-consultations` | 未作成 |
+| 3 | 相談workflowの専用hook化 | PR検証中 | `refactor/shopping-session-phase-3-consultations` | #26 |
 
 ## Phase 1: route意味と買い物セッション読込
 
@@ -653,5 +653,18 @@ Context、外部store、アプリ全体のReducer、状態機械、汎用共有h
 ### 結果記録
 
 - branch: `refactor/shopping-session-phase-3-consultations`
-- PR／head／CI／Squash／Pages／公開スモーク: Phase 3実行時に記録
-- 意図的に残す責務: 購入状態遷移、Undo、結果共有、完了、focus／scroll、描画
+- baseline main: `0765a79926740d7a2e2487489eac4a57228b5b1a`
+- PR: #26
+- implementation head SHA: `1db4608729dc4d077ea3637d78faf2e6168027db`
+- 最終head SHA: GitHub PR metadataと最終報告に記録
+- `useConsultationWorkflow`へdraft、既存consultation／legacy issue復元、reason／note、close、queue追加、即時個別共有、既存個別共有、queued一括共有、削除、解決を移した。
+- 相談共有中状態、個別busy item ID、二重実行防止、request切替／unmount世代無効化をhookへ局所化した。
+- shared／copied時だけ対象相談を`shared`へ変更し、cancelled／failed時はqueued内容とdraftを保持する。
+- ページには結果共有専用の世代管理と、小さな共有lock coordinatorを残し、相談共有と結果共有の相互排他を維持した。
+- focused test: 新規／既存／legacy draft、reason必須、queue更新、即時queue保存、shared／copied／cancelled／failed、個別、一括queued限定、resolved除外、削除、解決、二重押下、共有lock、request切替、unmount、購入状態非変更。
+- 既存ページcharacterization testで購入状態維持、今回は買わない＋Undo、未解決相談による完了block、解決後完了、結果共有による相談状態不変を維持した。
+- ローカル検証: 39 test files / 332 tests、build 101 modules成功、`git diff --check`成功、production audit 0 vulnerabilities。
+- CI結果／Squash SHA／Pages run／公開スモーク: PR作成・merge後に確定
+- 意図的に残した責務: `notBuying`購入状態遷移、Undo、結果共有、完了、checkout／completion focus、notice描画、selector、dialog／card描画。
+- generic共有抽象化を導入しなかった理由: 相談はqueue保存とshared遷移を伴い、結果共有は完了集計だけを共有するため、同じhookへ統合するとsubject分岐とcallbackが増える。相互排他に必要な最小lockだけをページで共有した。
+- 残存リスク: OS共有UIと物理端末での実送信は自動化できず、公開環境では共有画面到達またはclipboard fallbackまでの確認となる。

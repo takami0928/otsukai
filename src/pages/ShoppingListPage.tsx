@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { CartConfirmationDialog } from '../components/CartConfirmationDialog'
 import { CategorySection } from '../components/CategorySection'
 import { CheckoutReviewSection } from '../components/CheckoutReviewSection'
@@ -10,6 +16,10 @@ import { ShoppingItemCard } from '../components/ShoppingItemCard'
 import { ShoppingToolbar } from '../components/ShoppingToolbar'
 import { ShoppingUndoNotice } from '../components/ShoppingUndoNotice'
 import { FIXED_REQUEST_TITLE } from '../constants/request'
+import {
+  useConsultationWorkflow,
+  type ConsultationShareLock,
+} from '../hooks/useConsultationWorkflow'
 import { usePersistedShoppingSession } from '../hooks/usePersistedShoppingSession'
 import { useShoppingUndoNotice } from '../hooks/useShoppingUndoNotice'
 import type {
@@ -18,16 +28,9 @@ import type {
   ShoppingRequestItemPayload,
   ShoppingRequestPayload,
   ShoppingStateChange,
-  UnavailableReason,
 } from '../types/shopping'
-import {
-  createConsultationEntry,
-  getConsultationIssue,
-} from '../utils/consultationState'
 import { addLineExternalBrowserHint } from '../utils/lineDeliveryUrl'
 import {
-  buildBulkConsultationMessage,
-  buildIndividualConsultationMessage,
   buildShoppingResultMessage,
 } from '../utils/shoppingMessages'
 import {
@@ -56,12 +59,6 @@ type ShoppingListPageProps = {
   onError: (title: string, description: string) => void
 }
 
-type ConsultationDraft = {
-  itemId: string
-  reason?: UnavailableReason
-  note: string
-}
-
 type CartConfirmationState = {
   itemId: string
   needsQuantityConfirmation: boolean
@@ -74,11 +71,6 @@ type CartConfirmationState = {
 type ShareNotice = {
   kind: 'success' | 'error' | 'info'
   message: string
-}
-
-function createIssue(reason: UnavailableReason, note: string): ItemIssue {
-  const trimmedNote = note.trim()
-  return trimmedNote ? { reason, note: trimmedNote } : { reason }
 }
 
 function getUndoNoticeMessage(
@@ -97,17 +89,12 @@ function getUndoNoticeMessage(
   return `${item.productNameSnapshot}を未購入に戻しました`
 }
 
-function getShareNotice(
-  result: NativeShareResult,
-  subject: 'consultation' | 'result',
-): ShareNotice {
+function getResultShareNotice(result: NativeShareResult): ShareNotice {
   if (result === 'shared') {
     return {
       kind: 'success',
       message:
-        subject === 'result'
-          ? '共有画面を開きました。\nLINEを選択して結果を送信してください。'
-          : '共有画面を開きました。\nLINEを選択して送信してください。',
+        '共有画面を開きました。\nLINEを選択して結果を送信してください。',
     }
   }
 
@@ -115,9 +102,7 @@ function getShareNotice(
     return {
       kind: 'success',
       message:
-        subject === 'result'
-          ? 'OS共有を利用できなかったため、結果をコピーしました。\nLINEへ貼り付けるか、外部ブラウザで開いて共有してください。'
-          : 'OS共有を利用できなかったため、相談文をコピーしました。\nLINEへ貼り付けるか、外部ブラウザで開いて共有してください。',
+        'OS共有を利用できなかったため、結果をコピーしました。\nLINEへ貼り付けるか、外部ブラウザで開いて共有してください。',
     }
   }
 
@@ -155,8 +140,6 @@ export function ShoppingListPage({
   const [filterMode, setFilterMode] = useState<ShoppingFilterMode>('all')
   const [cartConfirmation, setCartConfirmation] =
     useState<CartConfirmationState | null>(null)
-  const [consultationDraft, setConsultationDraft] =
-    useState<ConsultationDraft | null>(null)
   const [isCheckoutReviewOpen, setIsCheckoutReviewOpen] = useState(false)
   const [isCompletionView, setIsCompletionView] = useState(false)
   const {
@@ -165,13 +148,10 @@ export function ShoppingListPage({
     consumeUndoNotice,
     clearUndoNotice,
   } = useShoppingUndoNotice()
-  const [isSharingConsultation, setIsSharingConsultation] = useState(false)
-  const [sharingConsultationItemId, setSharingConsultationItemId] =
-    useState<string | null>(null)
   const [isSharingResult, setIsSharingResult] = useState(false)
   const [shareNotice, setShareNotice] = useState<ShareNotice | null>(null)
   const activeShareRef = useRef(false)
-  const shareGenerationRef = useRef(0)
+  const resultShareGenerationRef = useRef(0)
   const checkoutReviewRef = useRef<HTMLElement | null>(null)
   const completionHeadingRef = useRef<HTMLHeadingElement | null>(null)
   const nativeShareAvailable = isNativeShareAvailable()
@@ -179,63 +159,36 @@ export function ShoppingListPage({
     () => addLineExternalBrowserHint(window.location.href),
     [encodedPayload, payloadCodec],
   )
+  const consultationShareLock = useMemo<ConsultationShareLock>(
+    () => ({
+      tryAcquire: () => {
+        if (activeShareRef.current) {
+          return false
+        }
+        activeShareRef.current = true
+        return true
+      },
+      release: () => {
+        activeShareRef.current = false
+      },
+    }),
+    [],
+  )
 
   const { checkedState, itemIssues, cartOrder } = shoppingState
 
   useEffect(
     () => () => {
-      shareGenerationRef.current += 1
+      resultShareGenerationRef.current += 1
       activeShareRef.current = false
     },
     [],
   )
 
-  useEffect(() => {
-    shareGenerationRef.current += 1
-    activeShareRef.current = false
-    clearUndoNotice()
-
-    try {
-      const loadedSession = loadShoppingSession({
-        encodedPayload,
-        codec: payloadCodec,
-      })
-
-      setPayload(loadedSession.payload)
-      replaceSession({
-        requestId: loadedSession.payload.requestId,
-        shoppingState: loadedSession.shoppingState,
-        consultations: loadedSession.consultations,
-      })
-      setFilterMode('all')
-      setCartConfirmation(null)
-      setConsultationDraft(null)
-      setIsCheckoutReviewOpen(false)
-      setIsCompletionView(false)
-      setIsSharingConsultation(false)
-      setSharingConsultationItemId(null)
-      setIsSharingResult(false)
-      setShareNotice(null)
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : '共有URLの内容を読み込めませんでした。'
-      onError('共有URLを開けませんでした', message)
-    }
-  }, [
-    clearUndoNotice,
-    encodedPayload,
-    onError,
-    payloadCodec,
-    replaceSession,
-  ])
-
   const {
     sortedItems,
     cartItems,
     consultationItems,
-    queuedConsultationItems,
     notBuyingItems,
     groupedVisibleItems,
     completionState,
@@ -258,6 +211,74 @@ export function ShoppingListPage({
       ),
     [checkedState, sortedItems],
   )
+  const getCurrentItemIssue = useCallback(
+    (itemId: string) =>
+      getCurrentShoppingState().itemIssues[itemId],
+    [getCurrentShoppingState],
+  )
+  const {
+    consultationDraft,
+    isSharingConsultation,
+    sharingConsultationItemId,
+    openConsultation,
+    closeConsultation,
+    setReason: setConsultationReason,
+    setNote: setConsultationNote,
+    getDraftIssue,
+    addToQueue: handleAddToQueue,
+    shareDraftImmediately: handleShareDraftImmediately,
+    shareIndividual: handleShareIndividual,
+    shareQueued: handleShareQueued,
+    removeConsultation: handleRemoveConsultation,
+    resolveConsultation: handleResolveConsultation,
+  } = useConsultationWorkflow({
+    sessionKey: `${payloadCodec}:${encodedPayload}`,
+    items: sortedItems,
+    updateConsultations,
+    getCurrentConsultations,
+    getItemIssue: getCurrentItemIssue,
+    share: shareText,
+    shareLock: consultationShareLock,
+    onNotice: setShareNotice,
+  })
+
+  useEffect(() => {
+    resultShareGenerationRef.current += 1
+    activeShareRef.current = false
+    clearUndoNotice()
+
+    try {
+      const loadedSession = loadShoppingSession({
+        encodedPayload,
+        codec: payloadCodec,
+      })
+
+      setPayload(loadedSession.payload)
+      replaceSession({
+        requestId: loadedSession.payload.requestId,
+        shoppingState: loadedSession.shoppingState,
+        consultations: loadedSession.consultations,
+      })
+      setFilterMode('all')
+      setCartConfirmation(null)
+      setIsCheckoutReviewOpen(false)
+      setIsCompletionView(false)
+      setIsSharingResult(false)
+      setShareNotice(null)
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : '共有URLの内容を読み込めませんでした。'
+      onError('共有URLを開けませんでした', message)
+    }
+  }, [
+    clearUndoNotice,
+    encodedPayload,
+    onError,
+    payloadCodec,
+    replaceSession,
+  ])
 
   const commitShoppingChange = (
     itemId: string,
@@ -306,7 +327,7 @@ export function ShoppingListPage({
       return
     }
 
-    setConsultationDraft(null)
+    closeConsultation()
     setShareNotice(null)
     setCartConfirmation({
       itemId: item.id,
@@ -338,186 +359,23 @@ export function ShoppingListPage({
   }
 
   const handleOpenConsultation = (itemId: string) => {
-    const consultationIssue = getConsultationIssue(
-      getCurrentConsultations()[itemId],
-    )
-    const existingIssue =
-      consultationIssue ?? getCurrentShoppingState().itemIssues[itemId]
-
     setCartConfirmation(null)
     setShareNotice(null)
-    setConsultationDraft({
-      itemId,
-      reason: existingIssue?.reason,
-      note: existingIssue?.note ?? '',
-    })
-  }
-
-  const handleAddToQueue = () => {
-    if (!consultationDraft?.reason) {
-      return
-    }
-
-    const issue = createIssue(
-      consultationDraft.reason,
-      consultationDraft.note,
-    )
-    updateConsultations((current) => ({
-      ...current,
-      [consultationDraft.itemId]: createConsultationEntry(
-        consultationDraft.itemId,
-        issue,
-        'queued',
-      ),
-    }))
-    setConsultationDraft(null)
-    setShareNotice({
-      kind: 'info',
-      message: 'まとめ相談に追加しました。',
-    })
-  }
-
-  const performConsultationShare = async (
-    entries: Array<{
-      item: ShoppingRequestItemPayload
-      issue: ItemIssue
-    }>,
-    mode: 'individual' | 'bulk',
-  ) => {
-    if (activeShareRef.current || entries.length === 0) {
-      return
-    }
-
-    const shareGeneration = shareGenerationRef.current
-    const individualItemId =
-      mode === 'individual' ? entries[0].item.id : null
-    activeShareRef.current = true
-    setIsSharingConsultation(true)
-    setSharingConsultationItemId(individualItemId)
-    try {
-      const consultationText =
-        mode === 'individual'
-          ? buildIndividualConsultationMessage(entries[0].item, entries[0].issue)
-          : buildBulkConsultationMessage(entries)
-      const result = await shareText({
-        title: 'おつかい相談',
-        text: consultationText,
-      })
-      if (shareGeneration !== shareGenerationRef.current) {
-        return
-      }
-
-      if (result === 'shared' || result === 'copied') {
-        const sharedItemIds = new Set(entries.map(({ item }) => item.id))
-        updateConsultations((current) =>
-          Object.fromEntries(
-            Object.entries(current).map(([itemId, consultation]) => [
-              itemId,
-              sharedItemIds.has(itemId)
-                ? { ...consultation, status: 'shared' as const }
-                : consultation,
-            ]),
-          ),
-        )
-        if (
-          individualItemId &&
-          consultationDraft?.itemId === individualItemId
-        ) {
-          setConsultationDraft(null)
-        }
-      }
-
-      setShareNotice(getShareNotice(result, 'consultation'))
-    } finally {
-      if (shareGeneration === shareGenerationRef.current) {
-        activeShareRef.current = false
-        setIsSharingConsultation(false)
-        setSharingConsultationItemId(null)
-      }
-    }
-  }
-
-  const handleShareDraftImmediately = async () => {
-    if (!consultationDraft?.reason) {
-      return
-    }
-
-    const item = sortedItems.find(
-      (currentItem) => currentItem.id === consultationDraft.itemId,
-    )
-    if (!item) {
-      return
-    }
-
-    const issue = createIssue(
-      consultationDraft.reason,
-      consultationDraft.note,
-    )
-    updateConsultations((current) => ({
-      ...current,
-      [item.id]: createConsultationEntry(item.id, issue, 'queued'),
-    }))
-    await performConsultationShare([{ item, issue }], 'individual')
-  }
-
-  const handleShareIndividual = async (itemId: string) => {
-    const entry = getCurrentConsultations()[itemId]
-    const item = sortedItems.find((currentItem) => currentItem.id === itemId)
-    const issue = getConsultationIssue(entry)
-    if (!item || !issue || entry.status === 'resolved') {
-      return
-    }
-
-    await performConsultationShare([{ item, issue }], 'individual')
-  }
-
-  const handleShareQueued = async () => {
-    const entries = queuedConsultationItems.flatMap(
-      ({ item, consultation }) => {
-        const issue = getConsultationIssue(consultation)
-        return issue ? [{ item, issue }] : []
-      },
-    )
-    await performConsultationShare(entries, 'bulk')
-  }
-
-  const handleRemoveConsultation = (itemId: string) => {
-    updateConsultations((current) => {
-      const next = { ...current }
-      delete next[itemId]
-      return next
-    })
-    setConsultationDraft((current) =>
-      current?.itemId === itemId ? null : current,
-    )
-  }
-
-  const handleResolveConsultation = (itemId: string) => {
-    updateConsultations((current) => {
-      const consultation = current[itemId]
-      return consultation
-        ? {
-            ...current,
-            [itemId]: { ...consultation, status: 'resolved' },
-          }
-        : current
-    })
-    setConsultationDraft((current) =>
-      current?.itemId === itemId ? null : current,
-    )
+    openConsultation(itemId)
   }
 
   const handleMarkNotBuying = () => {
-    if (!consultationDraft?.reason) {
+    const draftIssue = getDraftIssue()
+    if (!draftIssue) {
       return
     }
 
     commitShoppingChange(
-      consultationDraft.itemId,
+      draftIssue.itemId,
       'notBuying',
-      createIssue(consultationDraft.reason, consultationDraft.note),
+      draftIssue.issue,
     )
-    setConsultationDraft(null)
+    closeConsultation()
   }
 
   const handleOpenCheckoutReview = () => {
@@ -549,7 +407,7 @@ export function ShoppingListPage({
       return
     }
 
-    const shareGeneration = shareGenerationRef.current
+    const shareGeneration = resultShareGenerationRef.current
     activeShareRef.current = true
     setIsSharingResult(true)
     try {
@@ -563,13 +421,13 @@ export function ShoppingListPage({
           })),
         ),
       })
-      if (shareGeneration !== shareGenerationRef.current) {
+      if (shareGeneration !== resultShareGenerationRef.current) {
         return
       }
 
-      setShareNotice(getShareNotice(result, 'result'))
+      setShareNotice(getResultShareNotice(result))
     } finally {
-      if (shareGeneration === shareGenerationRef.current) {
+      if (shareGeneration === resultShareGenerationRef.current) {
         activeShareRef.current = false
         setIsSharingResult(false)
       }
@@ -828,20 +686,12 @@ export function ShoppingListPage({
             isSharingConsultation &&
             sharingConsultationItemId === consultationDraft.itemId
           }
-          onReasonChange={(reason) =>
-            setConsultationDraft((current) =>
-              current ? { ...current, reason } : current,
-            )
-          }
-          onNoteChange={(note) =>
-            setConsultationDraft((current) =>
-              current ? { ...current, note } : current,
-            )
-          }
+          onReasonChange={setConsultationReason}
+          onNoteChange={setConsultationNote}
           onShareImmediately={handleShareDraftImmediately}
           onAddToQueue={handleAddToQueue}
           onMarkNotBuying={handleMarkNotBuying}
-          onClose={() => setConsultationDraft(null)}
+          onClose={closeConsultation}
         />
       ) : null}
     </main>
