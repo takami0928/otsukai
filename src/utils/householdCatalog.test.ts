@@ -154,6 +154,41 @@ describe('household catalog domain', () => {
     })
   })
 
+  it('does not advance revision or timestamps when a household edit changes no content', () => {
+    const added = addHouseholdProduct(
+      createEmptyHouseholdCatalog(NOW),
+      {
+        name: '麦茶パック',
+        unit: '袋',
+        categoryId: 'drinks',
+        hidden: false,
+      },
+      LATER,
+      products,
+      categories,
+      HOUSEHOLD_ID,
+    )
+
+    const unchanged = updateHouseholdProduct(
+      added,
+      HOUSEHOLD_ID,
+      {
+        name: '麦茶パック',
+        unit: '袋',
+        categoryId: 'drinks',
+        hidden: false,
+      },
+      '2026-07-26T02:00:00.000Z',
+    )
+
+    expect(unchanged).toEqual(added)
+    expect(unchanged.revision).toBe(added.revision)
+    expect(unchanged.updatedAt).toBe(added.updatedAt)
+    expect(unchanged.addedProducts[0].updatedAt).toBe(
+      added.addedProducts[0].updatedAt,
+    )
+  })
+
   it('rejects duplicate IDs, invalid categories, overlong fields, and empty names', () => {
     const empty = createEmptyHouseholdCatalog(NOW)
     expect(() =>

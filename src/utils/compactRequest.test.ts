@@ -227,6 +227,55 @@ describe('v2 request encode and decode', () => {
     expect(() =>
       decodeCompactRequest(compressToEncodedURIComponent(JSON.stringify([2, 'key', '', '', ['x']]))),
     ).toThrow()
+    expect(
+      decodeCompactRequest(
+        compressToEncodedURIComponent(
+          JSON.stringify([2, 'k'.repeat(64), '依頼', '', 0]),
+        ),
+      ).requestId,
+    ).toBe(`v2-${'k'.repeat(64)}`)
+    expect(() =>
+      decodeCompactRequest(
+        compressToEncodedURIComponent(
+          JSON.stringify([2, 'k'.repeat(65), '依頼', '', 0]),
+        ),
+      ),
+    ).toThrow('形式が正しくありません')
+  })
+
+  it('rejects decoded v2 conditions whose selected-item total exceeds 1,000 characters', () => {
+    const selectedItemCount = 34
+    const exactConditions = [
+      ...Array.from(
+        { length: selectedItemCount - 1 },
+        () => '条'.repeat(30),
+      ),
+      '条'.repeat(10),
+    ]
+    const payload: CompactRequestV2 = [
+      2,
+      'phase4-condition-total',
+      '依頼',
+      '1'.repeat(selectedItemCount),
+      [0, ...exactConditions],
+    ]
+
+    expect(
+      decodeCompactRequest(encodeCompactRequest(payload)).items,
+    ).toHaveLength(selectedItemCount)
+    exactConditions[exactConditions.length - 1] += '追'
+    const overPayload: CompactRequestV2 = [
+      2,
+      payload[1],
+      payload[2],
+      payload[3],
+      [0, ...exactConditions],
+    ]
+    expect(() =>
+      decodeCompactRequest(
+        encodeCompactRequest(overPayload),
+      ),
+    ).toThrow('条件合計')
   })
 
   it('builds the published hash path without changing the compressed value', () => {

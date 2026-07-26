@@ -355,6 +355,7 @@ export function decodeCompactRequestPayload(
   if (
     typeof requestKeyValue !== 'string' ||
     !requestKeyValue.trim() ||
+    requestKeyValue.trim().length > 64 ||
     typeof titleValue !== 'string' ||
     typeof quantityCodesValue !== 'string'
   ) {
@@ -397,6 +398,14 @@ export function decodeCompactRequestPayload(
   }
 
   items.push(...decodeCustomItems(customData, requestId))
+  const totalConditionCharacters = items.reduce(
+    (total, item) =>
+      total + countUserCharacters(item.memo?.trim() ?? ''),
+    0,
+  )
+  if (totalConditionCharacters > MAX_TOTAL_CONDITION_CHARS) {
+    throw new Error('v2共有URLの条件合計が入力上限を超えています。')
+  }
 
   return {
     requestId,

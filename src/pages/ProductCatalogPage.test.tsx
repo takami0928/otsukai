@@ -3,7 +3,13 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MAX_CATALOG_RECOVERY_JSON_CHARS } from '../constants/requestLimits'
+import {
+  MAX_CATALOG_RECOVERY_JSON_BYTES,
+  MAX_CATALOG_RECOVERY_JSON_CHARS,
+  MAX_HOUSEHOLD_PRODUCTS,
+} from '../constants/requestLimits'
+import { products } from '../data/products'
+import type { HouseholdCatalogV1 } from '../types/householdCatalog'
 import {
   CATALOG_BACKUP_RECEIPT_KEY,
   HOUSEHOLD_CATALOG_KEY,
@@ -382,10 +388,10 @@ describe('ProductCatalogPage', () => {
     expect(container.querySelector('.catalog-notice')).toBeNull()
   })
 
-  it('rejects an oversized JSON file before reading it', async () => {
+  it('rejects a JSON file above the byte safety limit before reading it', async () => {
     await renderPage()
     const file = new File(
-      ['x'.repeat(MAX_CATALOG_RECOVERY_JSON_CHARS + 1)],
+      ['x'.repeat(MAX_CATALOG_RECOVERY_JSON_BYTES + 1)],
       'oversized.json',
       { type: 'application/json' },
     )
@@ -395,6 +401,78 @@ describe('ProductCatalogPage', () => {
 
     expect(text).not.toHaveBeenCalled()
     expect(container.textContent).toContain(
+      '商品リスト復旧データが大きすぎます。',
+    )
+  })
+
+  it('reads a byte-safe file and then enforces the expanded character limit', async () => {
+    await renderPage()
+    const file = new File(
+      ['x'.repeat(MAX_CATALOG_RECOVERY_JSON_CHARS + 1)],
+      'too-many-characters.json',
+      { type: 'application/json' },
+    )
+    const text = vi.spyOn(file, 'text')
+
+    await selectRecoveryFile(file)
+
+    expect(text).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain(
+      '商品リスト復旧データが大きすぎます。',
+    )
+  })
+
+  it('accepts a valid recovery JSON whose UTF-8 bytes exceed its character count', async () => {
+    const now = '2026-07-26T00:00:00.000Z'
+    const familyEmoji = '👨‍👩‍👧‍👦'
+    const catalog: HouseholdCatalogV1 = {
+      schemaVersion: 1,
+      revision: 1,
+      updatedAt: now,
+      overrides: Object.fromEntries(
+        products.map((product) => [
+          product.id,
+          {
+            name: familyEmoji.repeat(30),
+            unit: familyEmoji.repeat(10),
+            categoryId: 'other',
+            hidden: true,
+          },
+        ]),
+      ),
+      addedProducts: Array.from(
+        { length: MAX_HOUSEHOLD_PRODUCTS },
+        (_, index) => ({
+          id: `household:00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+          name: familyEmoji.repeat(30),
+          unit: familyEmoji.repeat(10),
+          categoryId: 'other',
+          hidden: true,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      ),
+    }
+    const bundle = createCatalogRecoveryBundle(
+      'https://example.test/otsukai/',
+      catalog,
+      now,
+    )
+    const file = new File([bundle.json], bundle.fileName, {
+      type: 'application/json',
+    })
+    expect(bundle.json.length).toBeLessThanOrEqual(
+      MAX_CATALOG_RECOVERY_JSON_CHARS,
+    )
+    expect(file.size).toBeGreaterThan(MAX_CATALOG_RECOVERY_JSON_CHARS)
+    await renderPage()
+
+    await selectRecoveryFile(file)
+
+    expect(container.querySelector('h1')?.textContent).toBe(
+      '商品リストを復元',
+    )
+    expect(container.textContent).not.toContain(
       '商品リスト復旧データが大きすぎます。',
     )
   })
@@ -568,6 +646,53 @@ describe('ProductCatalogPage', () => {
     expect(
       window.localStorage.getItem(CATALOG_BACKUP_RECEIPT_KEY),
     ).toBeNull()
+  })
+
+  it('restores the catalog but keeps it unbacked when the receipt write fails', async () => {
+    const recoveredCatalog = updateBaseProduct(
+      createEmptyHouseholdCatalog('2026-07-26T00:00:00.000Z'),
+      'milk',
+      {
+        name: '復元した牛乳',
+        unit: 'パック',
+        categoryId: 'drinks',
+        hidden: false,
+      },
+      '2026-07-26T02:00:00.000Z',
+    )
+    const bundle = createCatalogRecoveryBundle(
+      'https://example.test/otsukai/',
+      recoveredCatalog,
+      '2026-07-26T03:00:00.000Z',
+    )
+    await renderPage()
+    await selectRecoveryFile(
+      new File([bundle.json], bundle.fileName, {
+        type: 'application/json',
+      }),
+    )
+    const originalSetItem = window.localStorage.setItem.bind(
+      window.localStorage,
+    )
+    const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(
+      (key: string, value: string) => {
+        if (key === CATALOG_BACKUP_RECEIPT_KEY) {
+          throw new DOMException('storage full', 'QuotaExceededError')
+        }
+        originalSetItem(key, value)
+      },
+    )
+
+    await click(button('この商品リストに置き換える'))
+    setItem.mockRestore()
+
+    expect(savedCatalog()).toEqual(recoveredCatalog)
+    expect(
+      window.localStorage.getItem(CATALOG_BACKUP_RECEIPT_KEY),
+    ).toBeNull()
+    expect(container.textContent).toContain(
+      '商品リストに未バックアップの変更があります',
+    )
   })
 
   it('records a backup receipt only after the user confirms saving the link', async () => {
