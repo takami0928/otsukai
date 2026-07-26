@@ -520,7 +520,7 @@ Context、外部store、アプリ全体のReducer、状態機械、汎用共有h
 | Phase | 内容 | 状態 | branch | PR |
 |---|---|---|---|---|
 | 1 | route意味と買い物セッション読込 | PR検証中 | `refactor/shopping-session-phase-1-loading` | #24 |
-| 2 | 買い物状態と永続化の専用hook化 | 未着手 | `refactor/shopping-session-phase-2-persistence` | 未作成 |
+| 2 | 買い物状態と永続化の専用hook化 | 実装・ローカル検証完了 | `refactor/shopping-session-phase-2-persistence` | 作成後に確定 |
 | 3 | 相談workflowの専用hook化 | 未着手 | `refactor/shopping-session-phase-3-consultations` | 未作成 |
 
 ## Phase 1: route意味と買い物セッション読込
@@ -605,8 +605,18 @@ Context、外部store、アプリ全体のReducer、状態機械、汎用共有h
 ### 結果記録
 
 - branch: `refactor/shopping-session-phase-2-persistence`
-- PR／head／CI／Squash／Pages／公開スモーク: Phase 2実行時に記録
-- 意図的に残す責務: Undo、ダイアログ、共有、focus／scroll、selector、描画
+- baseline main: `f72b06de7a56f96a8d45a1e1554c1d95e19fc13b`
+- PR: 作成後に確定
+- head SHA: GitHub PR metadataと最終報告に記録
+- `usePersistedShoppingSession`へ買い物状態、相談状態、同期的な最新値参照、session置換、4保存effectを移した。
+- `createShoppingStateChange`／`applyShoppingStateChange`をhook内で再利用し、commitはUndoに必要なchangeと直前のcart orderを返す。
+- Undo適用もhookの状態更新APIへ移し、ページは通知のconsume、文言、timer、ダイアログ整理だけを担当する。
+- consultation updaterはhook内の最新値を基準に連続更新し、requestIdと全保存対象を一つのsession境界で置換する。
+- focused test: loader由来初期値、session置換、checked／issues／cart order／consultations保存、最新値参照、連続更新、no-op、consultation updater、Undo用cart order、request切替後の保存先分離。
+- ローカル検証: 38 test files / 316 tests、build 100 modules成功、`git diff --check`成功、production audit 0 vulnerabilities。
+- CI結果／Squash SHA／Pages run／公開スモーク: PR作成・merge後に確定
+- 意図的に残した責務: Undo timer／文言、相談ダイアログと共有、結果共有、focus／scroll、selector、描画。Phase 2のdomain境界外であるため。
+- 残存リスク: 公開環境で状態変更直後の保存、再読込、別依頼切替を確認するまで配信環境固有の回帰リスクが残る。
 
 ## Phase 3: 相談workflowの専用hook化
 
