@@ -1,19 +1,33 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { extractOcrLines } from '../src/googleVision'
+import { GeminiAnalysisError } from '../src/gemini'
 import {
   handleRequest,
   type WorkerDependencies,
   type WorkerEnv,
 } from '../src/index'
-import { MAX_IMAGE_BYTES } from '../src/validation'
+import {
+  MAX_IMAGE_BYTES,
+  MAX_PRODUCT_CANDIDATES,
+} from '../src/validation'
 
 const allowedOrigin = 'https://takami0928.github.io'
 const env: WorkerEnv = {
-  GOOGLE_VISION_API_KEY: 'google-secret-value',
+  GEMINI_API_KEY: 'gemini-secret-value',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-value',
   ALLOWED_ORIGINS: allowedOrigin,
-  GOOGLE_VISION_LANGUAGE_HINTS: '',
 }
+const products = [
+  {
+    id: 'eggs',
+    name: '卵',
+    aliases: ['たまご', '玉子'],
+  },
+  {
+    id: 'milk',
+    name: '牛乳',
+    aliases: [],
+  },
+]
 
 function jpegFile(size = 4, mime = 'image/jpeg'): File {
   const bytes = new Uint8Array(Math.max(size, 4))
@@ -21,20 +35,27 @@ function jpegFile(size = 4, mime = 'image/jpeg'): File {
   return new File([bytes], 'memo.jpg', { type: mime })
 }
 
-function ocrRequest(options: {
-  origin?: string
-  file?: File
-  token?: string
-  method?: string
-  extraField?: [string, string]
-} = {}): Request {
+function importRequest(
+  options: {
+    origin?: string
+    file?: File
+    token?: string
+    method?: string
+    productsJson?: string
+    extraField?: [string, string]
+  } = {},
+): Request {
   const formData = new FormData()
   formData.append('image', options.file ?? jpegFile())
   formData.append('turnstileToken', options.token ?? 'single-use-token')
+  formData.append(
+    'products',
+    options.productsJson ?? JSON.stringify(products),
+  )
   if (options.extraField) {
     formData.append(...options.extraField)
   }
-  return new Request('https://ocr.example.workers.dev/', {
+  return new Request('https://import.example.workers.dev/', {
     method: options.method ?? 'POST',
     headers: {
       Origin: options.origin ?? allowedOrigin,
@@ -43,149 +64,114 @@ function ocrRequest(options: {
   })
 }
 
-function visionResponse(): unknown {
-  const word = (
-    text: string,
-    confidence: number,
-    breakType: 'SPACE' | 'LINE_BREAK',
-  ) => ({
-    confidence,
-    symbols: Array.from(text).map((character, index, symbols) => ({
-      text: character,
-      ...(index === symbols.length - 1
-        ? {
-            property: {
-              detectedBreak: { type: breakType },
-            },
-          }
-        : {}),
-    })),
-  })
-  return {
-    responses: [
-      {
-        fullTextAnnotation: {
-          text: '牛乳 低脂肪\n卵\n',
-          pages: [
-            {
-              blocks: [
-                {
-                  paragraphs: [
-                    {
-                      words: [
-                        word('牛乳', 0.9, 'SPACE'),
-                        word('低脂肪', 0.8, 'LINE_BREAK'),
-                        word('卵', 0.95, 'LINE_BREAK'),
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      },
-    ],
-  }
+function successfulTurnstileFetch() {
+  return vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    expect(init?.method).toBe('POST')
+    expect(String(init?.body)).toContain('response=single-use-token')
+    return Response.json({
+      success: true,
+      action: 'handwriting_import',
+      hostname: 'takami0928.github.io',
+    })
+  }) as typeof fetch
 }
 
-function successfulFetch() {
-  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input)
-    if (url.includes('/siteverify')) {
-      expect(init?.method).toBe('POST')
-      expect(String(init?.body)).toContain('response=single-use-token')
-      return Response.json({
-        success: true,
-        action: 'handwriting_ocr',
-        hostname: 'takami0928.github.io',
-      })
-    }
-    if (url.includes('vision.googleapis.com')) {
-      expect(new Headers(init?.headers).get('X-goog-api-key')).toBe(
-        env.GOOGLE_VISION_API_KEY,
-      )
-      const requestBody = JSON.parse(String(init?.body)) as {
-        requests: Array<{
-          features: Array<{ type: string }>
-          imageContext?: unknown
-        }>
-      }
-      expect(requestBody.requests).toHaveLength(1)
-      expect(requestBody.requests[0].features).toEqual([
-        { type: 'DOCUMENT_TEXT_DETECTION' },
-      ])
-      expect(requestBody.requests[0]).not.toHaveProperty('imageContext')
-      return Response.json(visionResponse())
-    }
-    throw new Error('Unexpected external request')
-  }) as typeof fetch
+function successfulOutput(): string {
+  return JSON.stringify({
+    version: 1,
+    items: [
+      {
+        sourceText: 'たまご',
+        status: 'matched',
+        productId: 'eggs',
+        candidateProductIds: [],
+      },
+      {
+        sourceText: '電池',
+        status: 'unknown',
+        productId: null,
+        candidateProductIds: [],
+      },
+    ],
+  })
 }
 
 afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('Cloudflare OCR Worker', () => {
-  it('validates Turnstile, calls document OCR, and returns only line data', async () => {
-    const fetchImplementation = successfulFetch()
-    const response = await handleRequest(ocrRequest(), env, {
-      fetchImplementation,
+describe('Cloudflare handwriting import Worker', () => {
+  it('validates Turnstile, passes the image and candidates, and returns only validated data', async () => {
+    const fetchImplementation = successfulTurnstileFetch()
+    const analyzeImplementation = vi.fn(async (options) => {
+      expect(options.image.type).toBe('image/jpeg')
+      expect(options.products).toEqual(products)
+      expect(options.products[0].aliases).toEqual(['たまご', '玉子'])
+      expect(options.apiKey).toBe(env.GEMINI_API_KEY)
+      expect(options.signal).toBeInstanceOf(AbortSignal)
+      return successfulOutput()
     })
-    const body = (await response.json()) as Record<string, unknown>
+    const response = await handleRequest(importRequest(), env, {
+      fetchImplementation,
+      analyzeImplementation,
+    })
 
     expect(response.status).toBe(200)
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
       allowedOrigin,
     )
     expect(response.headers.get('Cache-Control')).toBe('no-store')
-    expect(body).toEqual({
-      lines: [
-        { id: 'line-1', text: '牛乳 低脂肪', confidence: 0.8500000000000001 },
-        { id: 'line-2', text: '卵', confidence: 0.95 },
-      ],
-    })
-    expect(body).not.toHaveProperty('responses')
-    expect(fetchImplementation).toHaveBeenCalledTimes(2)
+    await expect(response.json()).resolves.toEqual(
+      JSON.parse(successfulOutput()),
+    )
+    expect(fetchImplementation).toHaveBeenCalledTimes(1)
+    expect(analyzeImplementation).toHaveBeenCalledTimes(1)
   })
 
-  it('rejects Turnstile failure before calling Google Vision', async () => {
+  it('rejects Turnstile failure before analysis', async () => {
     const fetchImplementation = vi.fn(async () =>
       Response.json({
         success: false,
-        action: 'handwriting_ocr',
+        action: 'handwriting_import',
         hostname: 'takami0928.github.io',
       }),
     ) as typeof fetch
-    const response = await handleRequest(ocrRequest(), env, {
+    const analyzeImplementation = vi.fn()
+    const response = await handleRequest(importRequest(), env, {
       fetchImplementation,
+      analyzeImplementation,
     })
     expect(response.status).toBe(403)
     await expect(response.json()).resolves.toEqual({ code: 'AUTH_FAILED' })
-    expect(fetchImplementation).toHaveBeenCalledTimes(1)
+    expect(analyzeImplementation).not.toHaveBeenCalled()
   })
 
-  it('rejects a valid token for the wrong hostname', async () => {
-    const fetchImplementation = vi.fn(async () =>
-      Response.json({
-        success: true,
-        action: 'handwriting_ocr',
-        hostname: 'attacker.example',
-      }),
-    ) as typeof fetch
-    const response = await handleRequest(ocrRequest(), env, {
-      fetchImplementation,
-    })
-    expect(response.status).toBe(403)
-    await expect(response.json()).resolves.toEqual({ code: 'AUTH_FAILED' })
-  })
+  it.each([
+    ['handwriting_import', 'attacker.example'],
+    ['wrong_action', 'takami0928.github.io'],
+  ])(
+    'rejects a token with action %s and hostname %s',
+    async (action, hostname) => {
+      const fetchImplementation = vi.fn(async () =>
+        Response.json({ success: true, action, hostname }),
+      ) as typeof fetch
+      const analyzeImplementation = vi.fn()
+      const response = await handleRequest(importRequest(), env, {
+        fetchImplementation,
+        analyzeImplementation,
+      })
+      expect(response.status).toBe(403)
+      expect(analyzeImplementation).not.toHaveBeenCalled()
+    },
+  )
 
-  it('rejects a disallowed Origin without CORS permission or external fetches', async () => {
+  it('rejects a disallowed Origin without CORS permission or external calls', async () => {
     const fetchImplementation = vi.fn() as unknown as typeof fetch
+    const analyzeImplementation = vi.fn()
     const response = await handleRequest(
-      ocrRequest({ origin: 'https://attacker.example' }),
+      importRequest({ origin: 'https://attacker.example' }),
       env,
-      { fetchImplementation },
+      { fetchImplementation, analyzeImplementation },
     )
     expect(response.status).toBe(403)
     expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()
@@ -193,12 +179,13 @@ describe('Cloudflare OCR Worker', () => {
       code: 'ORIGIN_NOT_ALLOWED',
     })
     expect(fetchImplementation).not.toHaveBeenCalled()
+    expect(analyzeImplementation).not.toHaveBeenCalled()
   })
 
-  it('rejects non-POST methods', async () => {
+  it('rejects non-POST methods before external calls', async () => {
     const fetchImplementation = vi.fn() as unknown as typeof fetch
     const response = await handleRequest(
-      ocrRequest({ method: 'GET' }),
+      importRequest({ method: 'GET' }),
       env,
       { fetchImplementation },
     )
@@ -209,20 +196,9 @@ describe('Cloudflare OCR Worker', () => {
     expect(fetchImplementation).not.toHaveBeenCalled()
   })
 
-  it('rejects non-POST methods even if required configuration is missing', async () => {
-    const response = await handleRequest(ocrRequest({ method: 'GET' }), {
-      ...env,
-      GOOGLE_VISION_API_KEY: '',
-    })
-    expect(response.status).toBe(405)
-    await expect(response.json()).resolves.toEqual({
-      code: 'METHOD_NOT_ALLOWED',
-    })
-  })
-
   it('rejects an invalid multipart content type', async () => {
     const fetchImplementation = vi.fn() as unknown as typeof fetch
-    const request = new Request('https://ocr.example.workers.dev/', {
+    const request = new Request('https://import.example.workers.dev/', {
       method: 'POST',
       headers: {
         Origin: allowedOrigin,
@@ -240,10 +216,10 @@ describe('Cloudflare OCR Worker', () => {
     expect(fetchImplementation).not.toHaveBeenCalled()
   })
 
-  it('rejects a declared MIME that does not match the image bytes', async () => {
+  it('rejects a declared MIME that does not match image bytes', async () => {
     const fetchImplementation = vi.fn() as unknown as typeof fetch
     const response = await handleRequest(
-      ocrRequest({ file: jpegFile(4, 'image/png') }),
+      importRequest({ file: jpegFile(4, 'image/png') }),
       env,
       { fetchImplementation },
     )
@@ -254,10 +230,10 @@ describe('Cloudflare OCR Worker', () => {
     expect(fetchImplementation).not.toHaveBeenCalled()
   })
 
-  it('rejects an image over 2MB before external fetches', async () => {
+  it('rejects an image over 2MB before external calls', async () => {
     const fetchImplementation = vi.fn() as unknown as typeof fetch
     const response = await handleRequest(
-      ocrRequest({ file: jpegFile(MAX_IMAGE_BYTES + 1) }),
+      importRequest({ file: jpegFile(MAX_IMAGE_BYTES + 1) }),
       env,
       { fetchImplementation },
     )
@@ -268,128 +244,166 @@ describe('Cloudflare OCR Worker', () => {
     expect(fetchImplementation).not.toHaveBeenCalled()
   })
 
-  it('rejects unexpected multipart fields before external fetches', async () => {
+  it('rejects unexpected multipart fields before external calls', async () => {
     const fetchImplementation = vi.fn() as unknown as typeof fetch
     const response = await handleRequest(
-      ocrRequest({ extraField: ['unexpected', 'value'] }),
+      importRequest({ extraField: ['unexpected', 'value'] }),
       env,
       { fetchImplementation },
     )
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toEqual({
-      code: 'INVALID_IMAGE_COUNT',
+      code: 'REQUEST_INVALID',
     })
     expect(fetchImplementation).not.toHaveBeenCalled()
   })
 
-  it('maps Google Vision quota errors without exposing Google response details', async () => {
-    let calls = 0
-    const fetchImplementation = vi.fn(async () => {
-      calls += 1
-      return calls === 1
-        ? Response.json({
-            success: true,
-            action: 'handwriting_ocr',
-            hostname: 'takami0928.github.io',
-          })
-        : Response.json(
-            { error: { message: 'raw provider detail', key: 'secret' } },
-            { status: 429 },
-          )
-    }) as typeof fetch
-    const response = await handleRequest(ocrRequest(), env, {
-      fetchImplementation,
+  it.each([
+    ['not json'],
+    [JSON.stringify([])],
+    [
+      JSON.stringify(
+        Array.from(
+          { length: MAX_PRODUCT_CANDIDATES + 1 },
+          (_, index) => ({
+            id: `product-${index}`,
+            name: `商品${index}`,
+            aliases: [],
+          }),
+        ),
+      ),
+    ],
+    [
+      JSON.stringify([
+        products[0],
+        { ...products[0], name: '重複ID' },
+      ]),
+    ],
+    [JSON.stringify([{ id: 'empty', name: ' ', aliases: [] }])],
+    [
+      JSON.stringify([
+        {
+          id: 'too-many-aliases',
+          name: '商品',
+          aliases: Array.from({ length: 11 }, (_, index) => `別名${index}`),
+        },
+      ]),
+    ],
+    [
+      JSON.stringify([
+        {
+          id: 'extra',
+          name: '商品',
+          aliases: [],
+          categoryId: 'not-allowed',
+        },
+      ]),
+    ],
+    [
+      '[{"id":"danger","name":"商品","aliases":[],"__proto__":{"polluted":true}}]',
+    ],
+  ])('rejects invalid product candidate JSON before external calls', async (productsJson) => {
+    const fetchImplementation = vi.fn() as unknown as typeof fetch
+    const analyzeImplementation = vi.fn()
+    const response = await handleRequest(
+      importRequest({ productsJson }),
+      env,
+      { fetchImplementation, analyzeImplementation },
+    )
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      code: 'INVALID_PRODUCTS',
     })
-    expect(response.status).toBe(429)
-    expect(await response.text()).toBe('{"code":"OCR_LIMIT"}')
+    expect(fetchImplementation).not.toHaveBeenCalled()
+    expect(analyzeImplementation).not.toHaveBeenCalled()
   })
 
-  it('maps a Google Vision canonical resource-exhausted error to the quota response', async () => {
-    let calls = 0
-    const fetchImplementation = vi.fn(async () => {
-      calls += 1
-      return calls === 1
-        ? Response.json({
-            success: true,
-            action: 'handwriting_ocr',
-            hostname: 'takami0928.github.io',
-          })
-        : Response.json({
-            responses: [
-              {
-                error: {
-                  code: 8,
-                  message: 'raw quota detail',
-                },
-              },
-            ],
-          })
-    }) as typeof fetch
-    const response = await handleRequest(ocrRequest(), env, {
-      fetchImplementation,
+  it('rejects an oversized product candidate JSON', async () => {
+    const oversized = JSON.stringify(
+      Array.from({ length: 200 }, (_, productIndex) => ({
+        id: `product-${productIndex}-${'x'.repeat(100)}`,
+        name: 'あ'.repeat(30),
+        aliases: Array.from(
+          { length: 10 },
+          (_, aliasIndex) => `${aliasIndex}${'あ'.repeat(29)}`,
+        ),
+      })),
+    )
+    const fetchImplementation = vi.fn() as unknown as typeof fetch
+    const response = await handleRequest(
+      importRequest({ productsJson: oversized }),
+      env,
+      { fetchImplementation },
+    )
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      code: 'INVALID_PRODUCTS',
     })
-    expect(response.status).toBe(429)
-    expect(await response.text()).toBe('{"code":"OCR_LIMIT"}')
+    expect(fetchImplementation).not.toHaveBeenCalled()
   })
 
-  it('maps Google Vision failures to a safe service error', async () => {
-    let calls = 0
-    const fetchImplementation = vi.fn(async () => {
-      calls += 1
-      return calls === 1
-        ? Response.json({
-            success: true,
-            action: 'handwriting_ocr',
-            hostname: 'takami0928.github.io',
-          })
-        : Response.json(
-            { error: { message: 'internal Google error' } },
-            { status: 500 },
-          )
-    }) as typeof fetch
-    const response = await handleRequest(ocrRequest(), env, {
-      fetchImplementation,
+  it.each([
+    ['analysis-limit', 429, 'ANALYSIS_LIMIT'],
+    ['invalid-response', 502, 'INVALID_ANALYSIS_RESPONSE'],
+    ['safety-blocked', 422, 'SAFETY_BLOCKED'],
+    ['unavailable', 502, 'SERVICE_UNAVAILABLE'],
+  ] as const)(
+    'maps Gemini %s without exposing provider details',
+    async (kind, status, code) => {
+      const response = await handleRequest(importRequest(), env, {
+        fetchImplementation: successfulTurnstileFetch(),
+        analyzeImplementation: vi.fn(async () => {
+          throw new GeminiAnalysisError(kind)
+        }),
+      })
+      expect(response.status).toBe(status)
+      expect(await response.text()).toBe(JSON.stringify({ code }))
+    },
+  )
+
+  it('rejects invalid model JSON after analysis', async () => {
+    const response = await handleRequest(importRequest(), env, {
+      fetchImplementation: successfulTurnstileFetch(),
+      analyzeImplementation: vi.fn(async () => '{invalid'),
     })
     expect(response.status).toBe(502)
-    expect(await response.text()).toBe('{"code":"OCR_UNAVAILABLE"}')
+    await expect(response.json()).resolves.toEqual({
+      code: 'INVALID_ANALYSIS_RESPONSE',
+    })
   })
 
-  it('times out a stalled Google Vision request', async () => {
-    let calls = 0
-    const fetchImplementation = vi.fn(
-      async (_input: RequestInfo | URL, init?: RequestInit) => {
-        calls += 1
-        if (calls === 1) {
-          return Response.json({
-            success: true,
-            action: 'handwriting_ocr',
-            hostname: 'takami0928.github.io',
-          })
-        }
-        return new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener(
+  it('times out a stalled analysis and aborts its signal', async () => {
+    const analyzeImplementation = vi.fn(
+      async (options) =>
+        new Promise<string>((_resolve, reject) => {
+          options.signal.addEventListener(
             'abort',
             () => reject(new DOMException('timeout', 'AbortError')),
             { once: true },
           )
-        })
-      },
-    ) as typeof fetch
+        }),
+    )
     const dependencies: WorkerDependencies = {
-      fetchImplementation,
+      fetchImplementation: successfulTurnstileFetch(),
+      analyzeImplementation,
       timeoutMs: 5,
     }
-    const response = await handleRequest(ocrRequest(), env, dependencies)
+    const response = await handleRequest(
+      importRequest(),
+      env,
+      dependencies,
+    )
     expect(response.status).toBe(504)
-    await expect(response.json()).resolves.toEqual({ code: 'OCR_TIMEOUT' })
+    await expect(response.json()).resolves.toEqual({ code: 'TIMEOUT' })
   })
 
-  it('does not log secrets, image content, OCR text, or raw responses', async () => {
+  it('does not log secrets, images, candidates, or model output', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const response = await handleRequest(ocrRequest(), env, {
-      fetchImplementation: successfulFetch(),
+    const response = await handleRequest(importRequest(), env, {
+      fetchImplementation: successfulTurnstileFetch(),
+      analyzeImplementation: vi.fn(async () => successfulOutput()),
     })
     expect(response.status).toBe(200)
     expect(log).not.toHaveBeenCalled()
@@ -397,37 +411,14 @@ describe('Cloudflare OCR Worker', () => {
     expect(warn).not.toHaveBeenCalled()
   })
 
-  it('fails safely when required secrets are missing', async () => {
-    const response = await handleRequest(ocrRequest(), {
+  it('fails safely when a required secret is missing', async () => {
+    const response = await handleRequest(importRequest(), {
       ...env,
-      GOOGLE_VISION_API_KEY: '',
+      GEMINI_API_KEY: '',
     })
     expect(response.status).toBe(503)
     await expect(response.json()).resolves.toEqual({
       code: 'SERVICE_UNAVAILABLE',
     })
-  })
-})
-
-describe('extractOcrLines', () => {
-  it('falls back to full text lines when structural words are unavailable', () => {
-    expect(
-      extractOcrLines({
-        responses: [
-          {
-            fullTextAnnotation: {
-              text: '牛乳\n\n卵\n',
-            },
-          },
-        ],
-      }),
-    ).toEqual([
-      { id: 'line-1', text: '牛乳' },
-      { id: 'line-2', text: '卵' },
-    ])
-  })
-
-  it('returns no line for a response with no document text', () => {
-    expect(extractOcrLines({ responses: [{}] })).toEqual([])
   })
 })

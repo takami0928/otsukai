@@ -163,7 +163,7 @@ export class BrowserTurnstileTokenProvider
     try {
       this.widgetId = api.render(this.container, {
         sitekey: this.siteKey,
-        action: 'handwriting_ocr',
+        action: 'handwriting_import',
         execution: 'execute',
         appearance: 'interaction-only',
         callback: (token) => this.finishPending(undefined, token),

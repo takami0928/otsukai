@@ -32,7 +32,7 @@ function createApi(
 }
 
 describe('BrowserTurnstileTokenProvider', () => {
-  it('uses explicit execution with the OCR action and resets after use', async () => {
+  it('uses explicit execution with the import action and resets after use', async () => {
     const api = createApi((options) => options.callback('one-use-token'))
     const container = document.createElement('div')
     const provider = new BrowserTurnstileTokenProvider(
@@ -46,7 +46,7 @@ describe('BrowserTurnstileTokenProvider', () => {
       container,
       expect.objectContaining({
         sitekey: 'site-key',
-        action: 'handwriting_ocr',
+        action: 'handwriting_import',
         execution: 'execute',
         appearance: 'interaction-only',
         'response-field': false,

@@ -1,43 +1,37 @@
-export type OcrLine = {
+export type ImportProductCandidate = {
   id: string
-  text: string
-  confidence?: number
+  name: string
+  aliases: string[]
 }
 
-export interface HandwritingOcrProvider {
-  recognizeProductLines(
+export type HandwritingAnalyzedItem = {
+  sourceText: string
+  status: 'matched' | 'ambiguous' | 'unknown'
+  productId: string | null
+  candidateProductIds: string[]
+}
+
+export type HandwritingImportResult = {
+  version: 1
+  items: HandwritingAnalyzedItem[]
+}
+
+export interface HandwritingImportProvider {
+  analyze(
     image: Blob,
+    products: readonly ImportProductCandidate[],
     options?: { signal?: AbortSignal },
-  ): Promise<OcrLine[]>
-}
-
-export type ProductCandidateMatchKind =
-  | 'name-exact'
-  | 'alias-exact'
-  | 'similar'
-
-export type ProductMatchCandidate = {
-  productId: string
-  productName: string
-  matchKind: ProductCandidateMatchKind
-  score: number
-}
-
-export type OcrProductLineMatch = {
-  line: OcrLine
-  productText: string
-  candidates: ProductMatchCandidate[]
-  initialProductId?: string
+  ): Promise<HandwritingImportResult>
 }
 
 export type HandwritingImportSelection =
   | {
-      lineId: string
+      itemId: string
       kind: 'product'
       productId: string
     }
   | {
-      lineId: string
+      itemId: string
       kind: 'custom'
       name: string
       customItemId: string

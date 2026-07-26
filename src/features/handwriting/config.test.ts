@@ -6,12 +6,13 @@ describe('resolveHandwritingImportConfig', () => {
     expect(
       resolveHandwritingImportConfig({
         VITE_HANDWRITING_IMPORT_ENABLED: 'true',
-        VITE_OCR_ENDPOINT: 'https://ocr.example.workers.dev/',
+        VITE_HANDWRITING_IMPORT_ENDPOINT:
+          'https://import.example.workers.dev/',
         VITE_TURNSTILE_SITE_KEY: 'site-key',
       }),
     ).toEqual({
       enabled: true,
-      endpoint: 'https://ocr.example.workers.dev/',
+      endpoint: 'https://import.example.workers.dev/',
       turnstileSiteKey: 'site-key',
     })
   })
@@ -20,7 +21,8 @@ describe('resolveHandwritingImportConfig', () => {
     {},
     {
       VITE_HANDWRITING_IMPORT_ENABLED: 'false',
-      VITE_OCR_ENDPOINT: 'https://ocr.example.workers.dev/',
+      VITE_HANDWRITING_IMPORT_ENDPOINT:
+        'https://import.example.workers.dev/',
       VITE_TURNSTILE_SITE_KEY: 'site-key',
     },
     {
@@ -29,11 +31,12 @@ describe('resolveHandwritingImportConfig', () => {
     },
     {
       VITE_HANDWRITING_IMPORT_ENABLED: 'true',
-      VITE_OCR_ENDPOINT: 'https://ocr.example.workers.dev/',
+      VITE_HANDWRITING_IMPORT_ENDPOINT:
+        'https://import.example.workers.dev/',
     },
     {
       VITE_HANDWRITING_IMPORT_ENABLED: 'true',
-      VITE_OCR_ENDPOINT: 'javascript:alert(1)',
+      VITE_HANDWRITING_IMPORT_ENDPOINT: 'javascript:alert(1)',
       VITE_TURNSTILE_SITE_KEY: 'site-key',
     },
   ])('stays safely disabled for incomplete or invalid settings', (environment) => {
@@ -44,7 +47,7 @@ describe('resolveHandwritingImportConfig', () => {
     expect(
       resolveHandwritingImportConfig({
         VITE_HANDWRITING_IMPORT_ENABLED: 'TRUE',
-        VITE_OCR_ENDPOINT: 'http://localhost:8787/',
+        VITE_HANDWRITING_IMPORT_ENDPOINT: 'http://localhost:8787/',
         VITE_TURNSTILE_SITE_KEY: 'site-key',
       }).enabled,
     ).toBe(true)
