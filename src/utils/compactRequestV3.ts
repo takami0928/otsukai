@@ -1,7 +1,4 @@
-import {
-  compressToEncodedURIComponent,
-  decompressFromEncodedURIComponent,
-} from 'lz-string'
+import { compressToEncodedURIComponent } from 'lz-string'
 import {
   MAX_CUSTOM_ITEMS,
   MAX_CUSTOM_ITEM_NAME_CHARS,
@@ -26,6 +23,7 @@ import {
 } from './compactRequest'
 import { isHouseholdProductId } from './householdCatalog'
 import type { SelectedRequestItem } from './selectedRequestItems'
+import { decodeCompressedRequestJson } from './requestPayloadDecoder'
 import { countUserCharacters, truncateUserCharacters } from './textLength'
 
 export type V3BaseItem = [0, number, string, string?]
@@ -373,12 +371,11 @@ export function decodeCompactRequestV3(
   categoryList: readonly Category[] = categories,
 ): ShoppingRequestPayload {
   try {
-    const json = decompressFromEncodedURIComponent(encoded)
-    if (!json) {
-      throw new Error('v3共有URLの復元に失敗しました。')
-    }
     return decodeCompactRequestV3Payload(
-      JSON.parse(json) as unknown,
+      decodeCompressedRequestJson(
+        encoded,
+        'v3共有URLの復元に失敗しました。',
+      ),
       baseProducts,
       categoryList,
     )
@@ -395,11 +392,10 @@ export function decodeCompactRequestV2OrV3(
   categoryList: readonly Category[] = categories,
 ): ShoppingRequestPayload {
   try {
-    const json = decompressFromEncodedURIComponent(encoded)
-    if (!json) {
-      throw new Error('共有URLの復元に失敗しました。')
-    }
-    const value = JSON.parse(json) as unknown
+    const value = decodeCompressedRequestJson(
+      encoded,
+      '共有URLの復元に失敗しました。',
+    )
     return Array.isArray(value) && value[0] === 3
       ? decodeCompactRequestV3Payload(value, baseProducts, categoryList)
       : decodeCompactRequestPayload(value, baseProducts, categoryList)

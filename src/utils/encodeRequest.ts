@@ -1,5 +1,6 @@
-import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string'
+import { compressToEncodedURIComponent } from 'lz-string'
 import type { ShoppingRequestPayload } from '../types/shopping'
+import { decodeCompressedRequestJson } from './requestPayloadDecoder'
 
 function isValidShoppingRequestItem(value: unknown): boolean {
   if (!value || typeof value !== 'object') {
@@ -46,13 +47,10 @@ export function encodeShoppingRequest(payload: ShoppingRequestPayload): string {
 
 export function decodeShoppingRequest(encoded: string): ShoppingRequestPayload {
   try {
-    const json = decompressFromEncodedURIComponent(encoded)
-
-    if (!json) {
-      throw new Error('共有URLの復元に失敗しました。')
-    }
-
-    const parsed = JSON.parse(json) as unknown
+    const parsed = decodeCompressedRequestJson(
+      encoded,
+      '共有URLの復元に失敗しました。',
+    )
 
     if (!isValidPayload(parsed)) {
       throw new Error('共有URLの形式が正しくありません。')

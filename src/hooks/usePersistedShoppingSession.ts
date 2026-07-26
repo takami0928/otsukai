@@ -23,6 +23,12 @@ type PersistedShoppingSessionState = {
   consultations: ConsultationMap
 }
 
+type PersistenceTarget =
+  | 'checkedState'
+  | 'itemIssues'
+  | 'cartOrder'
+  | 'consultations'
+
 export type ShoppingSessionReplacement = {
   requestId: string
   shoppingState: ShoppingStateSnapshot
@@ -50,6 +56,9 @@ export function usePersistedShoppingSession() {
   const [session, setSession] =
     useState<PersistedShoppingSessionState>(EMPTY_SESSION)
   const sessionRef = useRef<PersistedShoppingSessionState>(EMPTY_SESSION)
+  const [failedPersistenceTargets, setFailedPersistenceTargets] = useState<
+    ReadonlySet<PersistenceTarget>
+  >(() => new Set())
 
   const setCurrentSession = useCallback(
     (nextSession: PersistedShoppingSessionState) => {
@@ -61,6 +70,7 @@ export function usePersistedShoppingSession() {
 
   const replaceSession = useCallback(
     (replacement: ShoppingSessionReplacement) => {
+      setFailedPersistenceTargets(new Set())
       setCurrentSession({
         requestId: replacement.requestId,
         shoppingState: replacement.shoppingState,
@@ -68,6 +78,32 @@ export function usePersistedShoppingSession() {
       })
     },
     [setCurrentSession],
+  )
+
+  const recordPersistenceResult = useCallback(
+    (
+      requestId: string,
+      target: PersistenceTarget,
+      succeeded: boolean,
+    ) => {
+      if (sessionRef.current.requestId !== requestId) {
+        return
+      }
+      setFailedPersistenceTargets((current) => {
+        const currentlyFailed = current.has(target)
+        if (currentlyFailed === !succeeded) {
+          return current
+        }
+        const next = new Set(current)
+        if (succeeded) {
+          next.delete(target)
+        } else {
+          next.add(target)
+        }
+        return next
+      })
+    },
+    [],
   )
 
   const commitShoppingChange = useCallback(
@@ -148,40 +184,73 @@ export function usePersistedShoppingSession() {
 
   useEffect(() => {
     if (session.requestId) {
-      saveCheckedState(
-        session.requestId,
-        session.shoppingState.checkedState,
+      const requestId = session.requestId
+      recordPersistenceResult(
+        requestId,
+        'checkedState',
+        saveCheckedState(
+          session.requestId,
+          session.shoppingState.checkedState,
+        ),
       )
     }
-  }, [session.requestId, session.shoppingState.checkedState])
+  }, [
+    recordPersistenceResult,
+    session.requestId,
+    session.shoppingState.checkedState,
+  ])
 
   useEffect(() => {
     if (session.requestId) {
-      saveItemIssues(
-        session.requestId,
-        session.shoppingState.itemIssues,
+      const requestId = session.requestId
+      recordPersistenceResult(
+        requestId,
+        'itemIssues',
+        saveItemIssues(
+          session.requestId,
+          session.shoppingState.itemIssues,
+        ),
       )
     }
-  }, [session.requestId, session.shoppingState.itemIssues])
+  }, [
+    recordPersistenceResult,
+    session.requestId,
+    session.shoppingState.itemIssues,
+  ])
 
   useEffect(() => {
     if (session.requestId) {
-      saveCartOrder(
-        session.requestId,
-        session.shoppingState.cartOrder,
+      const requestId = session.requestId
+      recordPersistenceResult(
+        requestId,
+        'cartOrder',
+        saveCartOrder(
+          session.requestId,
+          session.shoppingState.cartOrder,
+        ),
       )
     }
-  }, [session.requestId, session.shoppingState.cartOrder])
+  }, [
+    recordPersistenceResult,
+    session.requestId,
+    session.shoppingState.cartOrder,
+  ])
 
   useEffect(() => {
     if (session.requestId) {
-      saveConsultations(session.requestId, session.consultations)
+      const requestId = session.requestId
+      recordPersistenceResult(
+        requestId,
+        'consultations',
+        saveConsultations(requestId, session.consultations),
+      )
     }
-  }, [session.consultations, session.requestId])
+  }, [recordPersistenceResult, session.consultations, session.requestId])
 
   return {
     shoppingState: session.shoppingState,
     consultations: session.consultations,
+    hasPersistenceError: failedPersistenceTargets.size > 0,
     replaceSession,
     commitShoppingChange,
     undoShoppingChange,

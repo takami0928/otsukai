@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 
 import { compressToEncodedURIComponent } from 'lz-string'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   ShoppingRequestItemPayload,
   ShoppingRequestPayload,
 } from '../types/shopping'
 import { encodeShoppingRequest } from './encodeRequest'
+import { MAX_REQUEST_ENCODED_CHARS } from './requestPayloadDecoder'
 import {
   decodeShoppingSessionPayload,
   loadShoppingSession,
@@ -210,6 +211,33 @@ describe('shopping session loading', () => {
       }),
     ).toThrow('共有URLの復元に失敗しました。')
   })
+
+  it.each(['legacy-query', 'compact-path'] as const)(
+    'rejects an oversized encoded %s request before decompression',
+    (codec) => {
+      expect(() =>
+        decodeShoppingSessionPayload({
+          encodedPayload: 'x'.repeat(MAX_REQUEST_ENCODED_CHARS + 1),
+          codec,
+        }),
+      ).toThrow('共有URLデータが大きすぎます。')
+    },
+  )
+
+  it.each(['legacy-query', 'compact-path'] as const)(
+    'rejects an oversized expanded %s request before JSON.parse',
+    (codec) => {
+      const parse = vi.spyOn(JSON, 'parse')
+      const encodedPayload = compressToEncodedURIComponent(
+        JSON.stringify('x'.repeat(200_001)),
+      )
+
+      expect(() =>
+        decodeShoppingSessionPayload({ encodedPayload, codec }),
+      ).toThrow('共有URLデータが大きすぎます。')
+      expect(parse).not.toHaveBeenCalled()
+    },
+  )
 
   it('loads a replacement request without retaining the previous session', () => {
     const firstPayload = createPayload('first-session')

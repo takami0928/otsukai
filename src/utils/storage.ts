@@ -20,11 +20,13 @@ function readJson<T>(key: string, fallback: T): T {
   }
 }
 
-function writeJson<T>(key: string, value: T) {
+function writeJson<T>(key: string, value: T): boolean {
   try {
     window.localStorage.setItem(key, JSON.stringify(value))
+    return true
   } catch (error) {
     console.warn(`Failed to write localStorage key: ${key}`, error)
+    return false
   }
 }
 
@@ -33,7 +35,7 @@ export function loadCreateDraft(): CreateDraftState {
 }
 
 export function saveCreateDraft(draft: CreateDraftState) {
-  writeJson(CREATE_DRAFT_KEY, draft)
+  return writeJson(CREATE_DRAFT_KEY, draft)
 }
 
 export function loadCheckedState(requestId: string): CheckedStateMap {
@@ -41,7 +43,10 @@ export function loadCheckedState(requestId: string): CheckedStateMap {
 }
 
 export function saveCheckedState(requestId: string, state: CheckedStateMap) {
-  writeJson(`otsukai:checked:${requestId}`, normalizeCheckedState(state))
+  return writeJson(
+    `otsukai:checked:${requestId}`,
+    normalizeCheckedState(state),
+  )
 }
 
 export function loadCartOrder(requestId: string): CartOrderList {
@@ -49,7 +54,10 @@ export function loadCartOrder(requestId: string): CartOrderList {
 }
 
 export function saveCartOrder(requestId: string, order: CartOrderList) {
-  writeJson(`otsukai:cartOrder:${requestId}`, normalizeCartOrder(order))
+  return writeJson(
+    `otsukai:cartOrder:${requestId}`,
+    normalizeCartOrder(order),
+  )
 }
 
 export function loadItemIssues(requestId: string): ItemIssueMap {
@@ -57,7 +65,10 @@ export function loadItemIssues(requestId: string): ItemIssueMap {
 }
 
 export function saveItemIssues(requestId: string, issues: ItemIssueMap) {
-  writeJson(`otsukai:itemIssues:${requestId}`, normalizeItemIssues(issues))
+  return writeJson(
+    `otsukai:itemIssues:${requestId}`,
+    normalizeItemIssues(issues),
+  )
 }
 
 export function loadConsultations(requestId: string): ConsultationMap {
@@ -67,7 +78,7 @@ export function loadConsultations(requestId: string): ConsultationMap {
 }
 
 export function saveConsultations(requestId: string, consultations: ConsultationMap) {
-  writeJson(
+  return writeJson(
     `otsukai:consultations:${requestId}`,
     normalizeConsultations(consultations),
   )

@@ -17,6 +17,7 @@ type ShoppingCompletionViewProps = {
     kind: 'success' | 'error' | 'info'
     message: string
   } | null
+  hasPersistenceError: boolean
   notBuyingItems: ShoppingRequestItemPayload[]
   itemIssues: ItemIssueMap
   isSharingResult: boolean
@@ -32,6 +33,7 @@ export function ShoppingCompletionView({
   completionState,
   completionHeadingRef,
   shareNotice,
+  hasPersistenceError,
   notBuyingItems,
   itemIssues,
   isSharingResult,
@@ -64,6 +66,13 @@ export function ShoppingCompletionView({
       {shareNotice ? (
         <p className={`share-notice ${shareNotice.kind}`} role="status">
           {shareNotice.message}
+        </p>
+      ) : null}
+
+      {hasPersistenceError ? (
+        <p className="share-notice error" role="alert">
+          買い物の進捗をこの端末に保存できませんでした。
+          再読み込みすると変更が失われる可能性があります。
         </p>
       ) : null}
 
