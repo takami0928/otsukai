@@ -519,7 +519,7 @@ Context、外部store、アプリ全体のReducer、状態機械、汎用共有h
 
 | Phase | 内容 | 状態 | branch | PR |
 |---|---|---|---|---|
-| 1 | route意味と買い物セッション読込 | 実装・ローカル検証完了 | `refactor/shopping-session-phase-1-loading` | 作成後に確定 |
+| 1 | route意味と買い物セッション読込 | PR検証中 | `refactor/shopping-session-phase-1-loading` | #24 |
 | 2 | 買い物状態と永続化の専用hook化 | 未着手 | `refactor/shopping-session-phase-2-persistence` | 未作成 |
 | 3 | 相談workflowの専用hook化 | 未着手 | `refactor/shopping-session-phase-3-consultations` | 未作成 |
 
@@ -557,8 +557,9 @@ Context、外部store、アプリ全体のReducer、状態機械、汎用共有h
 ### 実施結果
 
 - branch: `refactor/shopping-session-phase-1-loading`
-- PR: 作成後に確定
-- head SHA: PR作成後のGitHub metadataで確定
+- PR: #24
+- implementation head SHA: `a354b2ffe441c5b8096df76df6beabe562ab97b9`
+- 最終head SHA: GitHub PR metadataと最終報告に記録
 - `RequestRouteCodec`を`legacy-query | compact-path`として導入し、routeと`ShoppingListPage` propsから`format: 'v2'`という誤解を招く表現を除去した。
 - `shoppingSession`へcodec別復号と、4保存値の読込、legacy migration、3種のreconcile、cart order整合を移した。
 - decoderと復元処理は別関数に保ち、browser I/Oを純粋なcodec dispatchへ混入させていない。
