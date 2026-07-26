@@ -1,0 +1,46 @@
+# テスト網羅性再監査
+
+## 監査基準
+
+- 開始時 `main`: `c32b16fd9b4ce1a24fa68737327506bec102f6e7`
+- 開始時テスト: 39 files / 332 tests
+- 開始時build: 101 modules、成功
+- production audit: 0 vulnerabilities
+- 分類:
+  - A: 失敗する回帰テストで再現した確認済み不具合
+  - B: 現状は正常だが重要な分岐が未網羅
+  - C: 製品仕様の判断なしには変更できない設計リスク
+
+## 実装とテストの対応監査
+
+|領域|既存の主な保護|監査で確認した不足|分類|対応PR|
+|---|---|---|---|---|
+|結果共有|native share、copy fallback、二重実行防止|cancelled/failed時の結果専用文言、失敗後の再試行、route切替・unmount中の完了|A/B|PR 1 / PR 2|
+|v1/v2/v3 decoder|固定fixture、round-trip、不正形式|圧縮入力と展開後JSONのサイズ境界、圧縮爆弾|A|PR 1|
+|買い物進捗保存|4キーの正常保存、request分離|一部キーの保存失敗、利用者通知、回復、SecurityError|A|PR 1|
+|v3 end-to-end|encoder/decoderと各ページの個別テスト|作成から買い物完了・再mountまでを結ぶ経路|B|PR 2|
+|公開形式fixture|v1/v2固定fixture|v3、カタログ復旧URL/JSONの固定fixture|B|PR 2|
+|mounted App routing|route parser|hashchange、back/forward相当、StrictMode、session UIのリセット|B|PR 2|
+|依頼共有|共有utilityのlock|ページ上のpending連打、route離脱後の完了無効化|B|PR 2|
+|買い物状態|主要遷移とUndo例|全statusの表形式不変条件、他request IDの除外|B/A|PR 3|
+|ShoppingDialog|実装上のfocus trap、Escape、scroll lock|キーボード・backdrop・focus復元のcomponent test|B|PR 3|
+|商品カタログ復旧|parser正常/異常、UI正常復元|file異常、危険キー、保存失敗時のUI不変|B|PR 3|
+
+## PR 1で再現した確認済み不具合
+
+1. 結果共有をキャンセルまたは共有・copyとも失敗した際に、「相談内容はそのまま残しています」と誤表示していた。
+2. v1/v2/v3の依頼decoderは、圧縮入力および展開後JSONのサイズを検査せず `JSON.parse` へ進んでいた。
+3. checked state、item issues、cart order、consultationsの保存失敗は `console.warn` のみで、利用者には成功したように見えていた。
+
+PR 1では、失敗する回帰テストを先に追加して上記を再現した。v3の構造上限303商品を最大長ID・名称・単位と条件合計1,000文字で低圧縮データ化した実測値は、展開後JSON 57,868文字、encoded 51,176文字だった。公開配送URLの2,200文字制限を維持しつつ、decoder側は最大構造と過去データへ余裕を持たせてencoded 64,000文字、展開後JSON 200,000文字を上限とした。後続PRで固定fixtureと公開形式を再検証する。
+
+## 仕様判断を要する設計リスク
+
+### 複数タブでの同時編集
+
+現行実装は買い物状態と家庭用商品リストをタブ間で同期せず、最後に保存したタブの値が残る。自動同期や競合解決は保存タイミングと利用者向け仕様を変えるため、今回の回帰修正には含めない。
+
+- 想定被害: 同じ依頼または商品リストを複数タブで同時編集した場合、古いタブの操作が新しい保存を上書きし得る。
+- 現行回避策: 同一依頼・商品リストは1タブで操作する。
+- 将来の検討範囲: `storage` event、revision比較、競合時の利用者選択、Undoとの整合。
+- 優先度: 中（単一タブ利用では発生しない）。

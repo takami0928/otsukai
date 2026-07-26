@@ -109,14 +109,15 @@ function getResultShareNotice(result: NativeShareResult): ShareNotice {
   if (result === 'cancelled') {
     return {
       kind: 'info',
-      message: '共有をキャンセルしました。相談内容はそのまま残しています。',
+      message:
+        '結果の共有をキャンセルしました。買い物結果はそのまま残っています。',
     }
   }
 
   return {
     kind: 'error',
     message:
-      '共有またはコピーができませんでした。\n相談内容はそのまま残しています。外部ブラウザで開いてもう一度お試しください。',
+      '結果を共有またはコピーできませんでした。\n買い物結果はそのまま残っています。外部ブラウザで開いてもう一度お試しください。',
   }
 }
 
@@ -130,6 +131,7 @@ export function ShoppingListPage({
   const {
     shoppingState,
     consultations,
+    hasPersistenceError,
     replaceSession,
     commitShoppingChange: commitPersistedShoppingChange,
     undoShoppingChange,
@@ -478,6 +480,7 @@ export function ShoppingListPage({
         completionState={completionState}
         completionHeadingRef={completionHeadingRef}
         shareNotice={shareNotice}
+        hasPersistenceError={hasPersistenceError}
         notBuyingItems={notBuyingItems}
         itemIssues={itemIssues}
         isSharingResult={isSharingResult}
@@ -540,6 +543,13 @@ export function ShoppingListPage({
       {shareNotice ? (
         <p className={`share-notice ${shareNotice.kind}`} role="status">
           {shareNotice.message}
+        </p>
+      ) : null}
+
+      {hasPersistenceError ? (
+        <p className="share-notice error" role="alert">
+          買い物の進捗をこの端末に保存できませんでした。
+          再読み込みすると変更が失われる可能性があります。
         </p>
       ) : null}
 

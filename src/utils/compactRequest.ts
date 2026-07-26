@@ -1,4 +1,4 @@
-import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string'
+import { compressToEncodedURIComponent } from 'lz-string'
 import {
   MAX_CUSTOM_ITEMS,
   MAX_CUSTOM_ITEM_NAME_CHARS,
@@ -13,6 +13,7 @@ import { products } from '../data/products'
 import { SHARE_PRODUCT_IDS_V2 } from '../data/shareProductIdsV2'
 import type { Category, Product } from '../types/product'
 import type { CreateDraftState, ShoppingRequestPayload } from '../types/shopping'
+import { decodeCompressedRequestJson } from './requestPayloadDecoder'
 import { countUserCharacters, truncateUserCharacters } from './textLength'
 
 const QUANTITY_CODES = '0123456789abcdefghijk'
@@ -411,11 +412,14 @@ export function decodeCompactRequest(
   categoryList: readonly Category[] = categories,
 ): ShoppingRequestPayload {
   try {
-    const json = decompressFromEncodedURIComponent(encoded)
-    if (!json) {
-      throw new Error('v2共有URLの復元に失敗しました。')
-    }
-    return decodeCompactRequestPayload(JSON.parse(json) as unknown, productList, categoryList)
+    return decodeCompactRequestPayload(
+      decodeCompressedRequestJson(
+        encoded,
+        'v2共有URLの復元に失敗しました。',
+      ),
+      productList,
+      categoryList,
+    )
   } catch (error) {
     const message = error instanceof Error ? error.message : 'v2共有URLの復元に失敗しました。'
     throw new Error(message)

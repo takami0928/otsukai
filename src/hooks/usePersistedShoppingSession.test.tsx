@@ -2,7 +2,7 @@
 
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConsultationMap } from '../types/shopping'
 import type { ShoppingStateSnapshot } from '../utils/shoppingState'
 import { usePersistedShoppingSession } from './usePersistedShoppingSession'
@@ -59,6 +59,7 @@ describe('usePersistedShoppingSession', () => {
     act(() => root.unmount())
     container.remove()
     window.localStorage.clear()
+    vi.restoreAllMocks()
   })
 
   it('replaces the initial session and persists all four stored values', () => {
@@ -273,5 +274,74 @@ describe('usePersistedShoppingSession', () => {
     expect(readStored('otsukai:itemIssues:request-b')).toEqual({
       eggs: { reason: 'soldOut' },
     })
+  })
+
+  it.each(['QuotaExceededError', 'SecurityError'])(
+    'keeps state after a %s write failure and clears the error after the target saves',
+    (errorName) => {
+      const warn = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined)
+      const originalSetItem = window.localStorage.setItem.bind(
+        window.localStorage,
+      )
+      let failCheckedState = true
+      vi.spyOn(window.localStorage, 'setItem').mockImplementation(
+        (key: string, value: string) => {
+          if (
+            failCheckedState &&
+            key === 'otsukai:checked:request-failure'
+          ) {
+            throw new DOMException('storage unavailable', errorName)
+          }
+          originalSetItem(key, value)
+        },
+      )
+
+      replaceSession('request-failure')
+
+      expect(session.hasPersistenceError).toBe(true)
+      expect(session.shoppingState).toEqual(EMPTY_SHOPPING_STATE)
+      expect(readStored('otsukai:itemIssues:request-failure')).toEqual({})
+      expect(readStored('otsukai:cartOrder:request-failure')).toEqual([])
+      expect(readStored('otsukai:consultations:request-failure')).toEqual({})
+      expect(warn).toHaveBeenCalledTimes(1)
+
+      failCheckedState = false
+      act(() => {
+        session.commitShoppingChange('milk', 'inCart')
+      })
+
+      expect(session.hasPersistenceError).toBe(false)
+      expect(session.shoppingState.checkedState.milk).toBe('inCart')
+      expect(readStored('otsukai:checked:request-failure')).toEqual({
+        milk: 'inCart',
+      })
+    },
+  )
+
+  it('clears a persistence error when the request is replaced', () => {
+    const warn = vi
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined)
+    const originalSetItem = window.localStorage.setItem.bind(
+      window.localStorage,
+    )
+    vi.spyOn(window.localStorage, 'setItem').mockImplementation(
+      (key: string, value: string) => {
+        if (key === 'otsukai:consultations:request-a') {
+          throw new DOMException('storage full', 'QuotaExceededError')
+        }
+        originalSetItem(key, value)
+      },
+    )
+
+    replaceSession('request-a')
+    expect(session.hasPersistenceError).toBe(true)
+
+    replaceSession('request-b')
+    expect(session.hasPersistenceError).toBe(false)
+    expect(readStored('otsukai:consultations:request-b')).toEqual({})
+    expect(warn).toHaveBeenCalledTimes(1)
   })
 })

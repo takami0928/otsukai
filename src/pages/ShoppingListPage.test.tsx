@@ -985,6 +985,138 @@ describe('ShoppingListPage buyer flow', () => {
     )
   })
 
+  it.each([
+    {
+      outcome: 'cancelled',
+      expectedKind: 'info',
+      expectedMessage:
+        '結果の共有をキャンセルしました。買い物結果はそのまま残っています。',
+    },
+    {
+      outcome: 'failed',
+      expectedKind: 'error',
+      expectedMessage:
+        '結果を共有またはコピーできませんでした。\n買い物結果はそのまま残っています。',
+    },
+  ] as const)(
+    'shows a result-specific $outcome notice, prevents duplicate sharing, and allows retry',
+    async ({ outcome, expectedKind, expectedMessage }) => {
+      const share = vi
+        .fn<(data: ShareData) => Promise<void>>()
+        .mockImplementationOnce(async () => {
+          if (outcome === 'cancelled') {
+            throw new DOMException('cancelled', 'AbortError')
+          }
+          throw new Error('native share failed')
+        })
+        .mockResolvedValue(undefined)
+      const clipboard = vi.fn(async () => {
+        throw new Error('clipboard failed')
+      })
+      setNavigatorShare(share)
+      setClipboardWriter(clipboard)
+      const { encoded, payload } = createRequest()
+      const item = payload.items[0]
+      storeShoppingState(
+        payload.requestId,
+        { [item.id]: 'inCart' },
+        {},
+        {},
+        [item.id],
+      )
+      await renderRequest(encoded)
+      await clickAndFlush(button('買い物を終了する'))
+
+      await act(async () => {
+        const shareButton = button('結果を共有')
+        click(shareButton)
+        click(shareButton)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(share).toHaveBeenCalledTimes(1)
+      expect(container.querySelector(`.share-notice.${expectedKind}`)?.textContent)
+        .toContain(expectedMessage)
+      expect(container.textContent).not.toContain('相談内容')
+      expect(container.textContent).toContain('おつかい完了')
+
+      await clickAndFlush(button('結果を共有'))
+      expect(share).toHaveBeenCalledTimes(2)
+      expect(container.textContent).toContain(
+        'LINEを選択して結果を送信してください。',
+      )
+    },
+  )
+
+  it('keeps an in-memory shopping change visible when persistence fails and warns the user', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const { encoded, payload } = createRequest()
+    const item = payload.items[0]
+    await renderRequest(encoded)
+    const originalSetItem = window.localStorage.setItem.bind(
+      window.localStorage,
+    )
+    let shouldFail = true
+    vi.spyOn(window.localStorage, 'setItem').mockImplementation(
+      (key: string, value: string) => {
+        if (
+          shouldFail &&
+          key === `otsukai:checked:${payload.requestId}`
+        ) {
+          throw new DOMException('storage full', 'QuotaExceededError')
+        }
+        originalSetItem(key, value)
+      },
+    )
+
+    await clickAndFlush(button('かごに入れる'))
+
+    expect(container.textContent).toContain('かご済み')
+    expect(container.textContent).toContain(
+      '再読み込みすると変更が失われる可能性があります。',
+    )
+    expect(readCheckedState(payload.requestId)[item.id]).toBeUndefined()
+    expect(warn).toHaveBeenCalled()
+
+    shouldFail = false
+    await clickAndFlush(button('未購入に戻す'))
+    expect(container.textContent).not.toContain(
+      '再読み込みすると変更が失われる可能性があります。',
+    )
+    expect(readCheckedState(payload.requestId)[item.id]).toBe('pending')
+  })
+
+  it('restores only successfully persisted shopping progress after remount', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const { encoded, payload } = createRequest()
+    await renderRequest(encoded)
+    const originalSetItem = window.localStorage.setItem.bind(
+      window.localStorage,
+    )
+    vi.spyOn(window.localStorage, 'setItem').mockImplementation(
+      (key: string, value: string) => {
+        if (key === `otsukai:checked:${payload.requestId}`) {
+          throw new DOMException('storage full', 'QuotaExceededError')
+        }
+        originalSetItem(key, value)
+      },
+    )
+
+    await clickAndFlush(button('かごに入れる'))
+    expect(container.textContent).toContain('かご済み')
+
+    act(() => root.unmount())
+    rootIsMounted = false
+    root = createRoot(container)
+    rootIsMounted = true
+    await renderRequest(encoded)
+
+    expect(button('かごに入れる').disabled).toBe(false)
+    expect(container.textContent).not.toContain('キャベツをかご済みにしました')
+    expect(warn).toHaveBeenCalled()
+  })
+
   it('shows an external-browser link only when native sharing is unavailable', async () => {
     const { encoded } = createRequest()
     window.history.replaceState(
