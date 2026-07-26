@@ -55,16 +55,11 @@ export function loadHouseholdCatalog(
   now = new Date().toISOString(),
 ): CatalogLoadResult {
   let currentRaw: string | null = null
-  let previousRaw: string | null = null
   try {
     currentRaw = storage.getItem(HOUSEHOLD_CATALOG_KEY)
-    previousRaw = storage.getItem(HOUSEHOLD_CATALOG_PREVIOUS_KEY)
   } catch {
-    return {
-      catalog: createEmptyHouseholdCatalog(now),
-      source: 'default',
-      recovered: false,
-    }
+    // A storage implementation can fail for one key while another remains
+    // readable, so continue to the previous generation.
   }
 
   const current = parseCatalog(currentRaw, baseProducts, categoryList)
@@ -72,6 +67,12 @@ export function loadHouseholdCatalog(
     return { catalog: current, source: 'current', recovered: false }
   }
 
+  let previousRaw: string | null = null
+  try {
+    previousRaw = storage.getItem(HOUSEHOLD_CATALOG_PREVIOUS_KEY)
+  } catch {
+    // Fall through to the base catalog when neither generation is readable.
+  }
   const previous = parseCatalog(previousRaw, baseProducts, categoryList)
   if (previous) {
     try {

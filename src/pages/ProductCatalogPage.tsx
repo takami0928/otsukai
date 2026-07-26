@@ -3,7 +3,7 @@ import { CatalogBackupStatus } from '../components/CatalogBackupStatus'
 import { CatalogRecoveryPreview } from '../components/CatalogRecoveryPreview'
 import { ProductCatalogEditor } from '../components/ProductCatalogEditor'
 import { ProductCatalogList } from '../components/ProductCatalogList'
-import { MAX_CATALOG_RECOVERY_JSON_CHARS } from '../constants/requestLimits'
+import { MAX_CATALOG_RECOVERY_JSON_BYTES } from '../constants/requestLimits'
 import { categories } from '../data/categories'
 import { useHouseholdCatalog } from '../hooks/useHouseholdCatalog'
 import type {
@@ -201,7 +201,7 @@ export function ProductCatalogPage({
     if (!file) {
       return
     }
-    if (file.size > MAX_CATALOG_RECOVERY_JSON_CHARS) {
+    if (file.size > MAX_CATALOG_RECOVERY_JSON_BYTES) {
       setNotice('商品リスト復旧データが大きすぎます。')
       return
     }

@@ -405,6 +405,11 @@ describe('useConsultationWorkflow', () => {
     expect(shareMock).not.toHaveBeenCalled()
     expect(consultations.milk.status).toBe('queued')
     expect(workflow.isSharingConsultation).toBe(false)
+    expect(notices.at(-1)).toEqual({
+      kind: 'info',
+      message:
+        '別の共有処理が進行中です。完了してからもう一度お試しください。',
+    })
   })
 
   it('ignores an old share result after the request changes', async () => {

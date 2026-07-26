@@ -22,6 +22,12 @@ export default defineConfig(({ mode }) => {
           'src/testFixtures/**',
           'src/types/**',
         ],
+        thresholds: {
+          statements: 90,
+          branches: 84,
+          functions: 93,
+          lines: 90,
+        },
       },
     },
   }

@@ -177,6 +177,12 @@ describe('catalog recovery data', () => {
         updatedAt: '2026-07-27T00:00:00.000Z',
       }),
     ).toBe(true)
+    expect(
+      isRecoveryPayloadOlderThanCatalog(bundle.payload, {
+        ...bundle.payload.catalog,
+        updatedAt: bundle.payload.createdAt,
+      }),
+    ).toBe(false)
   })
 
   it('measures the actual final URL at the 2,200-character boundary without truncating data', () => {

@@ -228,11 +228,15 @@ export function useConsultationWorkflow({
       entries: ConsultationShareEntry[],
       mode: 'individual' | 'bulk',
     ) => {
-      if (
-        isShareActiveRef.current ||
-        entries.length === 0 ||
-        !shareLock.tryAcquire()
-      ) {
+      if (isShareActiveRef.current || entries.length === 0) {
+        return
+      }
+      if (!shareLock.tryAcquire()) {
+        onNotice({
+          kind: 'info',
+          message:
+            '別の共有処理が進行中です。完了してからもう一度お試しください。',
+        })
         return
       }
 

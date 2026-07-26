@@ -103,6 +103,59 @@ describe('household catalog storage', () => {
     )
   })
 
+  it('uses whichever valid generation can still be read when one key throws', () => {
+    const current = createEmptyHouseholdCatalog(NOW)
+    const previous = updateBaseProduct(
+      current,
+      'milk',
+      {
+        name: '以前の牛乳',
+        unit: '本',
+        categoryId: 'eggs-dairy',
+        hidden: false,
+      },
+      '2026-07-25T00:00:00.000Z',
+    )
+
+    const currentReadable = new MemoryStorage()
+    currentReadable.setItem(HOUSEHOLD_CATALOG_KEY, JSON.stringify(current))
+    currentReadable.setItem(
+      HOUSEHOLD_CATALOG_PREVIOUS_KEY,
+      JSON.stringify(previous),
+    )
+    const currentGet = currentReadable.getItem.bind(currentReadable)
+    currentReadable.getItem = (key: string) => {
+      if (key === HOUSEHOLD_CATALOG_PREVIOUS_KEY) {
+        throw new DOMException('blocked', 'SecurityError')
+      }
+      return currentGet(key)
+    }
+    expect(loadHouseholdCatalog(currentReadable)).toEqual({
+      catalog: current,
+      source: 'current',
+      recovered: false,
+    })
+
+    const previousReadable = new MemoryStorage()
+    previousReadable.setItem(HOUSEHOLD_CATALOG_KEY, JSON.stringify(current))
+    previousReadable.setItem(
+      HOUSEHOLD_CATALOG_PREVIOUS_KEY,
+      JSON.stringify(previous),
+    )
+    const previousGet = previousReadable.getItem.bind(previousReadable)
+    previousReadable.getItem = (key: string) => {
+      if (key === HOUSEHOLD_CATALOG_KEY) {
+        throw new DOMException('blocked', 'SecurityError')
+      }
+      return previousGet(key)
+    }
+    expect(loadHouseholdCatalog(previousReadable)).toEqual({
+      catalog: previous,
+      source: 'previous',
+      recovered: true,
+    })
+  })
+
   it('falls back to the base catalog when both generations are absent or invalid', () => {
     const storage = new MemoryStorage()
     storage.setItem(
@@ -146,6 +199,77 @@ describe('household catalog storage', () => {
       `{"schemaVersion":1,"revision":0,"updatedAt":"${NOW}","overrides":{"constructor":{"hidden":true}},"addedProducts":[]}`,
     )
     expect(saveHouseholdCatalog(dangerous, storage)).toMatchObject({ ok: false })
+  })
+
+  it('returns the original save failure even when rollback storage also fails', () => {
+    const storage = new MemoryStorage()
+    const empty = createEmptyHouseholdCatalog(NOW)
+    expect(saveHouseholdCatalog(empty, storage).ok).toBe(true)
+    const changed = updateBaseProduct(
+      empty,
+      'milk',
+      {
+        name: '変更後',
+        unit: '本',
+        categoryId: 'eggs-dairy',
+        hidden: false,
+      },
+      '2026-07-26T01:00:00.000Z',
+    )
+    const originalSetItem = storage.setItem.bind(storage)
+    let currentWriteAttempts = 0
+    storage.setItem = (key: string, value: string) => {
+      if (key === HOUSEHOLD_CATALOG_KEY) {
+        currentWriteAttempts += 1
+        throw new DOMException('storage unavailable', 'SecurityError')
+      }
+      originalSetItem(key, value)
+    }
+
+    expect(saveHouseholdCatalog(changed, storage)).toMatchObject({
+      ok: false,
+      error: expect.objectContaining({
+        name: 'SecurityError',
+      }),
+    })
+    expect(currentWriteAttempts).toBe(2)
+  })
+
+  it('rolls back when the saved current generation cannot be verified', () => {
+    const storage = new MemoryStorage()
+    const empty = createEmptyHouseholdCatalog(NOW)
+    expect(saveHouseholdCatalog(empty, storage).ok).toBe(true)
+    const changed = updateBaseProduct(
+      empty,
+      'milk',
+      {
+        name: '検証対象',
+        unit: '本',
+        categoryId: 'eggs-dairy',
+        hidden: false,
+      },
+      '2026-07-26T01:00:00.000Z',
+    )
+    const originalGetItem = storage.getItem.bind(storage)
+    let currentReads = 0
+    storage.getItem = (key: string) => {
+      if (key === HOUSEHOLD_CATALOG_KEY) {
+        currentReads += 1
+        if (currentReads === 2) {
+          return '{broken'
+        }
+      }
+      return originalGetItem(key)
+    }
+
+    expect(saveHouseholdCatalog(changed, storage)).toMatchObject({
+      ok: false,
+      error: expect.objectContaining({
+        message: '保存した商品リストを確認できませんでした。',
+      }),
+    })
+    storage.getItem = originalGetItem
+    expect(loadHouseholdCatalog(storage).catalog).toEqual(empty)
   })
 
   it('stores only a valid explicit backup confirmation receipt', () => {

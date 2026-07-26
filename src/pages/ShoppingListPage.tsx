@@ -154,6 +154,7 @@ export function ShoppingListPage({
   const [shareNotice, setShareNotice] = useState<ShareNotice | null>(null)
   const activeShareRef = useRef(false)
   const resultShareGenerationRef = useRef(0)
+  const shouldPublishResultNoticeRef = useRef(false)
   const checkoutReviewRef = useRef<HTMLElement | null>(null)
   const completionHeadingRef = useRef<HTMLHeadingElement | null>(null)
   const nativeShareAvailable = isNativeShareAvailable()
@@ -182,6 +183,7 @@ export function ShoppingListPage({
   useEffect(
     () => () => {
       resultShareGenerationRef.current += 1
+      shouldPublishResultNoticeRef.current = false
       activeShareRef.current = false
     },
     [],
@@ -246,6 +248,7 @@ export function ShoppingListPage({
 
   useEffect(() => {
     resultShareGenerationRef.current += 1
+    shouldPublishResultNoticeRef.current = false
     activeShareRef.current = false
     clearUndoNotice()
 
@@ -411,6 +414,7 @@ export function ShoppingListPage({
 
     const shareGeneration = resultShareGenerationRef.current
     activeShareRef.current = true
+    shouldPublishResultNoticeRef.current = true
     setIsSharingResult(true)
     try {
       const result = await shareText({
@@ -423,13 +427,17 @@ export function ShoppingListPage({
           })),
         ),
       })
-      if (shareGeneration !== resultShareGenerationRef.current) {
+      if (
+        shareGeneration !== resultShareGenerationRef.current ||
+        !shouldPublishResultNoticeRef.current
+      ) {
         return
       }
 
       setShareNotice(getResultShareNotice(result))
     } finally {
       if (shareGeneration === resultShareGenerationRef.current) {
+        shouldPublishResultNoticeRef.current = false
         activeShareRef.current = false
         setIsSharingResult(false)
       }
@@ -455,6 +463,7 @@ export function ShoppingListPage({
   }
 
   const handleReviewShopping = () => {
+    shouldPublishResultNoticeRef.current = false
     setIsCompletionView(false)
     setIsCheckoutReviewOpen(true)
     setShareNotice(null)

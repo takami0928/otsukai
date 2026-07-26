@@ -305,9 +305,18 @@ function compareCatalogContent(
   left: HouseholdCatalogV1,
   right: HouseholdCatalogV1,
 ): boolean {
+  const addedProductContent = (catalog: HouseholdCatalogV1) =>
+    catalog.addedProducts.map((product) => ({
+      id: product.id,
+      name: product.name,
+      unit: product.unit,
+      categoryId: product.categoryId,
+      hidden: product.hidden,
+    }))
   return (
     JSON.stringify(left.overrides) === JSON.stringify(right.overrides) &&
-    JSON.stringify(left.addedProducts) === JSON.stringify(right.addedProducts)
+    JSON.stringify(addedProductContent(left)) ===
+      JSON.stringify(addedProductContent(right))
   )
 }
 

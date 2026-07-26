@@ -465,6 +465,60 @@ describe('usePersistedShoppingSession', () => {
     },
   )
 
+  it('keeps the warning until every failed persistence target recovers', () => {
+    const warn = vi
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined)
+    const originalSetItem = window.localStorage.setItem.bind(
+      window.localStorage,
+    )
+    const failedTargets = new Set(['checked', 'consultations'])
+    vi.spyOn(window.localStorage, 'setItem').mockImplementation(
+      (key: string, value: string) => {
+        if (
+          [...failedTargets].some((target) =>
+            key.startsWith(`otsukai:${target}:request-failure`),
+          )
+        ) {
+          throw new DOMException('storage unavailable', 'QuotaExceededError')
+        }
+        originalSetItem(key, value)
+      },
+    )
+
+    replaceSession('request-failure')
+    expect(session.hasPersistenceError).toBe(true)
+
+    failedTargets.delete('checked')
+    act(() => {
+      session.commitShoppingChange('milk', 'inCart')
+    })
+    expect(session.hasPersistenceError).toBe(true)
+    expect(readStored('otsukai:checked:request-failure')).toEqual({
+      milk: 'inCart',
+    })
+
+    failedTargets.delete('consultations')
+    act(() => {
+      session.updateConsultations(() => ({
+        milk: {
+          itemId: 'milk',
+          reason: 'notFound',
+          status: 'queued',
+        },
+      }))
+    })
+    expect(session.hasPersistenceError).toBe(false)
+    expect(readStored('otsukai:consultations:request-failure')).toEqual({
+      milk: {
+        itemId: 'milk',
+        reason: 'notFound',
+        status: 'queued',
+      },
+    })
+    expect(warn).toHaveBeenCalledTimes(2)
+  })
+
   it('clears a persistence error when the request is replaced', () => {
     const warn = vi
       .spyOn(console, 'warn')

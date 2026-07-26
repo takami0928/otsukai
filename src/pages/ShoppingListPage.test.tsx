@@ -1000,6 +1000,56 @@ describe('ShoppingListPage buyer flow', () => {
     )
   })
 
+  it('invalidates a pending result share when reviewing and allows consultation sharing', async () => {
+    let resolveResultShare: () => void = () => {}
+    const share = vi
+      .fn<(data: ShareData) => Promise<void>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveResultShare = resolve
+          }),
+      )
+      .mockResolvedValue(undefined)
+    setNavigatorShare(share)
+    const { encoded, payload } = createRequest()
+    const item = payload.items[0]
+    storeShoppingState(
+      payload.requestId,
+      { [item.id]: 'inCart' },
+      {},
+      {},
+      [item.id],
+    )
+    await renderRequest(encoded)
+    await clickAndFlush(button('買い物を終了する'))
+    act(() => {
+      click(button('結果を共有'))
+    })
+
+    await clickAndFlush(button('買い物内容を見直す'))
+    await openConsultation('notFound')
+    await clickAndFlush(button('LINEですぐ相談'))
+    expect(share).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain(
+      '別の共有処理が進行中です。完了してからもう一度お試しください。',
+    )
+
+    await act(async () => {
+      resolveResultShare()
+      await Promise.resolve()
+    })
+    expect(container.textContent).not.toContain(
+      'LINEを選択して結果を送信してください。',
+    )
+    await clickAndFlush(button('LINEですぐ相談'))
+
+    expect(share).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain(
+      'LINEを選択して送信してください。',
+    )
+  })
+
   it('ignores a pending result share after unmount without an update warning', async () => {
     const deferred = createDeferredNativeShare()
     const error = vi.spyOn(console, 'error')

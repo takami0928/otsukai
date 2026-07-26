@@ -15,6 +15,7 @@ import {
   decodeCompactRequestV3,
   encodeCompactRequestV3,
   type CompactRequestV3Input,
+  type V3BaseItem,
 } from './compactRequestV3'
 import { buildLineDeliveryRequestUrl } from './lineDeliveryUrl'
 import type { SelectedRequestItem } from './selectedRequestItems'
@@ -264,6 +265,20 @@ describe('v3 compact request format', () => {
         ]),
       ),
     ).toThrow('重複')
+    const overConditionTotal = Array.from(
+      { length: 34 },
+      (_, index): V3BaseItem => [
+        0,
+        index,
+        '1',
+        '条'.repeat(index === 33 ? 11 : 30),
+      ],
+    )
+    expect(() =>
+      decodeCompactRequestV3(
+        encode([3, REQUEST_KEY, '依頼', overConditionTotal]),
+      ),
+    ).toThrow('条件合計')
   })
 
   it('measures actual LINE delivery URLs and never truncates oversized snapshots', () => {
