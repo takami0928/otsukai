@@ -6,6 +6,7 @@ import { ShoppingListPage } from './pages/ShoppingListPage'
 import { AboutPage } from './pages/AboutPage'
 import { ProductCatalogPage } from './pages/ProductCatalogPage'
 import { CatalogRecoveryPage } from './pages/CatalogRecoveryPage'
+import type { RequestRouteCodec } from './utils/shoppingSession'
 
 export type RouteState =
   | { page: 'home' }
@@ -13,7 +14,7 @@ export type RouteState =
   | { page: 'products' }
   | { page: 'catalogRestore'; encoded: string }
   | { page: 'about' }
-  | { page: 'list'; encoded: string; format: 'v1' | 'v2' }
+  | { page: 'list'; encoded: string; codec: RequestRouteCodec }
   | { page: 'error'; title: string; description: string }
 
 export function parseHashRoute(rawHash: string): RouteState {
@@ -63,7 +64,7 @@ export function parseHashRoute(rawHash: string): RouteState {
       }
     }
 
-    return { page: 'list', encoded, format: 'v1' }
+    return { page: 'list', encoded, codec: 'legacy-query' }
   }
 
   if (path.startsWith('/l/')) {
@@ -75,7 +76,7 @@ export function parseHashRoute(rawHash: string): RouteState {
         description: '依頼データ付きのURLをもう一度開いてください。',
       }
     }
-    return { page: 'list', encoded, format: 'v2' }
+    return { page: 'list', encoded, codec: 'compact-path' }
   }
 
   return {
@@ -131,7 +132,7 @@ export default function App() {
         return (
           <ShoppingListPage
             encodedPayload={route.encoded}
-            payloadFormat={route.format}
+            payloadCodec={route.codec}
             onBackHome={() => navigate('/')}
             onError={(title, description) => setRoute({ page: 'error', title, description })}
           />

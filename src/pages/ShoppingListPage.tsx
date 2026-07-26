@@ -20,14 +20,10 @@ import type {
   ShoppingStateChange,
   UnavailableReason,
 } from '../types/shopping'
-import { decodeCompactRequestV2OrV3 } from '../utils/compactRequestV3'
 import {
   createConsultationEntry,
   getConsultationIssue,
-  migrateLegacyConsultingState,
-  reconcileConsultations,
 } from '../utils/consultationState'
-import { decodeShoppingRequest } from '../utils/encodeRequest'
 import { addLineExternalBrowserHint } from '../utils/lineDeliveryUrl'
 import {
   buildBulkConsultationMessage,
@@ -44,21 +40,18 @@ import {
   getItemStatus,
   getShoppingCompletionState,
   hasCondition,
-  isCartStatus,
-  reconcileCheckedStateWithIssues,
-  reconcileItemIssues,
   type ShoppingStateSnapshot,
 } from '../utils/shoppingState'
+import {
+  loadShoppingSession,
+  type RequestRouteCodec,
+} from '../utils/shoppingSession'
 import {
   isNativeShareAvailable,
   shareText,
   type NativeShareResult,
 } from '../utils/shareText'
 import {
-  loadCartOrder,
-  loadCheckedState,
-  loadConsultations,
-  loadItemIssues,
   saveCartOrder,
   saveCheckedState,
   saveConsultations,
@@ -67,7 +60,7 @@ import {
 
 type ShoppingListPageProps = {
   encodedPayload: string
-  payloadFormat: 'v1' | 'v2'
+  payloadCodec: RequestRouteCodec
   onBackHome: () => void
   onError: (title: string, description: string) => void
 }
@@ -159,7 +152,7 @@ function getShareNotice(
 
 export function ShoppingListPage({
   encodedPayload,
-  payloadFormat,
+  payloadCodec,
   onBackHome,
   onError,
 }: ShoppingListPageProps) {
@@ -195,7 +188,7 @@ export function ShoppingListPage({
   const nativeShareAvailable = isNativeShareAvailable()
   const externalBrowserUrl = useMemo(
     () => addLineExternalBrowserHint(window.location.href),
-    [encodedPayload, payloadFormat],
+    [encodedPayload, payloadCodec],
   )
 
   const { checkedState, itemIssues, cartOrder } = shoppingState
@@ -214,41 +207,16 @@ export function ShoppingListPage({
     clearUndoNotice()
 
     try {
-      const decoded =
-        payloadFormat === 'v2'
-          ? decodeCompactRequestV2OrV3(encodedPayload)
-          : decodeShoppingRequest(encodedPayload)
-      const migration = migrateLegacyConsultingState(
-        loadCheckedState(decoded.requestId),
-        loadItemIssues(decoded.requestId),
-        loadConsultations(decoded.requestId),
-      )
-      const nextCheckedState = reconcileCheckedStateWithIssues(
-        migration.checkedState,
-        migration.itemIssues,
-      )
-      const nextItemIssues = reconcileItemIssues(
-        migration.itemIssues,
-        nextCheckedState,
-      )
-      const nextConsultations = reconcileConsultations(
-        migration.consultations,
-        decoded.items.map((item) => item.id),
-      )
-      const nextCartOrder = loadCartOrder(decoded.requestId).filter((itemId) =>
-        isCartStatus(getItemStatus(nextCheckedState, itemId)),
-      )
-      const nextShoppingState = {
-        checkedState: nextCheckedState,
-        itemIssues: nextItemIssues,
-        cartOrder: nextCartOrder,
-      }
+      const loadedSession = loadShoppingSession({
+        encodedPayload,
+        codec: payloadCodec,
+      })
 
-      shoppingStateRef.current = nextShoppingState
-      consultationsRef.current = nextConsultations
-      setPayload(decoded)
-      setShoppingState(nextShoppingState)
-      setConsultations(nextConsultations)
+      shoppingStateRef.current = loadedSession.shoppingState
+      consultationsRef.current = loadedSession.consultations
+      setPayload(loadedSession.payload)
+      setShoppingState(loadedSession.shoppingState)
+      setConsultations(loadedSession.consultations)
       setFilterMode('all')
       setCartConfirmation(null)
       setConsultationDraft(null)
@@ -265,7 +233,7 @@ export function ShoppingListPage({
           : '共有URLの内容を読み込めませんでした。'
       onError('共有URLを開けませんでした', message)
     }
-  }, [clearUndoNotice, encodedPayload, onError, payloadFormat])
+  }, [clearUndoNotice, encodedPayload, onError, payloadCodec])
 
   useEffect(() => {
     shoppingStateRef.current = shoppingState

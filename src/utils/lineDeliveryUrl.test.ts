@@ -79,7 +79,7 @@ describe('LINE delivery request URL', () => {
     expect(parseHashRoute(new URL(deliveryUrl).hash)).toEqual({
       page: 'list',
       encoded,
-      format: 'v2',
+      codec: 'compact-path',
     })
   })
 
@@ -91,7 +91,7 @@ describe('LINE delivery request URL', () => {
     expect(parseHashRoute(new URL(deliveryUrl).hash)).toEqual({
       page: 'list',
       encoded: 'legacy-data',
-      format: 'v1',
+      codec: 'legacy-query',
     })
   })
 })
