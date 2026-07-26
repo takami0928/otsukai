@@ -521,7 +521,7 @@ Context、外部store、アプリ全体のReducer、状態機械、汎用共有h
 |---|---|---|---|---|
 | 1 | route意味と買い物セッション読込 | PR検証中 | `refactor/shopping-session-phase-1-loading` | #24 |
 | 2 | 買い物状態と永続化の専用hook化 | PR検証中 | `refactor/shopping-session-phase-2-persistence` | #25 |
-| 3 | 相談workflowの専用hook化 | 実装・ローカル検証完了 | `refactor/shopping-session-phase-3-consultations` | 作成後に確定 |
+| 3 | 相談workflowの専用hook化 | PR検証中 | `refactor/shopping-session-phase-3-consultations` | #26 |
 
 ## Phase 1: route意味と買い物セッション読込
 
@@ -654,8 +654,9 @@ Context、外部store、アプリ全体のReducer、状態機械、汎用共有h
 
 - branch: `refactor/shopping-session-phase-3-consultations`
 - baseline main: `0765a79926740d7a2e2487489eac4a57228b5b1a`
-- PR: 作成後に確定
-- head SHA: GitHub PR metadataと最終報告に記録
+- PR: #26
+- implementation head SHA: `1db4608729dc4d077ea3637d78faf2e6168027db`
+- 最終head SHA: GitHub PR metadataと最終報告に記録
 - `useConsultationWorkflow`へdraft、既存consultation／legacy issue復元、reason／note、close、queue追加、即時個別共有、既存個別共有、queued一括共有、削除、解決を移した。
 - 相談共有中状態、個別busy item ID、二重実行防止、request切替／unmount世代無効化をhookへ局所化した。
 - shared／copied時だけ対象相談を`shared`へ変更し、cancelled／failed時はqueued内容とdraftを保持する。
