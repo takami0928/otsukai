@@ -82,9 +82,30 @@ import { useCustomItemEditor } from '../hooks/useCustomItemEditor'
 import { useHouseholdCatalog } from '../hooks/useHouseholdCatalog'
 import type { EffectiveProduct } from '../types/householdCatalog'
 import { buildSelectedRequestItems } from '../utils/selectedRequestItems'
+import { HandwritingImportSection } from '../features/handwriting/HandwritingImportSection'
+import {
+  getHandwritingImportConfig,
+  type HandwritingImportConfig,
+} from '../features/handwriting/config'
+import {
+  applyHandwritingImportSelections,
+} from '../features/handwriting/applyImport'
+import type {
+  HandwritingImportSelection,
+  HandwritingOcrProvider,
+} from '../features/handwriting/types'
+import type {
+  ImagePreprocessOptions,
+} from '../features/handwriting/imagePreprocessing'
 
 type CreateRequestPageProps = {
   onBackHome: () => void
+  handwritingImportConfig?: HandwritingImportConfig
+  handwritingOcrProvider?: HandwritingOcrProvider
+  preprocessHandwritingImage?: (
+    file: File,
+    options?: ImagePreprocessOptions,
+  ) => Promise<Blob>
 }
 
 type CreateMode = 'edit' | 'review'
@@ -125,8 +146,15 @@ function createInitialPageState(
   }
 }
 
-export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
+export function CreateRequestPage({
+  onBackHome,
+  handwritingImportConfig,
+  handwritingOcrProvider,
+  preprocessHandwritingImage,
+}: CreateRequestPageProps) {
   const { effectiveProducts, visibleProducts } = useHouseholdCatalog()
+  const handwritingConfig =
+    handwritingImportConfig ?? getHandwritingImportConfig()
   const [initialPageState] = useState(() =>
     createInitialPageState(effectiveProducts),
   )
@@ -529,6 +557,27 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
     handleCustomItemDeleted(index)
   }
 
+  const handleApplyHandwritingSelections = (
+    selections: readonly HandwritingImportSelection[],
+  ) => {
+    const result = applyHandwritingImportSelections(
+      requestData,
+      selections,
+      budgetContext,
+    )
+    if (result.accepted) {
+      applyRequestData(result.value)
+      setLimitMessage('')
+    } else {
+      setLimitMessage(
+        result.reason === 'invalid-selection'
+          ? ''
+          : getLimitMessage(result.reason),
+      )
+    }
+    return result
+  }
+
   const resolveRequestUrlForShare = () => {
     const validation = validateDraftLimits(requestData, budgetContext, true)
     if (!validation.valid) {
@@ -661,6 +710,14 @@ export function CreateRequestPage({ onBackHome }: CreateRequestPageProps) {
           totalConditionCharacters={totalConditionCharacters}
         />
       ) : null}
+
+      <HandwritingImportSection
+        config={handwritingConfig}
+        effectiveProducts={effectiveProducts}
+        onApplySelections={handleApplyHandwritingSelections}
+        ocrProvider={handwritingOcrProvider}
+        preprocessImage={preprocessHandwritingImage}
+      />
 
       <CustomItemsSection
         customItems={customItems}

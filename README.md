@@ -222,11 +222,34 @@ LINE内ブラウザと外部ブラウザでは `localStorage` が共有されな
 
 古い作成ドラフトに新上限を超える数量や文字列がある場合は、作成画面の読み込み時に新上限へ正規化して通知します。v1共有URLの閲覧値は新規作成上限で書き換えません。
 
+## 手書きメモから追加
+
+依頼作成画面の上部で、スマートフォンのカメラ撮影またはJPEG/PNG/WebP画像を選び、手書きの商品名を候補化できます。この機能は初期状態ではOFFで、`VITE_HANDWRITING_IMPORT_ENABLED=true`、OCR Worker URL、Turnstile Site Keyの3つが揃ったビルドだけに表示されます。
+
+```text
+ブラウザ内で画像検証・回転反映・長辺1600px以下・2MB以下へ変換
+  ↓ 画像 + 毎回新しいTurnstileトークン
+Cloudflare Worker（Origin/MIME/サイズ/Turnstile検証）
+  ↓ DOCUMENT_TEXT_DETECTION
+Google Cloud Vision
+  ↓ OCR行だけ
+ブラウザ内で現在の家庭用effectiveProductsと照合
+  ↓ 利用者が候補を確認
+既存のdraft制限・URL予算検証を通して一括反映
+```
+
+完全一致と登録済み別名一致だけを初期選択し、類似候補は利用者が選ぶまで反映しません。個数、単位、条件、チェック、取消線、購入済み状態は読み取らず、既存商品は数量0だけを1にします。既存数量と条件は維持します。未一致行を自由追加する場合は数量1、仮単位「個」、条件空となり、家庭用商品マスターへは登録しません。
+
+画像は文字認識のためCloudflare Worker経由でGoogle Cloud Visionへ一時送信されます。アプリは画像をlocalStorage、sessionStorage、IndexedDBへ保存せず、Workerも画像、OCR文字列、Googleの生レスポンスを保存・ログ出力しません。OCR画像、OCR生テキスト、OCR由来情報はv1/v2/v3共有URLへ入りません。失敗・キャンセル時も現在の依頼内容は変わらず、通常の商品選択を継続できます。
+
+フロント設定例は[`.env.example`](.env.example)、Google Cloud、Cloudflare Worker、Turnstile、Secrets、料金・quota確認、デプロイ、障害時無効化、PaddleOCR.js交換点は[`worker/README.md`](worker/README.md)を参照してください。Secretは`VITE_`環境変数へ入れません。
+
 ## ローカル開発
 
 ```bash
 npm ci
 npm test
+npm run test:worker
 npm run build
 npm run dev
 ```

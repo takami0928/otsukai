@@ -6,9 +6,13 @@
   "scripts": {
     "dev": "vite",
     "test": "vitest run",
+    "test:worker": "vitest run worker/test",
     "test:coverage": "vitest run --coverage",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "typecheck:worker": "tsc -p worker/tsconfig.json --noEmit",
+    "build": "tsc -b && npm run typecheck:worker && vite build",
+    "preview": "vite preview",
+    "worker:dev": "wrangler dev --config worker/wrangler.toml",
+    "worker:deploy": "wrangler deploy --config worker/wrangler.toml"
   },
   "dependencies": {
     "lz-string": "^1.5.0",
@@ -24,6 +28,7 @@
     "happy-dom": "^20.11.0",
     "typescript": "^5.5.4",
     "vite": "^5.4.2",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "wrangler": "^4.114.0"
   }
 }

@@ -1,0 +1,8 @@
+name = "otsukai-handwriting-ocr"
+main = "src/index.ts"
+compatibility_date = "2026-07-26"
+
+[vars]
+ALLOWED_ORIGINS = "https://takami0928.github.io"
+# Leave empty for Google Vision automatic language detection.
+GOOGLE_VISION_LANGUAGE_HINTS = ""
