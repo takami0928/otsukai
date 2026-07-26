@@ -962,6 +962,73 @@ describe('ShoppingListPage buyer flow', () => {
     )
   })
 
+  it('ignores a pending result share after switching requests and allows the new request to share', async () => {
+    const deferred = createDeferredNativeShare()
+    const firstRequest = createRequest([{}], 'result-share-first')
+    const secondRequest = createRequest([{}], 'result-share-second')
+    const firstItem = firstRequest.payload.items[0]
+    storeShoppingState(
+      firstRequest.payload.requestId,
+      { [firstItem.id]: 'inCart' },
+      {},
+      {},
+      [firstItem.id],
+    )
+    await renderRequest(firstRequest.encoded)
+    await clickAndFlush(button('買い物を終了する'))
+
+    act(() => {
+      click(button('結果を共有'))
+    })
+    expect(deferred.share).toHaveBeenCalledTimes(1)
+
+    await renderRequest(secondRequest.encoded)
+    await deferred.resolve()
+    expect(container.textContent).not.toContain(
+      'LINEを選択して結果を送信してください。',
+    )
+
+    const retryShare = vi.fn(async (_data: ShareData) => undefined)
+    setNavigatorShare(retryShare)
+    await clickAndFlush(button('かごに入れる'))
+    await clickAndFlush(button('買い物を終了する'))
+    await clickAndFlush(button('結果を共有'))
+
+    expect(retryShare).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain(
+      'LINEを選択して結果を送信してください。',
+    )
+  })
+
+  it('ignores a pending result share after unmount without an update warning', async () => {
+    const deferred = createDeferredNativeShare()
+    const error = vi.spyOn(console, 'error')
+    const { encoded, payload } = createRequest(
+      [{}],
+      'result-share-unmount',
+    )
+    const item = payload.items[0]
+    storeShoppingState(
+      payload.requestId,
+      { [item.id]: 'inCart' },
+      {},
+      {},
+      [item.id],
+    )
+    await renderRequest(encoded)
+    await clickAndFlush(button('買い物を終了する'))
+    act(() => {
+      click(button('結果を共有'))
+    })
+
+    act(() => root.unmount())
+    rootIsMounted = false
+    await deferred.resolve()
+
+    expect(container.textContent).toBe('')
+    expect(error).not.toHaveBeenCalled()
+  })
+
   it('shows a result-specific notice when sharing falls back to copy', async () => {
     const clipboard = vi.fn(async (_text: string) => undefined)
     setNavigatorShare(undefined)

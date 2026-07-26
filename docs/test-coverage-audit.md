@@ -44,3 +44,16 @@ PR 1では、失敗する回帰テストを先に追加して上記を再現し�
 - 現行回避策: 同一依頼・商品リストは1タブで操作する。
 - 将来の検討範囲: `storage` event、revision比較、競合時の利用者選択、Undoとの整合。
 - 優先度: 中（単一タブ利用では発生しない）。
+
+## PR 2の回帰保護
+
+- v1/v2/v3、商品カタログ復旧URL、商品カタログ復旧JSONを固定文字列fixtureとして保存した。テスト実行時にencoderで生成せず、requestId、item ID、snapshot、単位、カテゴリ、数量、条件、sortOrder、createdAt、override、家庭追加商品IDを明示的に検証する。
+- `App`を実mountし、home → create → compact v3、legacy v1、v2、request A/B、不正URLとの往復、browser back/forward、scroll reset、unmount後のlistener停止を検証する。
+- request変更時に以前のUndo、相談dialog、完了画面、share noticeが残らないことを検証する。
+- React StrictModeで、1回のかご操作と結果共有が重複保存・重複共有にならないことを検証する。
+- 結果共有pending中のrequest切替・unmount後の完了を無視し、新requestで再共有できることを検証する。
+- 依頼共有pending中の連打、cancelled/failed後の再試行、route離脱後の古い完了無視、同一内容URL再利用、内容変更後の新requestIdを検証する。
+- v3の標準商品、編集済み基準商品、家庭追加商品、一回限り商品、数量2以上、条件あり、送受信カタログ差を一つの買い物経路で開き、再mount、会計前、完了、結果共有まで検証する。
+- hidden selected商品、家庭追加商品、通常商品、一回限り商品を同じ依頼作成レビューとv3 decodeへ通す。
+
+PR 2終了時点のcoverageは statements 89.35%、branches 83.31%、functions 93.70%、lines 89.34%（44 files / 366 tests）。このPRで新しい製品不具合は再現せず、分類Bの回帰リスクを恒久テスト化した。

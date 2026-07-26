@@ -290,7 +290,109 @@ describe('CreateRequestPage simplified request form', () => {
 
     const returnState = window.history.state?.otsukaiCreateRequestReturnState
     expect(returnState).not.toHaveProperty('title')
+
+    await clickAndFlush(button('修正する'))
+    await clickAndFlush(
+      container.querySelector<HTMLButtonElement>(
+        `button[aria-label^="${products[0].name}を1個増やす"]`,
+      )!,
+    )
+    await clickAndFlush(button('確認へ'))
+    await clickAndFlush(button('LINEで送る'))
+    const changedUrl =
+      share.mock.calls[2][0].text?.split('\n').at(-1) ?? ''
+    expect(changedUrl).not.toBe(urls[0])
+    expect(
+      decodeCompactRequestV2OrV3(
+        new URL(changedUrl).hash.slice('#/l/'.length),
+      ).requestId,
+    ).not.toBe(
+      decodeCompactRequestV2OrV3(encoded).requestId,
+    )
   })
+
+  it.each([
+    {
+      outcome: 'cancelled',
+      expectedMessage:
+        '共有をキャンセルしました。入力内容はそのまま残しています。',
+    },
+    {
+      outcome: 'failed',
+      expectedMessage:
+        '共有またはコピーができませんでした。もう一度お試しください。',
+    },
+  ] as const)(
+    'prevents pending-share double clicks and allows retry after $outcome',
+    async ({ outcome, expectedMessage }) => {
+      let settleFirstShare: () => void = () => undefined
+      const firstShare = new Promise<void>((_resolve, reject) => {
+        settleFirstShare = () => {
+          reject(
+            outcome === 'cancelled'
+              ? new DOMException('cancelled', 'AbortError')
+              : new Error('native share failed'),
+          )
+        }
+      })
+      const share = vi
+        .fn<(data: ShareData) => Promise<void>>()
+        .mockImplementationOnce(() => firstShare)
+        .mockResolvedValue(undefined)
+      const clipboard = vi.fn(async () => {
+        throw new Error('clipboard failed')
+      })
+      Object.defineProperty(window.navigator, 'share', {
+        configurable: true,
+        value: share,
+      })
+      Object.defineProperty(window.navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: clipboard },
+      })
+      await renderPage()
+      const increase = container.querySelector<HTMLButtonElement>(
+        `button[aria-label^="${products[0].name}を1個増やす"]`,
+      )
+      if (!increase) {
+        throw new Error('Product increment was not rendered')
+      }
+      await clickAndFlush(increase)
+      await clickAndFlush(button('確認へ'))
+
+      await act(async () => {
+        const shareButton = button('LINEで送る')
+        shareButton.dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        )
+        shareButton.dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        )
+        await Promise.resolve()
+      })
+
+      expect(share).toHaveBeenCalledTimes(1)
+      expect(button('共有画面を開いています…').disabled).toBe(true)
+
+      await act(async () => {
+        settleFirstShare()
+        await firstShare.catch(() => undefined)
+        await Promise.resolve()
+      })
+      expect(container.textContent).toContain(expectedMessage)
+      if (outcome === 'cancelled') {
+        expect(clipboard).not.toHaveBeenCalled()
+      } else {
+        expect(clipboard).toHaveBeenCalledTimes(1)
+      }
+
+      await clickAndFlush(button('LINEで送る'))
+      expect(share).toHaveBeenCalledTimes(2)
+      expect(container.textContent).toContain(
+        '共有画面を開きました。LINEを選択して送信してください。',
+      )
+    },
+  )
 
   it('preserves hidden selected drafts and snapshots household catalog changes in v3', async () => {
     const householdId =
@@ -326,6 +428,7 @@ describe('CreateRequestPage simplified request form', () => {
       'otsukai:createDraft',
       JSON.stringify({
         cabbage: { quantity: 2, memo: '半玉で' },
+        milk: { quantity: 1, memo: '' },
         [householdId]: { quantity: 1, memo: '水出し用' },
       }),
     )
@@ -342,9 +445,21 @@ describe('CreateRequestPage simplified request form', () => {
     expect(container.textContent).toContain('家庭キャベツ')
     expect(container.textContent).toContain('麦茶パック')
 
+    await clickAndFlush(button('＋ リストにないものを追加'))
+    await inputText(
+      '[aria-describedby="custom-name-count"]',
+      '一回だけの電池',
+    )
+    await inputText(
+      '[aria-describedby="custom-condition-count"]',
+      '単3',
+    )
+    await clickAndFlush(button('追加'))
     await clickAndFlush(button('確認へ'))
     expect(container.textContent).toContain('家庭キャベツ 2玉')
+    expect(container.textContent).toContain('牛乳 1本')
     expect(container.textContent).toContain('麦茶パック 1袋')
+    expect(container.textContent).toContain('一回だけの電池 1個')
     await clickAndFlush(button('LINEで送る'))
     const requestUrl = share.mock.calls[0][0].text?.split('\n').at(-1) ?? ''
     const decoded = decodeCompactRequestV2OrV3(
@@ -361,12 +476,27 @@ describe('CreateRequestPage simplified request form', () => {
         memo: '半玉で',
       },
       {
+        productId: 'milk',
+        productNameSnapshot: '牛乳',
+        unit: '本',
+        categoryIdSnapshot: 'eggs-dairy',
+        quantity: 1,
+      },
+      {
         productId: householdId,
         productNameSnapshot: '麦茶パック',
         unit: '袋',
         categoryIdSnapshot: 'drinks',
         quantity: 1,
         memo: '水出し用',
+      },
+      {
+        productId: 'custom:0',
+        productNameSnapshot: '一回だけの電池',
+        unit: '個',
+        categoryIdSnapshot: 'other',
+        quantity: 1,
+        memo: '単3',
       },
     ])
 
@@ -417,5 +547,48 @@ describe('CreateRequestPage simplified request form', () => {
     if (legacyTitle) {
       expect(container.textContent).not.toContain(legacyTitle)
     }
+  })
+
+  it('clears transient return history on pageshow without losing mounted review data', async () => {
+    const returnState = {
+      customItems: [
+        {
+          id: 'custom-bfcache',
+          name: 'BFCache確認商品',
+          quantity: 1,
+          unit: '個',
+          memo: '',
+        },
+      ],
+      expandedProductIds: [],
+      sharedUrl: 'https://example.test/#/l/fixed',
+      sharedSnapshot: 'fixed-snapshot',
+    }
+    window.history.replaceState(
+      {
+        keep: 'preserved',
+        otsukaiCreateRequestReturnState: returnState,
+      },
+      '',
+      '/#/create',
+    )
+    await renderPage()
+    expect(container.textContent).toContain('BFCache確認商品')
+
+    window.history.replaceState(
+      {
+        keep: 'preserved',
+        otsukaiCreateRequestReturnState: returnState,
+      },
+      '',
+    )
+    await act(async () => {
+      window.dispatchEvent(new Event('pageshow'))
+      await Promise.resolve()
+    })
+
+    expect(window.history.state).toEqual({ keep: 'preserved' })
+    expect(container.textContent).toContain('BFCache確認商品')
+    expect(container.textContent).toContain('依頼内容の確認')
   })
 })

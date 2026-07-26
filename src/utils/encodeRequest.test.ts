@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { PUBLISHED_V1_REQUEST_FIXTURE } from '../testFixtures/publishedFormats'
 import type { ShoppingRequestPayload } from '../types/shopping'
 import { decodeShoppingRequest, encodeShoppingRequest } from './encodeRequest'
 
@@ -22,16 +23,17 @@ const LEGACY_PAYLOAD: ShoppingRequestPayload = {
   ],
 }
 
-const LEGACY_ENCODED =
-  'N4IgTgpgjgrhDOAXAkgExALhAGwgcwEMBjATwFpJYFEQAaERAS0V0xEFO5QWSVA7BkFz5QHgy6IIpAKIIqAII0sAJgAMsgGxl5AdlUBGACrz5GPQfkA6PfIBaQ5hAC28TAG1QjdFlyFSZazaEAHMAD2qDBEKK4gNozYANZ+gcGhAHIENhAAygB2BL7wABYBMiCA2k6AznJCRGL4AWAkaJnZeQVs+HjwZKgEjDXllXjVJMmp9Tn5hYCuyoDfDCWAvxGAgypCsAQZTIgkmJr0MBnMbIA05kKpNgFsgHLygECBgFUBVkQBGcONhYB8G4Dau0Lw1YgA8mCoEGD3o0wankmgAvgBdUFAA'
-
 describe('shopping request URL compatibility', () => {
   it('decodes a payload produced by the existing memo-based URL format', () => {
-    expect(decodeShoppingRequest(LEGACY_ENCODED)).toEqual(LEGACY_PAYLOAD)
+    expect(decodeShoppingRequest(PUBLISHED_V1_REQUEST_FIXTURE)).toEqual(
+      LEGACY_PAYLOAD,
+    )
   })
 
   it('keeps the existing compressed payload format unchanged', () => {
-    expect(encodeShoppingRequest(LEGACY_PAYLOAD)).toBe(LEGACY_ENCODED)
+    expect(encodeShoppingRequest(LEGACY_PAYLOAD)).toBe(
+      PUBLISHED_V1_REQUEST_FIXTURE,
+    )
   })
 
   it('preserves legacy quantities above the new creation limit and custom snapshots', () => {
