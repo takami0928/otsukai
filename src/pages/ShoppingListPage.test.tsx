@@ -931,7 +931,13 @@ describe('ShoppingListPage buyer flow', () => {
       payload.requestId,
       { [item.id]: 'inCart' },
       {},
-      {},
+      {
+        [item.id]: {
+          itemId: item.id,
+          reason: 'notFound',
+          status: 'resolved',
+        },
+      },
       [item.id],
     )
     await renderRequest(encoded)
@@ -950,6 +956,9 @@ describe('ShoppingListPage buyer flow', () => {
     await deferred.resolve()
     expect(container.textContent).toContain(
       'LINEを選択して結果を送信してください。',
+    )
+    expect(readConsultations(payload.requestId)[item.id].status).toBe(
+      'resolved',
     )
   })
 
