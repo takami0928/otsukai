@@ -14,12 +14,12 @@ describe('hash routing', () => {
     expect(parseHashRoute('#/list?data=legacy-data')).toEqual({
       page: 'list',
       encoded: 'legacy-data',
-      format: 'v1',
+      codec: 'legacy-query',
     })
     expect(parseHashRoute('#/l/v2+data-$')).toEqual({
       page: 'list',
       encoded: 'v2+data-$',
-      format: 'v2',
+      codec: 'compact-path',
     })
   })
 
@@ -52,7 +52,7 @@ describe('hash routing', () => {
     expect(parseHashRoute('#/l/new-data')).toEqual({
       page: 'list',
       encoded: 'new-data',
-      format: 'v2',
+      codec: 'compact-path',
     })
   })
 })

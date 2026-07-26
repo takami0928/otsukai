@@ -473,3 +473,174 @@ BもPhase完了とする。DRYのためだけにAを選ばない。
 - 商品マスター変更
 - 依存パッケージの強制更新
 - 物理Android、iPhone、iPad、LINEアプリの自動化不能な最終確認
+
+---
+
+# 第3次リファクタリング：買い物セッション責務の局所化
+
+## 1. 目的
+
+購入確認・独立した相談状態・家庭用商品カタログ・v3共有URLの導入後も正常に動作している買い物画面について、利用者向け仕様を変えずに買い物セッションの責務を局所化する。
+
+- routeが表すcodec familyと型名を一致させる
+- v1／v2／v3復号、旧相談migration、保存済みセッション復元を一箇所へ集約する
+- 買い物状態・相談状態・最新値参照・永続化を専用hookへ集約する
+- 相談ダイアログ・queue・共有・解決・削除・非同期世代管理を相談専用hookへ集約する
+- `ShoppingListPage`を画面全体の調停、Undo、購入確認、会計前確認、完了、結果共有、focus／scrollへ集中させる
+
+行数削減、共通化自体、UI再設計、新機能追加は目的としない。
+
+## 2. 基準点
+
+- 実行開始時main: `3eaa190e52704c01162eca0a888118991f22990b`
+- open PR: 0件
+- baseline: 36 test files / 301 tests
+- baseline build: 98 modules、成功
+- baseline `git diff --check`: 成功
+- baseline `npm audit --omit=dev`: 0 vulnerabilities
+
+## 3. 共通の不変条件
+
+`AGENTS.md`のProduct invariantsをすべて適用する。特に次を変更しない。
+
+- 公開済みv1／v2と現行v3のURL、圧縮、復号結果、固定ID表、request／item ID
+- `#/list?data=...`、`#/l/<encoded>`、2,200文字上限、LINE外部ブラウザ指定
+- `ShoppingRequestPayload.title`の内部互換フィールド
+- 買い物・相談・家庭用商品カタログに関するlocalStorageキー、保存値、正規化、保存・復元タイミング
+- 購入状態、相談状態、購入確認、会計前確認、完了条件、結果共有、かご順、5秒Undo
+- Web Share APIのtitle／text、clipboard fallback、`AbortError`、共有結果ごとの状態遷移
+- 文言、CSS、className、DOM順序、表示条件、focus、scroll、ARIA、レスポンシブ表示
+- CreateRequest、商品カタログ、復旧機能の責務
+- 依存、lockfile、workflow、Pages設定、商品・カテゴリマスター
+
+Context、外部store、アプリ全体のReducer、状態機械、汎用共有hook、汎用repository／service／controllerは導入しない。
+
+## 4. 進捗
+
+| Phase | 内容 | 状態 | branch | PR |
+|---|---|---|---|---|
+| 1 | route意味と買い物セッション読込 | PR検証中 | `refactor/shopping-session-phase-1-loading` | #24 |
+| 2 | 買い物状態と永続化の専用hook化 | 未着手 | `refactor/shopping-session-phase-2-persistence` | 未作成 |
+| 3 | 相談workflowの専用hook化 | 未着手 | `refactor/shopping-session-phase-3-consultations` | 未作成 |
+
+## Phase 1: route意味と買い物セッション読込
+
+### 目的
+
+`#/l/<encoded>`をv2専用と誤認させるroute／props名をcompact familyへ改め、復号から保存済みセッションの整合までをdomain-specific loaderへ移す。
+
+### 対象
+
+- route codec型を`legacy-query`／`compact-path`として表現する
+- v1復号とcompact v2／v3 dispatch
+- checked state、item issues、cart order、consultationsの読込
+- legacy `consulting` migration
+- checked state／issues／consultationsのreconcile
+- 非cart状態のcart order除外
+- `LoadedShoppingSession`生成
+- `ShoppingListPage`のURL変更時初期化との接続
+
+### 対象外
+
+- React state、最新値ref、保存effect
+- 買い物状態更新
+- Undo、購入確認、相談workflow、共有、focus／scroll
+- decoder、storage module、保存形式の再設計
+
+### 完了条件
+
+- route型と実際のcodec familyが一致する
+- ページから復号、migration、初期reconcileが除去される
+- loaderのfocused testでv1／v2／v3、migration、破損保存値、session切替を保護する
+- 全テスト、build、diff check、CI、Squash merge、Pages、公開スモークが成功する
+
+### 実施結果
+
+- branch: `refactor/shopping-session-phase-1-loading`
+- PR: #24
+- implementation head SHA: `a354b2ffe441c5b8096df76df6beabe562ab97b9`
+- 最終head SHA: GitHub PR metadataと最終報告に記録
+- `RequestRouteCodec`を`legacy-query | compact-path`として導入し、routeと`ShoppingListPage` propsから`format: 'v2'`という誤解を招く表現を除去した。
+- `shoppingSession`へcodec別復号と、4保存値の読込、legacy migration、3種のreconcile、cart order整合を移した。
+- decoderと復元処理は別関数に保ち、browser I/Oを純粋なcodec dispatchへ混入させていない。
+- ページにはloader結果のstate反映と、Phase 2以降で扱うstate／ref／保存effectを残した。
+- focused test: v1、同一compact routeのv2／v3、安定ID、legacy migration、不正status／issue整合、不正consultation、request外consultation、cart order、破損保存値、不正URL、session切替。
+- ローカル検証: 37 test files / 309 tests、build 99 modules成功、`git diff --check`成功、production audit 0 vulnerabilities。
+- CI結果: PR作成後に確定
+- Squash SHA: merge後に確定
+- Pages run: merge後に確定
+- 公開スモーク: merge後にホーム、依頼作成、v3、v2、v1、不正URL、console errorを確認
+- 意図的に残した責務: state、ref、4保存effect、状態更新、相談workflow。Phase 2／3の境界を守るため。
+- 残存リスク: loader接続後の公開ブラウザでcodec familyごとの直リンクを確認するまで、配信環境固有の回帰リスクが残る。
+
+## Phase 2: 買い物状態と永続化の専用hook化
+
+### 目的
+
+買い物状態と相談状態のReact state、最新値ref、ref同期、4保存effect、状態変更を買い物セッション専用hookへ局所化し、stale stateやrequest切替後の誤保存を一箇所で防ぐ。
+
+### 対象
+
+- `ShoppingStateSnapshot`と`ConsultationMap`のstate
+- 最新値refと同期
+- checked state、item issues、cart order、consultationsの保存
+- loader結果によるsession置換
+- `createShoppingStateChange`／`applyShoppingStateChange`を使うcommit
+- consultation updaterと安全な最新値参照
+- Undoに必要なchangeとprevious cart orderの返却
+
+### 対象外
+
+- Undo timer／文言／表示
+- 相談ダイアログ、共有、結果共有
+- focus／scroll、selector、描画判断
+- 汎用store、Context、外部状態管理
+
+### 完了条件
+
+- ページからshopping／consultations refと4保存effectが除去される
+- session置換、連続更新、永続化、Undo用情報がfocused hook testで保護される
+- 利用者向け動作を変えず、全検証、CI、merge、Pages、公開スモークが成功する
+
+### 結果記録
+
+- branch: `refactor/shopping-session-phase-2-persistence`
+- PR／head／CI／Squash／Pages／公開スモーク: Phase 2実行時に記録
+- 意図的に残す責務: Undo、ダイアログ、共有、focus／scroll、selector、描画
+
+## Phase 3: 相談workflowの専用hook化
+
+### 目的
+
+相談domainのdraft、queue、共有、編集、削除、解決、busy、排他、非同期世代管理を専用hookへ局所化する。依頼共有・結果共有との汎用共有抽象化は行わない。
+
+### 対象
+
+- consultation draftの開始、復元、編集、終了
+- queue追加と同一商品の更新
+- 即時個別共有、既存個別共有、queued一括共有
+- 相談削除／解決
+- 相談共有busyと個別busy item ID
+- 多重実行防止、request切替／unmountによる世代無効化
+- shared／copied時だけsharedへ遷移し、cancelled／failed時は保持
+- 相談共有noticeの生成またはpage callback
+
+### 対象外
+
+- `notBuying`への購入状態変更とUndo
+- 結果共有、買い物完了、checkout／completion focus
+- 画面全体のnotice描画、selector、商品／dialog描画
+- genericな共有hook
+
+### 完了条件
+
+- ページから相談draft、queue／share／resolve／remove、相談用active／generation管理が除去される
+- 結果共有はページに残り、小さな共有lock coordinatorで相互排他を維持する
+- 非同期競合をfocused hook testで保護する
+- 全検証、CI、merge、Pages、公開スモークが成功する
+
+### 結果記録
+
+- branch: `refactor/shopping-session-phase-3-consultations`
+- PR／head／CI／Squash／Pages／公開スモーク: Phase 3実行時に記録
+- 意図的に残す責務: 購入状態遷移、Undo、結果共有、完了、focus／scroll、描画

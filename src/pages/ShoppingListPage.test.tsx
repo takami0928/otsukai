@@ -108,7 +108,7 @@ describe('ShoppingListPage buyer flow', () => {
       root.render(
         <ShoppingListPage
           encodedPayload={encoded}
-          payloadFormat="v2"
+          payloadCodec="compact-path"
           onBackHome={() => undefined}
           onError={(title, description) => {
             throw new Error(`${title}: ${description}`)
@@ -417,6 +417,28 @@ describe('ShoppingListPage buyer flow', () => {
     await renderRequest(secondRequest.encoded)
 
     expect(container.textContent).not.toContain('元に戻す')
+  })
+
+  it('reports the established shared-URL error when session loading fails', async () => {
+    const onError = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <ShoppingListPage
+          encodedPayload="broken-data"
+          payloadCodec="compact-path"
+          onBackHome={() => undefined}
+          onError={onError}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    expect(onError).toHaveBeenCalledWith(
+      '共有URLを開けませんでした',
+      '共有URLの復元に失敗しました。',
+    )
+    expect(container.textContent).toBe('')
   })
 
   it('shows a consultation button for every purchase state and consultation state', async () => {
@@ -965,7 +987,7 @@ describe('ShoppingListPage buyer flow', () => {
       root.render(
         <ShoppingListPage
           encodedPayload={encoded}
-          payloadFormat="v2"
+          payloadCodec="compact-path"
           onBackHome={() => undefined}
           onError={() => undefined}
         />,
