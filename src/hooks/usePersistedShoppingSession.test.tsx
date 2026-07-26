@@ -1,0 +1,277 @@
+// @vitest-environment happy-dom
+
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { ConsultationMap } from '../types/shopping'
+import type { ShoppingStateSnapshot } from '../utils/shoppingState'
+import { usePersistedShoppingSession } from './usePersistedShoppingSession'
+
+const EMPTY_SHOPPING_STATE: ShoppingStateSnapshot = {
+  checkedState: {},
+  itemIssues: {},
+  cartOrder: [],
+}
+
+function readStored(key: string): unknown {
+  const value = window.localStorage.getItem(key)
+  return value ? JSON.parse(value) : null
+}
+
+describe('usePersistedShoppingSession', () => {
+  let container: HTMLDivElement
+  let root: Root
+  let session: ReturnType<typeof usePersistedShoppingSession>
+  let renderCount: number
+
+  function HookHarness() {
+    session = usePersistedShoppingSession()
+    renderCount += 1
+    return null
+  }
+
+  function replaceSession(
+    requestId: string,
+    shoppingState: ShoppingStateSnapshot = EMPTY_SHOPPING_STATE,
+    consultations: ConsultationMap = {},
+  ) {
+    act(() => {
+      session.replaceSession({
+        requestId,
+        shoppingState,
+        consultations,
+      })
+    })
+  }
+
+  beforeEach(() => {
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
+      true
+    window.localStorage.clear()
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    renderCount = 0
+    act(() => root.render(<HookHarness />))
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+    window.localStorage.clear()
+  })
+
+  it('replaces the initial session and persists all four stored values', () => {
+    const shoppingState: ShoppingStateSnapshot = {
+      checkedState: { milk: 'inCart', eggs: 'notBuying' },
+      itemIssues: { eggs: { reason: 'soldOut' } },
+      cartOrder: ['milk'],
+    }
+    const consultations: ConsultationMap = {
+      milk: {
+        itemId: 'milk',
+        reason: 'notFound',
+        status: 'queued',
+      },
+    }
+
+    replaceSession('request-a', shoppingState, consultations)
+
+    expect(session.shoppingState).toBe(shoppingState)
+    expect(session.consultations).toBe(consultations)
+    expect(session.getCurrentShoppingState()).toBe(shoppingState)
+    expect(session.getCurrentConsultations()).toBe(consultations)
+    expect(readStored('otsukai:checked:request-a')).toEqual(
+      shoppingState.checkedState,
+    )
+    expect(readStored('otsukai:itemIssues:request-a')).toEqual(
+      shoppingState.itemIssues,
+    )
+    expect(readStored('otsukai:cartOrder:request-a')).toEqual(
+      shoppingState.cartOrder,
+    )
+    expect(readStored('otsukai:consultations:request-a')).toEqual(
+      consultations,
+    )
+  })
+
+  it('fully replaces one request with another without retaining prior state', () => {
+    replaceSession(
+      'request-a',
+      {
+        checkedState: { milk: 'inCart' },
+        itemIssues: {},
+        cartOrder: ['milk'],
+      },
+      {
+        milk: {
+          itemId: 'milk',
+          reason: 'notFound',
+          status: 'queued',
+        },
+      },
+    )
+
+    replaceSession('request-b')
+
+    expect(session.shoppingState).toEqual(EMPTY_SHOPPING_STATE)
+    expect(session.consultations).toEqual({})
+    expect(readStored('otsukai:checked:request-b')).toEqual({})
+    expect(readStored('otsukai:itemIssues:request-b')).toEqual({})
+    expect(readStored('otsukai:cartOrder:request-b')).toEqual([])
+    expect(readStored('otsukai:consultations:request-b')).toEqual({})
+  })
+
+  it('uses the synchronous latest state for consecutive shopping changes', () => {
+    replaceSession('request-a')
+
+    let firstCommit: ReturnType<typeof session.commitShoppingChange>
+    let secondCommit: ReturnType<typeof session.commitShoppingChange>
+    act(() => {
+      firstCommit = session.commitShoppingChange('milk', 'inCart')
+      secondCommit = session.commitShoppingChange(
+        'eggs',
+        'notBuying',
+        { reason: 'soldOut', note: '棚になし' },
+      )
+    })
+
+    expect(firstCommit!).toMatchObject({
+      change: {
+        itemId: 'milk',
+        previousStatus: 'pending',
+        nextStatus: 'inCart',
+      },
+      previousCartOrder: [],
+    })
+    expect(secondCommit!).toMatchObject({
+      change: {
+        itemId: 'eggs',
+        previousStatus: 'pending',
+        nextStatus: 'notBuying',
+      },
+      previousCartOrder: ['milk'],
+    })
+    expect(session.getCurrentShoppingState()).toEqual(session.shoppingState)
+    expect(session.shoppingState).toEqual({
+      checkedState: {
+        milk: 'inCart',
+        eggs: 'notBuying',
+      },
+      itemIssues: {
+        eggs: { reason: 'soldOut', note: '棚になし' },
+      },
+      cartOrder: ['milk'],
+    })
+  })
+
+  it('does not update state when the requested shopping change is identical', () => {
+    replaceSession('request-a')
+    const stateBefore = session.shoppingState
+    const rendersBefore = renderCount
+    let result: ReturnType<typeof session.commitShoppingChange>
+
+    act(() => {
+      result = session.commitShoppingChange('milk', 'pending')
+    })
+
+    expect(result!).toBeNull()
+    expect(session.shoppingState).toBe(stateBefore)
+    expect(renderCount).toBe(rendersBefore)
+  })
+
+  it('bases consecutive consultation updates on the latest value and persists it', () => {
+    replaceSession('request-a')
+
+    act(() => {
+      session.updateConsultations((current) => ({
+        ...current,
+        milk: {
+          itemId: 'milk',
+          reason: 'notFound',
+          status: 'queued',
+        },
+      }))
+      session.updateConsultations((current) => ({
+        ...current,
+        eggs: {
+          itemId: 'eggs',
+          reason: 'soldOut',
+          status: 'shared',
+        },
+      }))
+    })
+
+    expect(session.consultations).toEqual({
+      milk: {
+        itemId: 'milk',
+        reason: 'notFound',
+        status: 'queued',
+      },
+      eggs: {
+        itemId: 'eggs',
+        reason: 'soldOut',
+        status: 'shared',
+      },
+    })
+    expect(session.getCurrentConsultations()).toEqual(
+      session.consultations,
+    )
+    expect(readStored('otsukai:consultations:request-a')).toEqual(
+      session.consultations,
+    )
+  })
+
+  it('returns and restores the exact previous cart order for Undo', () => {
+    replaceSession('request-a', {
+      checkedState: { milk: 'inCart' },
+      itemIssues: {},
+      cartOrder: ['milk'],
+    })
+    let committed: ReturnType<typeof session.commitShoppingChange>
+
+    act(() => {
+      committed = session.commitShoppingChange('eggs', 'inCart')
+    })
+    expect(committed!.previousCartOrder).toEqual(['milk'])
+    expect(session.shoppingState.cartOrder).toEqual(['milk', 'eggs'])
+
+    act(() => {
+      session.undoShoppingChange(
+        committed!.change,
+        committed!.previousCartOrder,
+      )
+    })
+
+    expect(session.shoppingState.checkedState.eggs).toBe('pending')
+    expect(session.shoppingState.cartOrder).toEqual(['milk'])
+    expect(readStored('otsukai:cartOrder:request-a')).toEqual(['milk'])
+  })
+
+  it('does not save later changes under a replaced request ID', () => {
+    replaceSession('request-a')
+    act(() => {
+      session.commitShoppingChange('milk', 'inCart')
+    })
+    const firstRequestState = readStored('otsukai:checked:request-a')
+
+    replaceSession('request-b')
+    act(() => {
+      session.commitShoppingChange(
+        'eggs',
+        'notBuying',
+        { reason: 'soldOut' },
+      )
+    })
+
+    expect(readStored('otsukai:checked:request-a')).toEqual(
+      firstRequestState,
+    )
+    expect(readStored('otsukai:checked:request-b')).toEqual({
+      eggs: 'notBuying',
+    })
+    expect(readStored('otsukai:itemIssues:request-b')).toEqual({
+      eggs: { reason: 'soldOut' },
+    })
+  })
+})

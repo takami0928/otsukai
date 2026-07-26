@@ -10,10 +10,10 @@ import { ShoppingItemCard } from '../components/ShoppingItemCard'
 import { ShoppingToolbar } from '../components/ShoppingToolbar'
 import { ShoppingUndoNotice } from '../components/ShoppingUndoNotice'
 import { FIXED_REQUEST_TITLE } from '../constants/request'
+import { usePersistedShoppingSession } from '../hooks/usePersistedShoppingSession'
 import { useShoppingUndoNotice } from '../hooks/useShoppingUndoNotice'
 import type {
   CheckedItemStatus,
-  ConsultationMap,
   ItemIssue,
   ShoppingRequestItemPayload,
   ShoppingRequestPayload,
@@ -35,12 +35,9 @@ import {
   type ShoppingFilterMode,
 } from '../utils/shoppingPageView'
 import {
-  applyShoppingStateChange,
-  createShoppingStateChange,
   getItemStatus,
   getShoppingCompletionState,
   hasCondition,
-  type ShoppingStateSnapshot,
 } from '../utils/shoppingState'
 import {
   loadShoppingSession,
@@ -51,12 +48,6 @@ import {
   shareText,
   type NativeShareResult,
 } from '../utils/shareText'
-import {
-  saveCartOrder,
-  saveCheckedState,
-  saveConsultations,
-  saveItemIssues,
-} from '../utils/storage'
 
 type ShoppingListPageProps = {
   encodedPayload: string
@@ -83,12 +74,6 @@ type CartConfirmationState = {
 type ShareNotice = {
   kind: 'success' | 'error' | 'info'
   message: string
-}
-
-const EMPTY_SHOPPING_STATE: ShoppingStateSnapshot = {
-  checkedState: {},
-  itemIssues: {},
-  cartOrder: [],
 }
 
 function createIssue(reason: UnavailableReason, note: string): ItemIssue {
@@ -157,9 +142,16 @@ export function ShoppingListPage({
   onError,
 }: ShoppingListPageProps) {
   const [payload, setPayload] = useState<ShoppingRequestPayload | null>(null)
-  const [shoppingState, setShoppingState] =
-    useState<ShoppingStateSnapshot>(EMPTY_SHOPPING_STATE)
-  const [consultations, setConsultations] = useState<ConsultationMap>({})
+  const {
+    shoppingState,
+    consultations,
+    replaceSession,
+    commitShoppingChange: commitPersistedShoppingChange,
+    undoShoppingChange,
+    updateConsultations,
+    getCurrentShoppingState,
+    getCurrentConsultations,
+  } = usePersistedShoppingSession()
   const [filterMode, setFilterMode] = useState<ShoppingFilterMode>('all')
   const [cartConfirmation, setCartConfirmation] =
     useState<CartConfirmationState | null>(null)
@@ -180,9 +172,6 @@ export function ShoppingListPage({
   const [shareNotice, setShareNotice] = useState<ShareNotice | null>(null)
   const activeShareRef = useRef(false)
   const shareGenerationRef = useRef(0)
-  const shoppingStateRef =
-    useRef<ShoppingStateSnapshot>(EMPTY_SHOPPING_STATE)
-  const consultationsRef = useRef<ConsultationMap>({})
   const checkoutReviewRef = useRef<HTMLElement | null>(null)
   const completionHeadingRef = useRef<HTMLHeadingElement | null>(null)
   const nativeShareAvailable = isNativeShareAvailable()
@@ -212,11 +201,12 @@ export function ShoppingListPage({
         codec: payloadCodec,
       })
 
-      shoppingStateRef.current = loadedSession.shoppingState
-      consultationsRef.current = loadedSession.consultations
       setPayload(loadedSession.payload)
-      setShoppingState(loadedSession.shoppingState)
-      setConsultations(loadedSession.consultations)
+      replaceSession({
+        requestId: loadedSession.payload.requestId,
+        shoppingState: loadedSession.shoppingState,
+        consultations: loadedSession.consultations,
+      })
       setFilterMode('all')
       setCartConfirmation(null)
       setConsultationDraft(null)
@@ -233,39 +223,13 @@ export function ShoppingListPage({
           : '共有URLの内容を読み込めませんでした。'
       onError('共有URLを開けませんでした', message)
     }
-  }, [clearUndoNotice, encodedPayload, onError, payloadCodec])
-
-  useEffect(() => {
-    shoppingStateRef.current = shoppingState
-  }, [shoppingState])
-
-  useEffect(() => {
-    consultationsRef.current = consultations
-  }, [consultations])
-
-  useEffect(() => {
-    if (payload) {
-      saveCheckedState(payload.requestId, checkedState)
-    }
-  }, [checkedState, payload])
-
-  useEffect(() => {
-    if (payload) {
-      saveItemIssues(payload.requestId, itemIssues)
-    }
-  }, [itemIssues, payload])
-
-  useEffect(() => {
-    if (payload) {
-      saveCartOrder(payload.requestId, cartOrder)
-    }
-  }, [cartOrder, payload])
-
-  useEffect(() => {
-    if (payload) {
-      saveConsultations(payload.requestId, consultations)
-    }
-  }, [consultations, payload])
+  }, [
+    clearUndoNotice,
+    encodedPayload,
+    onError,
+    payloadCodec,
+    replaceSession,
+  ])
 
   const {
     sortedItems,
@@ -295,45 +259,32 @@ export function ShoppingListPage({
     [checkedState, sortedItems],
   )
 
-  const updateConsultations = (
-    updater: (current: ConsultationMap) => ConsultationMap,
-  ) => {
-    const nextConsultations = updater(consultationsRef.current)
-    consultationsRef.current = nextConsultations
-    setConsultations(nextConsultations)
-  }
-
   const commitShoppingChange = (
     itemId: string,
     nextStatus: CheckedItemStatus,
     nextIssue?: ItemIssue,
   ) => {
-    const currentState = shoppingStateRef.current
-    const change = createShoppingStateChange(
-      currentState.checkedState,
-      currentState.itemIssues,
+    const committedChange = commitPersistedShoppingChange(
       itemId,
       nextStatus,
       nextIssue,
     )
 
-    if (!change) {
+    if (!committedChange) {
       setCartConfirmation((current) =>
         current?.itemId === itemId ? null : current,
       )
       return false
     }
 
-    const nextState = applyShoppingStateChange(currentState, change)
-    shoppingStateRef.current = nextState
-    setShoppingState(nextState)
+    const { change, previousCartOrder } = committedChange
     setShareNotice(null)
     const changedItem = payload?.items.find((item) => item.id === itemId)
     if (changedItem) {
       showUndoNotice({
         change,
         message: getUndoNoticeMessage(changedItem, change),
-        previousCartOrder: [...currentState.cartOrder],
+        previousCartOrder,
       })
     }
     setCartConfirmation((current) =>
@@ -388,10 +339,10 @@ export function ShoppingListPage({
 
   const handleOpenConsultation = (itemId: string) => {
     const consultationIssue = getConsultationIssue(
-      consultationsRef.current[itemId],
+      getCurrentConsultations()[itemId],
     )
     const existingIssue =
-      consultationIssue ?? shoppingStateRef.current.itemIssues[itemId]
+      consultationIssue ?? getCurrentShoppingState().itemIssues[itemId]
 
     setCartConfirmation(null)
     setShareNotice(null)
@@ -510,7 +461,7 @@ export function ShoppingListPage({
   }
 
   const handleShareIndividual = async (itemId: string) => {
-    const entry = consultationsRef.current[itemId]
+    const entry = getCurrentConsultations()[itemId]
     const item = sortedItems.find((currentItem) => currentItem.id === itemId)
     const issue = getConsultationIssue(entry)
     if (!item || !issue || entry.status === 'resolved') {
@@ -587,17 +538,7 @@ export function ShoppingListPage({
     }
     const { change: lastChange, previousCartOrder } = currentUndoNotice
 
-    const revertedState = applyShoppingStateChange(
-      shoppingStateRef.current,
-      lastChange,
-      'undo',
-    )
-    const nextState = {
-      ...revertedState,
-      cartOrder: [...previousCartOrder],
-    }
-    shoppingStateRef.current = nextState
-    setShoppingState(nextState)
+    undoShoppingChange(lastChange, previousCartOrder)
     setCartConfirmation((current) =>
       current?.itemId === lastChange.itemId ? null : current,
     )
@@ -638,8 +579,8 @@ export function ShoppingListPage({
   const handleFinishShopping = () => {
     const latestCompletionState = getShoppingCompletionState(
       sortedItems,
-      shoppingStateRef.current.checkedState,
-      consultationsRef.current,
+      getCurrentShoppingState().checkedState,
+      getCurrentConsultations(),
     )
     if (!latestCompletionState.canFinish) {
       return
