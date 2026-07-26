@@ -5,7 +5,7 @@ import {
   adjustImagePixels,
   calculateResizeDimensions,
   detectImageMime,
-  MAX_OCR_SOURCE_IMAGE_BYTES,
+  MAX_HANDWRITING_SOURCE_IMAGE_BYTES,
   preprocessHandwritingImage,
 } from './imagePreprocessing'
 
@@ -249,12 +249,12 @@ describe('preprocessHandwritingImage', () => {
       preprocessHandwritingImage(
         new File(['plain text'], 'memo.txt', { type: 'text/plain' }),
       ),
-    ).rejects.toMatchObject({ code: 'unsupported-format' })
+    ).rejects.toMatchObject({ code: 'unsupported-image' })
     await expect(
       preprocessHandwritingImage(
         new File(['not png'], 'memo.png', { type: 'image/png' }),
       ),
-    ).rejects.toMatchObject({ code: 'unsupported-format' })
+    ).rejects.toMatchObject({ code: 'unsupported-image' })
     expect(createBitmap).not.toHaveBeenCalled()
   })
 
@@ -262,7 +262,7 @@ describe('preprocessHandwritingImage', () => {
     const file = jpegFile()
     Object.defineProperty(file, 'size', {
       configurable: true,
-      value: MAX_OCR_SOURCE_IMAGE_BYTES + 1,
+      value: MAX_HANDWRITING_SOURCE_IMAGE_BYTES + 1,
     })
     const createBitmap = vi.fn()
     vi.stubGlobal('createImageBitmap', createBitmap)
@@ -287,7 +287,7 @@ describe('preprocessHandwritingImage', () => {
   it('maps a missing canvas context to a safe processing failure', async () => {
     const pipeline = installImagePipeline({ contextAvailable: false })
     await expect(preprocessHandwritingImage(jpegFile())).rejects.toMatchObject({
-      code: 'processing-failed',
+      code: 'request-invalid',
     })
     expect(pipeline.close).toHaveBeenCalledTimes(1)
   })

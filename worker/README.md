@@ -1,63 +1,73 @@
-# 手書きメモOCR Worker
+# 手書き商品取り込みWorker
 
-このWorkerは、GitHub Pages上のReactアプリから1枚の画像とTurnstileトークンを受け取り、Google Cloud Visionの`DOCUMENT_TEXT_DETECTION`を呼び出して、行単位の最小JSONだけを返します。
+このWorkerは、GitHub Pages上のReactアプリから、前処理済み画像、現在表示可能な商品候補、毎回新しく取得したTurnstileトークンを受け取ります。公式`@google/genai` SDKのInteractions APIで`gemini-3.5-flash-lite`を1回だけ呼び出し、商品名の読み取りと候補照合を同じ構造化出力で行います。
 
 ```text
 React/Vite
-  └─ 画像（最大2MB）+ 毎回新しいTurnstileトークン
+  └─ 画像（最大2MB）+ 商品候補 + Turnstileトークン
        └─ Cloudflare Worker
-            ├─ Origin/MIME/実データ/サイズ検証
-            ├─ Turnstile Siteverify
-            └─ Google Cloud Vision DOCUMENT_TEXT_DETECTION
-                 └─ { "lines": [{ "id", "text", "confidence"? }] }
+            ├─ Origin、画像、候補JSON、Turnstileを検証
+            ├─ Gemini 3.5 Flash-Lite
+            │    ├─ Interactions API
+            │    ├─ thinking_level: minimal
+            │    └─ JSON Schema構造化出力
+            └─ 商品IDとstatusを再検証
+                 └─ { "version": 1, "items": [...] }
 ```
 
-画像とOCR生レスポンスは保存しません。画像、OCR文字列、APIキーをログへ出さず、フロントにもGoogleの生レスポンスや生エラーを返しません。フロントは確定した商品と通常の自由追加商品だけを既存draftへ反映するため、画像、OCR生テキスト、OCR由来フラグは共有URLに入りません。
+画像、商品候補、モデル出力はアプリやWorkerへ保存しません。本番コードはこれらやSecretをログへ出しません。フロントは利用者が確認した通常商品と自由追加商品だけを既存draftへ反映するため、画像、読み取った生の内容、取り込み元を示す情報は共有URLに入りません。
 
-## 現在のクラウド状態を先に確認する
+## 固定したGemini設定
 
-新しいリソースを作る前に、既存の認証・プロジェクト・課金条件を確認します。
+- Model: `gemini-3.5-flash-lite`
+- API: Interactions API
+- SDK: `@google/genai`（互換性を確認したバージョンを`package.json`で固定）
+- Thinking level: `minimal`
+- Output: JSON Schemaに従う`application/json`
+- 1画像、1interaction、履歴保存なし
+- temperature、top_p、top_kは未設定
+- 検索、URL context、file search、code execution、function calling、Computer Useは未設定
+
+モデルIDはコード上で固定し、環境変数では変更できません。画像内および商品名・別名内の文字列を信頼できないデータとして扱い、そこに命令、URL、プロンプトが書かれていても従わないようsystem instructionで明示します。詳細は[Interactions API](https://ai.google.dev/gemini-api/docs/interactions-overview)、[structured outputs](https://ai.google.dev/gemini-api/docs/structured-output)、[モデル情報](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite)で現在仕様を確認してください。
+
+## クラウド状態を先に確認する
+
+既存リソースを推測せず、まず読み取りだけで確認します。
 
 ```bash
 npx wrangler whoami
-gcloud auth list
-gcloud config get-value project
-gcloud services list --enabled --filter=vision.googleapis.com
 ```
 
-Worker設定が存在する場合は、設定ファイルを指定して既存デプロイとSecret名も確認します。
+認証済みで、対象の`worker/wrangler.toml`が存在する場合だけ、既存WorkerとSecret名を確認します。
 
 ```bash
 npx wrangler deployments list --config worker/wrangler.toml
 npx wrangler secret list --config worker/wrangler.toml
 ```
 
-未認証、対象プロジェクト不明、請求先未確認の場合は先へ進めません。本リポジトリのコードだけでGoogle CloudやCloudflareの契約、請求先、APIキー、Turnstile Widgetは作成されません。
+未認証、対象アカウント不明、既存Worker不明の場合はデプロイしません。このリポジトリのコマンドだけでCloudflareアカウント、Turnstile Widget、Google AI Studio APIキー、請求先、有料プランは作成されません。
 
-## Google Cloud Vision
+## Google AI Studio APIキー
 
-運用者が対象Google Cloudプロジェクトと請求条件を確認した後、次を明示的に行います。
+1. 運用者自身が[Google AI StudioのAPI key画面](https://aistudio.google.com/app/apikey)を開く。
+2. 利用するGoogleアカウントとプロジェクトを確認する。
+3. Gemini API用のAPI key（Auth key）を作成または既存キーから選ぶ。
+4. キーをブラウザ、`.env`、GitHub、ログへ置かず、Worker Secret `GEMINI_API_KEY`へだけ登録する。
 
-1. 対象プロジェクトでCloud Vision API（`vision.googleapis.com`）が利用可能か確認する。
-2. 必要な場合だけCloud Vision APIを有効化する。
-3. Vision APIだけにAPI制限したAPIキーを用意する。
-4. Google Cloud Consoleの「割り当てとシステム上限」でリクエスト上限を確認する。
-5. Billingの予算アラートを設定し、想定外の利用を監視する。
+本構成は請求先登録不要の無料枠を前提とし、請求先を登録しません。無料枠で利用できるモデル、レート制限、利用条件は変更される可能性があるため、固定数値をこの文書へ埋め込みません。[現在の料金ページ](https://ai.google.dev/gemini-api/docs/pricing)とGoogle AI StudioのUsage画面で、デプロイ前と運用中に現在値を確認してください。
 
-APIキーは標準の`x-goog-api-key`ヘッダーで送信します。実値を設定ファイル、GitHub、ログ、`VITE_`環境変数へ入れないでください。Googleの現在の料金と無料利用枠は変更される可能性があるため、デプロイ前に[Cloud Vision pricing](https://cloud.google.com/vision/pricing)とGoogle Cloud Consoleで確認します。
-
-`GOOGLE_VISION_LANGUAGE_HINTS`はカンマ区切りです。空文字列なら自動判定となり、初期設定は空です。言語を固定する必要がある場合だけ、Google Visionが受け付ける言語コードを設定します。
+無料枠では、送信した入力と生成された出力がGoogleのサービス改善に使用され、人による確認の対象となる場合があります。個人情報や機密情報を送らない運用にしてください。現在の条件は[Gemini API Additional Terms](https://ai.google.dev/gemini-api/terms)を確認してください。
 
 ## Cloudflare Turnstile
 
-Cloudflare Dashboardで既存Widgetの再利用可否を確認します。新規Widgetが必要な場合は、運用者の明示操作で次を設定します。
+Cloudflare Dashboardで既存Widgetを再利用できるか確認します。新規Widgetが必要な場合は、運用者が明示的に作成します。
 
 - Widget mode: Managed
-- 許可hostname: `takami0928.github.io`（ローカル用は別Widgetを推奨）
+- 許可hostname: `takami0928.github.io`
 - Site Key: 公開値としてフロントへ設定
-- Secret Key: Worker Secretとして設定
+- Secret Key: Worker Secretへ設定
 
-フロントはSPA向けの明示レンダリングと`execution: "execute"`を使い、actionを`handwriting_ocr`に固定します。WorkerはSiteverifyの`success`だけでなく、actionとOrigin由来hostnameも照合します。トークンは5分で失効し1回しか検証できないため、毎リクエスト取得し、完了・失敗・キャンセル後にWidgetをリセットします。
+フロントは明示レンダリングと`execution: "execute"`を使い、actionを`handwriting_import`に固定します。WorkerはSiteverifyの`success`、action、Origin由来hostnameを照合します。トークンは毎リクエスト新規取得し、成功、失敗、キャンセル後にWidgetをリセットします。
 
 ## Worker設定
 
@@ -68,21 +78,28 @@ cp worker/wrangler.toml.example worker/wrangler.toml
 cp worker/.dev.vars.example worker/.dev.vars
 ```
 
-PowerShellでは次を使用できます。
+PowerShell:
 
 ```powershell
 Copy-Item worker/wrangler.toml.example worker/wrangler.toml
 Copy-Item worker/.dev.vars.example worker/.dev.vars
 ```
 
-本番Secretは対話入力で設定します。
+本番SecretはWranglerの対話入力で登録します。実値をコマンド履歴へ直接書かないでください。
 
 ```bash
-npx wrangler secret put GOOGLE_VISION_API_KEY --config worker/wrangler.toml
+npx wrangler secret put GEMINI_API_KEY --config worker/wrangler.toml
 npx wrangler secret put TURNSTILE_SECRET_KEY --config worker/wrangler.toml
 ```
 
-`ALLOWED_ORIGINS`にはOriginを完全一致でカンマ区切り指定します。本番例は`https://takami0928.github.io`です。パスや末尾スラッシュは含めません。CORSはブラウザ制御であり認証ではないため、Workerは許可Originに加えてTurnstileを毎回検証します。
+通常変数は次だけです。
+
+```toml
+[vars]
+ALLOWED_ORIGINS = "https://takami0928.github.io"
+```
+
+Originは完全一致でカンマ区切り指定します。パスや末尾スラッシュは含めません。CORSはブラウザ制御であり認証ではないため、許可Originに加えてTurnstileを毎回検証します。
 
 ## ローカル開発
 
@@ -90,52 +107,57 @@ npx wrangler secret put TURNSTILE_SECRET_KEY --config worker/wrangler.toml
 npm ci
 npm run test:worker
 npm run typecheck:worker
+npm run check:worker-bundle
 npm run worker:dev
 ```
 
-フロントはルートの`.env.example`を`.env.local`へコピーし、ローカルWorker URL、ローカル用Turnstile Site Key、`VITE_HANDWRITING_IMPORT_ENABLED=true`を設定して`npm run dev`で起動します。Secretを`VITE_`へ入れないでください。
+ルートの`.env.example`を`.env.local`へ、`worker/.dev.vars.example`を`worker/.dev.vars`へコピーします。ローカルWorker URL、ローカル用Turnstile Site Keyを設定し、明示的に確認するときだけ`VITE_HANDWRITING_IMPORT_ENABLED=true`とします。`GEMINI_API_KEY`と`TURNSTILE_SECRET_KEY`を`VITE_`変数へ入れないでください。
 
 ## 本番デプロイ
 
-認証、既存プロジェクト、Secret、Google Vision利用可否、料金条件が揃っている場合だけ実施します。
+Cloudflare認証、対象アカウント、既存Workerまたは作成対象、Turnstile、2つのSecretがすべて明確な場合だけ実施します。
 
 ```bash
 npm test
+npm run test:coverage
 npm run build
+npm run check:worker-bundle
 npm run worker:deploy
 ```
 
-デプロイ後、Worker URLをGitHub Repository Variablesの`VITE_OCR_ENDPOINT`へ、公開Site Keyを`VITE_TURNSTILE_SITE_KEY`へ設定します。最後に`VITE_HANDWRITING_IMPORT_ENABLED=true`を設定し、Pages workflowを実行します。GitHub Actions SecretsではなくRepository Variablesでよいのは、これら3値がブラウザへ公開される値だからです。
+デプロイ後、公開値だけをGitHub Repository Variablesへ設定します。
 
-## 障害時の無効化
+```text
+VITE_HANDWRITING_IMPORT_ENABLED=true
+VITE_HANDWRITING_IMPORT_ENDPOINT=https://your-worker.example.workers.dev/
+VITE_TURNSTILE_SITE_KEY=公開Site Key
+```
 
-最短の停止方法はRepository Variable `VITE_HANDWRITING_IMPORT_ENABLED=false`へ変更してPagesを再デプロイすることです。エンドポイントまたはSite Keyを未設定にしてもUIは安全に非表示になります。OCR障害時も通常の商品選択、依頼共有、買い物画面は動作し続けます。
+SecretはGitHub Repository VariablesやActions Secretsへコピーする必要はありません。Worker Secretにだけ保持します。
 
-Worker側では、必要に応じてCloudflareの利用量制限やWAF/Rate Limitingの利用可否を現在の契約で確認し、Google Cloud側ではVision APIのquotaと予算アラートを確認します。有料機能を前提にせず、契約変更前に必ず運用者の承認を得てください。
+## 無料枠上限と障害時
 
-## セキュリティ制約
+Gemini APIが429を返した場合、Workerは外部の本文を隠して`ANALYSIS_LIMIT`だけを返します。フロントは、時間をおいて再試行するか通常の商品選択を使うよう案内します。現在の利用量はGoogle AI StudioのUsage画面、Workerの呼び出し状況はCloudflare Dashboardで確認してください。必要なら、現在のCloudflare契約内で利用できるRate Limitingや利用量通知を検討し、有料機能への変更前に運用者の承認を得てください。
+
+最短の無効化手順は、Repository Variable `VITE_HANDWRITING_IMPORT_ENABLED=false`へ変更してPagesを再デプロイすることです。エンドポイントまたはSite Keyを未設定にしてもUIは安全に非表示になります。解析障害時も通常の商品選択、依頼共有、買い物画面は動作します。
+
+## 入力・出力検証
 
 - POST、`multipart/form-data`、1画像だけを許可
 - JPEG/PNG/WebPを宣言MIMEとマジックバイトの双方で確認
-- 画像は最大2MB、リクエスト全体は境界情報を含む小さな余裕だけ許可
+- 画像は最大2MB
+- 商品候補はJSON配列、最大200件、重複IDなし
+- 商品ID、商品名、別名、別名数、JSONバイト数を制限
+- 予期しないプロパティと危険なオブジェクトキーを拒否
+- 数量、条件、選択状態、履歴、カテゴリ、アイコン、共有URLを送信しない
 - 許可Originを完全一致で確認
-- Turnstileを毎回Siteverifyし、actionとhostnameも確認
-- 外部通信を15秒で中断
-- Googleの生レスポンス、生エラー、内部URL、Secretを返さない
+- Turnstileを毎回検証し、actionとhostnameも確認
+- 外部処理を約15秒で中断
+- GeminiのJSONをWorkerで再解析し、version、件数、status、商品IDを検証
+- 不正なmatchedはunknownへ降格
+- ambiguousの候補外IDを除き、候補がなくなればunknownへ降格
+- 同一matched商品と明白な重複表記を除去
+- 外部APIの生レスポンス、生エラー、内部URL、Secretを返さない
 - `Cache-Control: no-store`
-- 画像、OCR文字列、Secretをログへ出さない
 
-## PaddleOCR.jsへの交換点
-
-フロントの照合・確認UIは`HandwritingOcrProvider`だけに依存します。
-
-```ts
-export interface HandwritingOcrProvider {
-  recognizeProductLines(
-    image: Blob,
-    options?: { signal?: AbortSignal },
-  ): Promise<OcrLine[]>
-}
-```
-
-将来PaddleOCR.jsを導入する場合は、このinterfaceを実装して`HandwritingImportSection`へ注入します。正規化、別名、類似候補、確認、一括draft反映は変更不要です。今回PaddleOCR.js本体は依存に含めていません。
+フロントでも同じ商品ID集合とstatus整合を再検証します。利用者が「選択した商品を追加」を押すまでdraftは変更せず、追加時は既存の数量・条件・URL予算・上限処理を通る一括トランザクションです。

@@ -9,12 +9,14 @@
     "test:worker": "vitest run worker/test",
     "test:coverage": "vitest run --coverage",
     "typecheck:worker": "tsc -p worker/tsconfig.json --noEmit",
+    "check:worker-bundle": "wrangler deploy worker/src/index.ts --dry-run --name otsukai-handwriting-import --compatibility-date 2026-07-26 --outdir .wrangler/dry-run",
     "build": "tsc -b && npm run typecheck:worker && vite build",
     "preview": "vite preview",
     "worker:dev": "wrangler dev --config worker/wrangler.toml",
     "worker:deploy": "wrangler deploy --config worker/wrangler.toml"
   },
   "dependencies": {
+    "@google/genai": "2.13.0",
     "lz-string": "^1.5.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

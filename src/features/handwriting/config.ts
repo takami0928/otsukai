@@ -6,7 +6,7 @@ export type HandwritingImportConfig = {
 
 type HandwritingEnvironment = {
   VITE_HANDWRITING_IMPORT_ENABLED?: string
-  VITE_OCR_ENDPOINT?: string
+  VITE_HANDWRITING_IMPORT_ENDPOINT?: string
   VITE_TURNSTILE_SITE_KEY?: string
 }
 
@@ -26,7 +26,8 @@ function isAllowedEndpoint(value: string): boolean {
 export function resolveHandwritingImportConfig(
   environment: HandwritingEnvironment,
 ): HandwritingImportConfig {
-  const endpoint = environment.VITE_OCR_ENDPOINT?.trim() ?? ''
+  const endpoint =
+    environment.VITE_HANDWRITING_IMPORT_ENDPOINT?.trim() ?? ''
   const turnstileSiteKey =
     environment.VITE_TURNSTILE_SITE_KEY?.trim() ?? ''
   const requested =

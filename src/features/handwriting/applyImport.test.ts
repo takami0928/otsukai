@@ -43,9 +43,9 @@ function requestData(
 
 function productSelection(
   productId: string,
-  lineId = productId,
+  itemId = productId,
 ): HandwritingImportSelection {
-  return { lineId, kind: 'product', productId }
+  return { itemId, kind: 'product', productId }
 }
 
 function customSelection(
@@ -53,10 +53,10 @@ function customSelection(
   index = 0,
 ): HandwritingImportSelection {
   return {
-    lineId: `custom-line-${index}`,
+    itemId: `custom-item-${index}`,
     kind: 'custom',
     name,
-    customItemId: `custom:ocr-${index}`,
+    customItemId: `custom:import-${index}`,
   }
 }
 
@@ -155,7 +155,7 @@ describe('applyHandwritingImportSelections', () => {
     expect(result.value.draft.milk.quantity).toBe(1)
   })
 
-  it('adds unmatched OCR text as quantity one, unit 個, and no condition', () => {
+  it('adds an unknown handwritten item as quantity one, unit 個, and no condition', () => {
     const current = requestData()
     const result = applyHandwritingImportSelections(
       current,
@@ -165,7 +165,7 @@ describe('applyHandwritingImportSelections', () => {
     expect(result.accepted).toBe(true)
     expect(result.value.customItems).toEqual([
       {
-        id: 'custom:ocr-0',
+        id: 'custom:import-0',
         name: '電池',
         quantity: 1,
         unit: '個',

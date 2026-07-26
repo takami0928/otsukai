@@ -91,8 +91,8 @@ import {
   applyHandwritingImportSelections,
 } from '../features/handwriting/applyImport'
 import type {
+  HandwritingImportProvider,
   HandwritingImportSelection,
-  HandwritingOcrProvider,
 } from '../features/handwriting/types'
 import type {
   ImagePreprocessOptions,
@@ -101,7 +101,7 @@ import type {
 type CreateRequestPageProps = {
   onBackHome: () => void
   handwritingImportConfig?: HandwritingImportConfig
-  handwritingOcrProvider?: HandwritingOcrProvider
+  handwritingImportProvider?: HandwritingImportProvider
   preprocessHandwritingImage?: (
     file: File,
     options?: ImagePreprocessOptions,
@@ -149,7 +149,7 @@ function createInitialPageState(
 export function CreateRequestPage({
   onBackHome,
   handwritingImportConfig,
-  handwritingOcrProvider,
+  handwritingImportProvider,
   preprocessHandwritingImage,
 }: CreateRequestPageProps) {
   const { effectiveProducts, visibleProducts } = useHouseholdCatalog()
@@ -715,7 +715,7 @@ export function CreateRequestPage({
         config={handwritingConfig}
         effectiveProducts={effectiveProducts}
         onApplySelections={handleApplyHandwritingSelections}
-        ocrProvider={handwritingOcrProvider}
+        importProvider={handwritingImportProvider}
         preprocessImage={preprocessHandwritingImage}
       />
 

@@ -1,15 +1,28 @@
+import {
+  countTextCharacters,
+  MAX_PRODUCT_NAME_CHARACTERS,
+  sanitizeText,
+} from './text'
+import type { ImportProductCandidate } from './types'
+
 export const MAX_IMAGE_BYTES = 2 * 1024 * 1024
-export const MAX_REQUEST_BYTES = MAX_IMAGE_BYTES + 64 * 1024
+export const MAX_PRODUCTS_JSON_BYTES = 128 * 1024
+export const MAX_REQUEST_BYTES =
+  MAX_IMAGE_BYTES + MAX_PRODUCTS_JSON_BYTES + 64 * 1024
 export const MAX_TURNSTILE_TOKEN_LENGTH = 2_048
+export const MAX_PRODUCT_CANDIDATES = 200
+export const MAX_PRODUCT_ID_CHARACTERS = 128
+export const MAX_PRODUCT_ALIASES = 10
 
 export type SupportedImageMime =
   | 'image/jpeg'
   | 'image/png'
   | 'image/webp'
 
-export type ValidatedOcrRequest = {
+export type ValidatedHandwritingImportRequest = {
   image: File
   turnstileToken: string
+  products: ImportProductCandidate[]
   origin: string
   remoteIp?: string
 }
@@ -29,13 +42,28 @@ const SUPPORTED_MIME_TYPES = new Set<SupportedImageMime>([
   'image/png',
   'image/webp',
 ])
+const PRODUCT_KEYS = ['aliases', 'id', 'name'] as const
+const DANGEROUS_KEYS = new Set([
+  '__proto__',
+  'prototype',
+  'constructor',
+])
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
 function isFile(value: FormDataEntryValue): value is File {
   return typeof value !== 'string'
 }
 
 function isJpeg(bytes: Uint8Array): boolean {
-  return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+  return (
+    bytes.length >= 3 &&
+    bytes[0] === 0xff &&
+    bytes[1] === 0xd8 &&
+    bytes[2] === 0xff
+  )
 }
 
 function isPng(bytes: Uint8Array): boolean {
@@ -52,6 +80,112 @@ function isWebp(bytes: Uint8Array): boolean {
     String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' &&
     String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP'
   )
+}
+
+function hasDangerousObjectKey(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some(hasDangerousObjectKey)
+  }
+  if (!isRecord(value)) {
+    return false
+  }
+  return Object.keys(value).some(
+    (key) =>
+      DANGEROUS_KEYS.has(key) ||
+      hasDangerousObjectKey(value[key]),
+  )
+}
+
+function hasExactProductKeys(value: Record<string, unknown>): boolean {
+  const keys = Object.keys(value).sort()
+  return (
+    keys.length === PRODUCT_KEYS.length &&
+    PRODUCT_KEYS.every((key, index) => keys[index] === key)
+  )
+}
+
+function validateProductsJson(value: string): ImportProductCandidate[] {
+  if (
+    !value ||
+    new TextEncoder().encode(value).byteLength >
+      MAX_PRODUCTS_JSON_BYTES
+  ) {
+    throw new RequestValidationError(400, 'INVALID_PRODUCTS')
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value) as unknown
+  } catch {
+    throw new RequestValidationError(400, 'INVALID_PRODUCTS')
+  }
+  if (
+    !Array.isArray(parsed) ||
+    parsed.length === 0 ||
+    parsed.length > MAX_PRODUCT_CANDIDATES ||
+    hasDangerousObjectKey(parsed)
+  ) {
+    throw new RequestValidationError(400, 'INVALID_PRODUCTS')
+  }
+
+  const products: ImportProductCandidate[] = []
+  const seenIds = new Set<string>()
+  for (const rawProduct of parsed) {
+    if (
+      !isRecord(rawProduct) ||
+      !hasExactProductKeys(rawProduct) ||
+      typeof rawProduct.id !== 'string' ||
+      typeof rawProduct.name !== 'string' ||
+      !Array.isArray(rawProduct.aliases)
+    ) {
+      throw new RequestValidationError(400, 'INVALID_PRODUCTS')
+    }
+
+    const id = rawProduct.id
+    const name = sanitizeText(
+      rawProduct.name,
+      MAX_PRODUCT_NAME_CHARACTERS,
+    )
+    if (
+      !id ||
+      id !== id.trim() ||
+      id.length > MAX_PRODUCT_ID_CHARACTERS ||
+      seenIds.has(id) ||
+      !name ||
+      countTextCharacters(rawProduct.name) >
+        MAX_PRODUCT_NAME_CHARACTERS ||
+      rawProduct.aliases.length > MAX_PRODUCT_ALIASES
+    ) {
+      throw new RequestValidationError(400, 'INVALID_PRODUCTS')
+    }
+
+    const aliases: string[] = []
+    const seenAliases = new Set([name.toLocaleLowerCase('ja-JP')])
+    for (const rawAlias of rawProduct.aliases) {
+      if (
+        typeof rawAlias !== 'string' ||
+        countTextCharacters(rawAlias) > MAX_PRODUCT_NAME_CHARACTERS
+      ) {
+        throw new RequestValidationError(400, 'INVALID_PRODUCTS')
+      }
+      const alias = sanitizeText(
+        rawAlias,
+        MAX_PRODUCT_NAME_CHARACTERS,
+      )
+      if (!alias) {
+        throw new RequestValidationError(400, 'INVALID_PRODUCTS')
+      }
+      const aliasKey = alias.toLocaleLowerCase('ja-JP')
+      if (!seenAliases.has(aliasKey)) {
+        seenAliases.add(aliasKey)
+        aliases.push(alias)
+      }
+    }
+
+    seenIds.add(id)
+    products.push({ id, name, aliases })
+  }
+  return products
 }
 
 export function parseAllowedOrigins(value: string): Set<string> {
@@ -86,10 +220,10 @@ export async function detectImageMime(
   return undefined
 }
 
-export async function validateOcrRequest(
+export async function validateHandwritingImportRequest(
   request: Request,
   allowedOrigins: ReadonlySet<string>,
-): Promise<ValidatedOcrRequest> {
+): Promise<ValidatedHandwritingImportRequest> {
   if (request.method !== 'POST') {
     throw new RequestValidationError(405, 'METHOD_NOT_ALLOWED')
   }
@@ -116,28 +250,33 @@ export async function validateOcrRequest(
   try {
     formData = await request.formData()
   } catch {
-    throw new RequestValidationError(400, 'INVALID_REQUEST')
+    throw new RequestValidationError(400, 'REQUEST_INVALID')
   }
 
   const entries = [...formData.entries()]
   const imageEntries = formData.getAll('image')
   const tokenEntries = formData.getAll('turnstileToken')
+  const productEntries = formData.getAll('products')
   if (
-    entries.length !== 2 ||
+    entries.length !== 3 ||
     imageEntries.length !== 1 ||
     tokenEntries.length !== 1 ||
+    productEntries.length !== 1 ||
     !isFile(imageEntries[0]) ||
+    typeof tokenEntries[0] !== 'string' ||
+    typeof productEntries[0] !== 'string' ||
     entries.some(
-      ([key, value]) =>
-        (key !== 'image' && key !== 'turnstileToken') ||
-        (key === 'turnstileToken' && typeof value !== 'string'),
+      ([key, entry]) =>
+        !['image', 'turnstileToken', 'products'].includes(key) ||
+        (key !== 'image' && typeof entry !== 'string'),
     )
   ) {
-    throw new RequestValidationError(400, 'INVALID_IMAGE_COUNT')
+    throw new RequestValidationError(400, 'REQUEST_INVALID')
   }
+
   const image = imageEntries[0]
   if (image.size === 0) {
-    throw new RequestValidationError(400, 'INVALID_IMAGE')
+    throw new RequestValidationError(400, 'REQUEST_INVALID')
   }
   if (image.size > MAX_IMAGE_BYTES) {
     throw new RequestValidationError(413, 'IMAGE_TOO_LARGE')
@@ -150,9 +289,7 @@ export async function validateOcrRequest(
     throw new RequestValidationError(415, 'UNSUPPORTED_IMAGE_TYPE')
   }
 
-  const tokenEntry = formData.get('turnstileToken')
-  const turnstileToken =
-    typeof tokenEntry === 'string' ? tokenEntry.trim() : ''
+  const turnstileToken = tokenEntries[0].trim()
   if (
     !turnstileToken ||
     turnstileToken.length > MAX_TURNSTILE_TOKEN_LENGTH
@@ -163,6 +300,7 @@ export async function validateOcrRequest(
   return {
     image,
     turnstileToken,
+    products: validateProductsJson(productEntries[0]),
     origin,
     ...(request.headers.get('CF-Connecting-IP')
       ? { remoteIp: request.headers.get('CF-Connecting-IP') ?? undefined }

@@ -1,6 +1,6 @@
 const TURNSTILE_SITEVERIFY_URL =
   'https://challenges.cloudflare.com/turnstile/v0/siteverify'
-const TURNSTILE_ACTION = 'handwriting_ocr'
+const TURNSTILE_ACTION = 'handwriting_import'
 
 type TurnstileSiteverifyResponse = {
   success: boolean

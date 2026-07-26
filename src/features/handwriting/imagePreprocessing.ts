@@ -1,10 +1,10 @@
 import { HandwritingImportError } from './errors'
 
-export const MAX_OCR_IMAGE_BYTES = 2 * 1024 * 1024
-export const MAX_OCR_SOURCE_IMAGE_BYTES = 15 * 1024 * 1024
-export const MAX_OCR_IMAGE_DIMENSION = 1_600
-export const MIN_OCR_IMAGE_SHORT_EDGE = 200
-export const MIN_OCR_IMAGE_LONG_EDGE = 320
+export const MAX_HANDWRITING_IMAGE_BYTES = 2 * 1024 * 1024
+export const MAX_HANDWRITING_SOURCE_IMAGE_BYTES = 15 * 1024 * 1024
+export const MAX_HANDWRITING_IMAGE_DIMENSION = 1_600
+export const MIN_HANDWRITING_IMAGE_SHORT_EDGE = 200
+export const MIN_HANDWRITING_IMAGE_LONG_EDGE = 320
 
 export type SupportedImageMime =
   | 'image/jpeg'
@@ -81,7 +81,7 @@ export async function detectImageMime(
 export function calculateResizeDimensions(
   width: number,
   height: number,
-  maxDimension = MAX_OCR_IMAGE_DIMENSION,
+  maxDimension = MAX_HANDWRITING_IMAGE_DIMENSION,
 ): { width: number; height: number } {
   const scale = Math.min(1, maxDimension / Math.max(width, height))
   return {
@@ -176,7 +176,7 @@ async function decodeWithImageElement(
       }
       const handleError = () => {
         cleanup()
-        reject(new HandwritingImportError('unsupported-format'))
+        reject(new HandwritingImportError('unsupported-image'))
       }
       const handleAbort = () => {
         cleanup()
@@ -230,7 +230,7 @@ function encodeJpeg(
         if (blob) {
           resolve(blob)
         } else {
-          reject(new HandwritingImportError('processing-failed'))
+          reject(new HandwritingImportError('request-invalid'))
         }
       },
       'image/jpeg',
@@ -269,7 +269,7 @@ async function renderAndEncode(
   try {
     const context = canvas.getContext('2d', { alpha: false })
     if (!context) {
-      throw new HandwritingImportError('processing-failed')
+      throw new HandwritingImportError('request-invalid')
     }
     context.fillStyle = '#ffffff'
     context.fillRect(0, 0, width, height)
@@ -298,31 +298,33 @@ export async function preprocessHandwritingImage(
   const {
     signal,
     adjustment = { mode: 'none' },
-    maxDimension = MAX_OCR_IMAGE_DIMENSION,
-    maxBytes = MAX_OCR_IMAGE_BYTES,
+    maxDimension = MAX_HANDWRITING_IMAGE_DIMENSION,
+    maxBytes = MAX_HANDWRITING_IMAGE_BYTES,
   } = options
   throwIfAborted(signal)
 
   if (
     !SUPPORTED_MIME_TYPES.has(file.type as SupportedImageMime) ||
-    file.size > MAX_OCR_SOURCE_IMAGE_BYTES
+    file.size > MAX_HANDWRITING_SOURCE_IMAGE_BYTES
   ) {
     throw new HandwritingImportError(
-      file.size > MAX_OCR_SOURCE_IMAGE_BYTES
+      file.size > MAX_HANDWRITING_SOURCE_IMAGE_BYTES
         ? 'image-too-large'
-        : 'unsupported-format',
+        : 'unsupported-image',
     )
   }
   const detectedMime = await detectImageMime(file)
   if (!detectedMime || detectedMime !== file.type) {
-    throw new HandwritingImportError('unsupported-format')
+    throw new HandwritingImportError('unsupported-image')
   }
 
   const decoded = await decodeImage(file, signal)
   try {
     if (
-      Math.min(decoded.width, decoded.height) < MIN_OCR_IMAGE_SHORT_EDGE ||
-      Math.max(decoded.width, decoded.height) < MIN_OCR_IMAGE_LONG_EDGE
+      Math.min(decoded.width, decoded.height) <
+        MIN_HANDWRITING_IMAGE_SHORT_EDGE ||
+      Math.max(decoded.width, decoded.height) <
+        MIN_HANDWRITING_IMAGE_LONG_EDGE
     ) {
       throw new HandwritingImportError('image-too-small')
     }
@@ -345,7 +347,7 @@ export async function preprocessHandwritingImage(
       if (result) {
         const outputMime = await detectImageMime(result)
         if (outputMime !== 'image/jpeg') {
-          throw new HandwritingImportError('processing-failed')
+          throw new HandwritingImportError('request-invalid')
         }
         return result
       }

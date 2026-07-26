@@ -9,7 +9,10 @@ import {
   type RequestBudgetContext,
   type RequestDraftData,
 } from '../../utils/requestBudget'
-import { normalizeOcrText, toProductComparisonText } from './normalization'
+import {
+  sanitizeHandwritingText,
+  toHandwritingDedupeKey,
+} from './textSanitization'
 import type { HandwritingImportSelection } from './types'
 
 export type HandwritingImportApplyReason =
@@ -78,8 +81,8 @@ export function applyHandwritingImportSelections(
       continue
     }
 
-    const name = normalizeOcrText(selection.name)
-    const comparisonName = toProductComparisonText(name)
+    const name = sanitizeHandwritingText(selection.name)
+    const comparisonName = toHandwritingDedupeKey(name)
     if (!comparisonName || processedCustomNames.has(comparisonName)) {
       continue
     }

@@ -4,12 +4,12 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HandwritingImportError } from '../features/handwriting/errors'
-import type { HandwritingOcrProvider } from '../features/handwriting/types'
+import type { HandwritingImportProvider } from '../features/handwriting/types'
 import { CreateRequestPage } from './CreateRequestPage'
 
 const config = {
   enabled: true,
-  endpoint: 'https://ocr.example.test/',
+  endpoint: 'https://import.example.test/',
   turnstileSiteKey: 'site-key',
 }
 const preparedImage = new Blob(
@@ -39,13 +39,13 @@ describe('CreateRequestPage handwriting import integration', () => {
     vi.restoreAllMocks()
   })
 
-  async function renderPage(provider: HandwritingOcrProvider) {
+  async function renderPage(provider: HandwritingImportProvider) {
     await act(async () => {
       root.render(
         <CreateRequestPage
           onBackHome={() => undefined}
           handwritingImportConfig={config}
-          handwritingOcrProvider={provider}
+          handwritingImportProvider={provider}
           preprocessHandwritingImage={vi.fn(async () => preparedImage)}
         />,
       )
@@ -93,9 +93,17 @@ describe('CreateRequestPage handwriting import integration', () => {
 
   it('does not change the draft before confirmation and applies only afterward', async () => {
     await renderPage({
-      recognizeProductLines: vi.fn(async () => [
-        { id: 'line-1', text: '牛乳' },
-      ]),
+      analyze: vi.fn(async () => ({
+        version: 1 as const,
+        items: [
+          {
+            sourceText: '牛乳',
+            status: 'matched' as const,
+            productId: 'milk',
+            candidateProductIds: [],
+          },
+        ],
+      })),
     })
     await chooseImage()
     await vi.waitFor(() =>
@@ -122,16 +130,16 @@ describe('CreateRequestPage handwriting import integration', () => {
     ).toBe(1)
   })
 
-  it('keeps ordinary product input usable after OCR failure', async () => {
+  it('keeps ordinary product input usable after analysis failure', async () => {
     await renderPage({
-      recognizeProductLines: vi.fn(async () => {
+      analyze: vi.fn(async () => {
         throw new HandwritingImportError('service-unavailable')
       }),
     })
     await chooseImage()
     await vi.waitFor(() =>
       expect(container.textContent).toContain(
-        'OCRサービスへ接続できません。',
+        '手書きメモ解析サービスへ接続できません。',
       ),
     )
 

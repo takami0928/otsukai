@@ -1,38 +1,42 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { EffectiveProduct } from '../../types/householdCatalog'
 import { createId } from '../../utils/id'
-import type {
-  HandwritingImportApplyReason,
-} from './applyImport'
+import type { HandwritingImportApplyReason } from './applyImport'
 import type { HandwritingImportConfig } from './config'
 import {
   HandwritingImportError,
   isAbortError,
   toHandwritingErrorMessage,
 } from './errors'
-import { GoogleVisionOcrProvider } from './GoogleVisionOcrProvider'
+import { GeminiHandwritingImportProvider } from './GeminiHandwritingImportProvider'
 import {
   preprocessHandwritingImage,
   type ImagePreprocessOptions,
 } from './imagePreprocessing'
-import { matchOcrProductLines } from './productMatching'
+import { buildImportProductCandidates } from './productCandidates'
+import { parseHandwritingImportResult } from './resultValidation'
 import {
   BrowserTurnstileTokenProvider,
   type TurnstileTokenProvider,
 } from './turnstile'
 import type {
+  HandwritingAnalyzedItem,
+  HandwritingImportProvider,
   HandwritingImportSelection,
-  HandwritingOcrProvider,
-  OcrProductLineMatch,
-  ProductMatchCandidate,
+  ImportProductCandidate,
 } from './types'
 
-type ProcessingPhase = 'idle' | 'preparing' | 'recognizing'
+type ProcessingPhase = 'idle' | 'preparing' | 'analyzing'
 
 type ApplySelectionsResult = {
   accepted: boolean
   changedItemCount: number
   reason?: HandwritingImportApplyReason
+}
+
+type DisplayItem = {
+  id: string
+  analysis: HandwritingAnalyzedItem
 }
 
 type HandwritingImportSectionProps = {
@@ -41,7 +45,7 @@ type HandwritingImportSectionProps = {
   onApplySelections: (
     selections: readonly HandwritingImportSelection[],
   ) => ApplySelectionsResult
-  ocrProvider?: HandwritingOcrProvider
+  importProvider?: HandwritingImportProvider
   preprocessImage?: (
     file: File,
     options?: ImagePreprocessOptions,
@@ -49,29 +53,38 @@ type HandwritingImportSectionProps = {
   createCustomItemId?: () => string
 }
 
-function candidateLabel(candidate: ProductMatchCandidate): string {
-  if (candidate.matchKind === 'name-exact') {
-    return `${candidate.productName}（完全一致）`
+function productName(
+  productId: string,
+  productsById: ReadonlyMap<string, ImportProductCandidate>,
+): string {
+  return productsById.get(productId)?.name ?? '候補を確認できません'
+}
+
+function candidateIds(item: HandwritingAnalyzedItem): string[] {
+  if (item.status === 'matched' && item.productId) {
+    return [item.productId]
   }
-  if (candidate.matchKind === 'alias-exact') {
-    return `${candidate.productName}（登録別名一致）`
-  }
-  return `${candidate.productName}（類似候補・要確認）`
+  return item.candidateProductIds
+}
+
+function candidateSummary(
+  item: HandwritingAnalyzedItem,
+  productsById: ReadonlyMap<string, ImportProductCandidate>,
+): string {
+  const names = candidateIds(item).map((id) => productName(id, productsById))
+  return names.length > 0 ? names.join('、') : '候補なし'
 }
 
 function selectedChoiceLabel(
-  match: OcrProductLineMatch,
+  item: HandwritingAnalyzedItem,
   choice: string,
+  productsById: ReadonlyMap<string, ImportProductCandidate>,
 ): string {
   if (choice === 'custom') {
-    return `リストにないものとして「${match.productText}」を追加`
+    return `リストにないものとして「${item.sourceText}」を追加`
   }
   if (choice.startsWith('product:')) {
-    const productId = choice.slice('product:'.length)
-    return (
-      match.candidates.find((candidate) => candidate.productId === productId)
-        ?.productName ?? '候補を選択'
-    )
+    return productName(choice.slice('product:'.length), productsById)
   }
   return '無視'
 }
@@ -83,26 +96,56 @@ function applyFailureMessage(reason?: HandwritingImportApplyReason): string {
   return '依頼上限により追加できません。現在の依頼内容は変更していません。'
 }
 
+function orderedProductChoices(
+  item: HandwritingAnalyzedItem,
+  products: readonly ImportProductCandidate[],
+): ImportProductCandidate[] {
+  const preferredIds = candidateIds(item)
+  const preferred = new Set(preferredIds)
+  const productsById = new Map(products.map((product) => [product.id, product]))
+  return [
+    ...preferredIds
+      .map((id) => productsById.get(id))
+      .filter((product): product is ImportProductCandidate => Boolean(product)),
+    ...products.filter((product) => !preferred.has(product.id)),
+  ]
+}
+
 export function HandwritingImportSection({
   config,
   effectiveProducts,
   onApplySelections,
-  ocrProvider,
+  importProvider,
   preprocessImage = preprocessHandwritingImage,
   createCustomItemId = () => createId('custom'),
 }: HandwritingImportSectionProps) {
   const turnstileContainerRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController>()
   const [defaultProvider, setDefaultProvider] =
-    useState<HandwritingOcrProvider>()
+    useState<HandwritingImportProvider>()
   const [phase, setPhase] = useState<ProcessingPhase>('idle')
-  const [matches, setMatches] = useState<OcrProductLineMatch[]>([])
+  const [items, setItems] = useState<DisplayItem[]>([])
   const [choices, setChoices] = useState<Record<string, string>>({})
   const [message, setMessage] = useState('')
   const [dialogError, setDialogError] = useState('')
+  const productCandidates = useMemo(
+    () => buildImportProductCandidates(effectiveProducts),
+    [effectiveProducts],
+  )
+  const productsById = useMemo(
+    () =>
+      new Map(
+        productCandidates.map((product) => [product.id, product]),
+      ),
+    [productCandidates],
+  )
 
   useEffect(() => {
-    if (!config.enabled || ocrProvider || !turnstileContainerRef.current) {
+    if (
+      !config.enabled ||
+      importProvider ||
+      !turnstileContainerRef.current
+    ) {
       return
     }
     const turnstile: TurnstileTokenProvider =
@@ -110,11 +153,12 @@ export function HandwritingImportSection({
         turnstileContainerRef.current,
         config.turnstileSiteKey,
       )
-    const provider = new GoogleVisionOcrProvider(
-      config.endpoint,
-      turnstile,
+    setDefaultProvider(
+      new GeminiHandwritingImportProvider(
+        config.endpoint,
+        turnstile,
+      ),
     )
-    setDefaultProvider(provider)
 
     return () => {
       turnstile.dispose()
@@ -123,7 +167,7 @@ export function HandwritingImportSection({
     config.enabled,
     config.endpoint,
     config.turnstileSiteKey,
-    ocrProvider,
+    importProvider,
   ])
 
   useEffect(
@@ -137,7 +181,7 @@ export function HandwritingImportSection({
     return null
   }
 
-  const provider = ocrProvider ?? defaultProvider
+  const provider = importProvider ?? defaultProvider
   const isProcessing = phase !== 'idle'
 
   const handleFileChange = async (
@@ -146,13 +190,18 @@ export function HandwritingImportSection({
     const input = event.currentTarget
     const file = input.files?.[0]
     input.value = ''
-    if (!file || isProcessing || !provider) {
+    if (
+      !file ||
+      abortControllerRef.current ||
+      isProcessing ||
+      !provider
+    ) {
       return
     }
 
     const controller = new AbortController()
     abortControllerRef.current = controller
-    setMatches([])
+    setItems([])
     setChoices({})
     setMessage('')
     setDialogError('')
@@ -166,24 +215,34 @@ export function HandwritingImportSection({
       if (controller.signal.aborted) {
         throw new HandwritingImportError('cancelled')
       }
-      setPhase('recognizing')
-      const lines = await provider.recognizeProductLines(image, {
-        signal: controller.signal,
-      })
-      const nextMatches = matchOcrProductLines(
-        lines,
-        effectiveProducts,
-      ).filter((match) => Boolean(match.productText))
-      if (nextMatches.length === 0) {
-        throw new HandwritingImportError('no-text')
+      setPhase('analyzing')
+      const rawResult = await provider.analyze(
+        image,
+        productCandidates,
+        { signal: controller.signal },
+      )
+      const result = parseHandwritingImportResult(
+        rawResult,
+        productCandidates,
+      )
+      if (!result) {
+        throw new HandwritingImportError('invalid-analysis-response')
       }
-      setMatches(nextMatches)
+      if (result.items.length === 0) {
+        throw new HandwritingImportError('no-products-detected')
+      }
+
+      const nextItems = result.items.map((analysis, index) => ({
+        id: `analysis-item-${index + 1}`,
+        analysis,
+      }))
+      setItems(nextItems)
       setChoices(
         Object.fromEntries(
-          nextMatches.map((match) => [
-            match.line.id,
-            match.initialProductId
-              ? `product:${match.initialProductId}`
+          nextItems.map(({ id, analysis }) => [
+            id,
+            analysis.status === 'matched' && analysis.productId
+              ? `product:${analysis.productId}`
               : 'ignore',
           ]),
         ),
@@ -199,8 +258,8 @@ export function HandwritingImportSection({
     } finally {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = undefined
+        setPhase('idle')
       }
-      setPhase('idle')
     }
   }
 
@@ -210,24 +269,20 @@ export function HandwritingImportSection({
 
   const handleApply = () => {
     const selections: HandwritingImportSelection[] = []
-    for (const match of matches) {
-      const choice = choices[match.line.id] ?? 'ignore'
+    for (const { id, analysis } of items) {
+      const choice = choices[id] ?? 'ignore'
       if (choice === 'custom') {
         selections.push({
-          lineId: match.line.id,
+          itemId: id,
           kind: 'custom',
-          name: match.productText,
+          name: analysis.sourceText,
           customItemId: createCustomItemId(),
         })
       } else if (choice.startsWith('product:')) {
         const productId = choice.slice('product:'.length)
-        if (
-          match.candidates.some(
-            (candidate) => candidate.productId === productId,
-          )
-        ) {
+        if (productsById.has(productId)) {
           selections.push({
-            lineId: match.line.id,
+            itemId: id,
             kind: 'product',
             productId,
           })
@@ -241,7 +296,7 @@ export function HandwritingImportSection({
       return
     }
     setDialogError('')
-    setMatches([])
+    setItems([])
     setChoices({})
     setMessage(
       result.changedItemCount > 0
@@ -251,7 +306,7 @@ export function HandwritingImportSection({
   }
 
   const closeConfirmation = () => {
-    setMatches([])
+    setItems([])
     setChoices({})
     setDialogError('')
   }
@@ -261,18 +316,26 @@ export function HandwritingImportSection({
       <section className="info-card handwriting-import-section">
         <div className="section-heading handwriting-import-heading">
           <div>
-            <p className="eyebrow">画像から商品を選ぶ</p>
+            <p className="eyebrow">画像から商品候補を選ぶ</p>
             <h2>手書きメモから追加</h2>
           </div>
         </div>
         <p className="helper-text">
-          手書きの商品名を読み取ります。
+          手書きメモの写真から商品名を読み取り、
+          <br />
+          商品リストにある商品を候補として表示します。
+          <br />
           <br />
           個数や条件は読み取りません。
+          <br />
+          結果を確認してから依頼へ追加してください。
         </p>
         <p className="helper-text handwriting-privacy-note">
-          画像はCloudflare Worker経由でGoogle Cloud Visionへ一時送信し、
-          アプリには保存しません。
+          読み取りのため、画像と商品候補をGoogle Geminiへ送信します。
+          <br />
+          画像はこのアプリやWorkerには保存しません。
+          <br />
+          無料枠では、送信内容がGoogleのサービス改善に使用される場合があります。
         </p>
 
         <label
@@ -293,7 +356,11 @@ export function HandwritingImportSection({
 
         {isProcessing ? (
           <div className="handwriting-progress" aria-live="polite">
-            <p>{phase === 'preparing' ? '画像を準備中' : 'メモを読み取り中'}</p>
+            <p>
+              {phase === 'preparing'
+                ? '画像を準備中'
+                : 'メモを分析中'}
+            </p>
             <button
               type="button"
               className="ghost-button"
@@ -317,7 +384,7 @@ export function HandwritingImportSection({
         />
       </section>
 
-      {matches.length > 0 ? (
+      {items.length > 0 ? (
         <div className="dialog-backdrop">
           <section
             className="dialog-card handwriting-confirmation"
@@ -332,52 +399,51 @@ export function HandwritingImportSection({
                   読み取った商品を確認
                 </h2>
               </div>
-              <span>{matches.length}行</span>
+              <span>{items.length}件</span>
             </div>
             <p className="helper-text">
-              完全一致と登録別名一致だけを選択済みにしています。
-              類似候補は内容を確認して選んでください。
+              一意に対応した商品だけを選択済みにしています。
+              複数候補は内容を確認して選んでください。
             </p>
 
             <div className="handwriting-match-list">
-              {matches.map((match) => {
-                const choice = choices[match.line.id] ?? 'ignore'
+              {items.map(({ id, analysis }) => {
+                const choice = choices[id] ?? 'ignore'
                 return (
                   <article
-                    key={match.line.id}
+                    key={id}
                     className="handwriting-match-card"
                   >
                     <p>
-                      OCRで読み取った文字：
-                      <strong>{match.line.text}</strong>
+                      メモから読み取った内容：
+                      <strong>{analysis.sourceText}</strong>
                     </p>
                     <p className="helper-text">
-                      対応候補：
-                      {match.candidates.length > 0
-                        ? match.candidates
-                            .map((candidate) => candidateLabel(candidate))
-                            .join('、')
-                        : '候補なし'}
+                      商品候補：
+                      {candidateSummary(analysis, productsById)}
                     </p>
                     <label>
-                      <span>候補変更</span>
+                      <span>候補を選択</span>
                       <select
                         value={choice}
                         onChange={(event) =>
                           setChoices((current) => ({
                             ...current,
-                            [match.line.id]: event.target.value,
+                            [id]: event.target.value,
                           }))
                         }
-                        aria-label={`${match.line.text}の候補変更`}
+                        aria-label={`${analysis.sourceText}の候補を選択`}
                       >
                         <option value="ignore">無視</option>
-                        {match.candidates.map((candidate) => (
+                        {orderedProductChoices(
+                          analysis,
+                          productCandidates,
+                        ).map((product) => (
                           <option
-                            key={candidate.productId}
-                            value={`product:${candidate.productId}`}
+                            key={product.id}
+                            value={`product:${product.id}`}
                           >
-                            {candidateLabel(candidate)}
+                            {product.name}
                           </option>
                         ))}
                         <option value="custom">
@@ -386,7 +452,12 @@ export function HandwritingImportSection({
                       </select>
                     </label>
                     <p className="handwriting-selection-state">
-                      選択状態：{selectedChoiceLabel(match, choice)}
+                      選択状態：
+                      {selectedChoiceLabel(
+                        analysis,
+                        choice,
+                        productsById,
+                      )}
                     </p>
                     {choice === 'custom' ? (
                       <p className="helper-text">

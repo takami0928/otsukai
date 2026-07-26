@@ -1,40 +1,30 @@
 import {
-  GoogleVisionError,
-  recognizeWithGoogleVision,
-  type OcrLine,
-} from './googleVision'
+  analyzeHandwritingWithGemini,
+  GeminiAnalysisError,
+} from './gemini'
+import { parseGeminiHandwritingResult } from './resultValidation'
 import { verifyTurnstileToken } from './turnstile'
+import type { HandwritingImportResult } from './types'
 import {
   parseAllowedOrigins,
   RequestValidationError,
-  validateOcrRequest,
+  type SupportedImageMime,
+  validateHandwritingImportRequest,
 } from './validation'
 
 export type WorkerEnv = {
-  GOOGLE_VISION_API_KEY: string
+  GEMINI_API_KEY: string
   TURNSTILE_SECRET_KEY: string
   ALLOWED_ORIGINS: string
-  GOOGLE_VISION_LANGUAGE_HINTS?: string
 }
 
 export type WorkerDependencies = {
   fetchImplementation?: typeof fetch
+  analyzeImplementation?: typeof analyzeHandwritingWithGemini
   timeoutMs?: number
 }
 
-type OcrResponse = {
-  lines: OcrLine[]
-}
-
 const DEFAULT_TIMEOUT_MS = 15_000
-
-function languageHints(value?: string): string[] {
-  return (value ?? '')
-    .split(',')
-    .map((hint) => hint.trim())
-    .filter(Boolean)
-    .slice(0, 10)
-}
 
 function corsHeaders(origin?: string): HeadersInit {
   return {
@@ -50,7 +40,7 @@ function corsHeaders(origin?: string): HeadersInit {
 }
 
 function jsonResponse(
-  body: OcrResponse | { code: string },
+  body: HandwritingImportResult | { code: string },
   status: number,
   origin?: string,
 ): Response {
@@ -62,10 +52,34 @@ function jsonResponse(
 
 function hasRequiredConfiguration(env: WorkerEnv): boolean {
   return Boolean(
-    env.GOOGLE_VISION_API_KEY?.trim() &&
+    env.GEMINI_API_KEY?.trim() &&
       env.TURNSTILE_SECRET_KEY?.trim() &&
       env.ALLOWED_ORIGINS?.trim(),
   )
+}
+
+function geminiErrorResponse(
+  error: GeminiAnalysisError,
+  origin?: string,
+): Response {
+  switch (error.kind) {
+    case 'analysis-limit':
+      return jsonResponse({ code: 'ANALYSIS_LIMIT' }, 429, origin)
+    case 'invalid-response':
+      return jsonResponse(
+        { code: 'INVALID_ANALYSIS_RESPONSE' },
+        502,
+        origin,
+      )
+    case 'safety-blocked':
+      return jsonResponse({ code: 'SAFETY_BLOCKED' }, 422, origin)
+    case 'unavailable':
+      return jsonResponse(
+        { code: 'SERVICE_UNAVAILABLE' },
+        502,
+        origin,
+      )
+  }
 }
 
 export async function handleRequest(
@@ -86,7 +100,9 @@ export async function handleRequest(
       responseOrigin,
     )
   }
-
+  if (!responseOrigin) {
+    return jsonResponse({ code: 'ORIGIN_NOT_ALLOWED' }, 403)
+  }
   if (!hasRequiredConfiguration(env)) {
     return jsonResponse(
       { code: 'SERVICE_UNAVAILABLE' },
@@ -96,16 +112,22 @@ export async function handleRequest(
   }
 
   const controller = new AbortController()
-  const timeout = setTimeout(
-    () => controller.abort(),
-    dependencies.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-  )
+  let timedOut = false
+  const timeout = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, dependencies.timeoutMs ?? DEFAULT_TIMEOUT_MS)
   const abortForClient = () => controller.abort()
   request.signal.addEventListener('abort', abortForClient, { once: true })
   const fetchImplementation = dependencies.fetchImplementation ?? fetch
+  const analyzeImplementation =
+    dependencies.analyzeImplementation ?? analyzeHandwritingWithGemini
 
   try {
-    const validated = await validateOcrRequest(request, allowedOrigins)
+    const validated = await validateHandwritingImportRequest(
+      request,
+      allowedOrigins,
+    )
     const verified = await verifyTurnstileToken({
       token: validated.turnstileToken,
       secret: env.TURNSTILE_SECRET_KEY,
@@ -115,17 +137,25 @@ export async function handleRequest(
       signal: controller.signal,
     })
     if (!verified) {
-      return jsonResponse({ code: 'AUTH_FAILED' }, 403, validated.origin)
+      return jsonResponse(
+        { code: 'AUTH_FAILED' },
+        403,
+        validated.origin,
+      )
     }
 
-    const lines = await recognizeWithGoogleVision({
+    const outputText = await analyzeImplementation({
       image: validated.image,
-      apiKey: env.GOOGLE_VISION_API_KEY,
-      languageHints: languageHints(env.GOOGLE_VISION_LANGUAGE_HINTS),
-      fetchImplementation,
+      mimeType: validated.image.type as SupportedImageMime,
+      products: validated.products,
+      apiKey: env.GEMINI_API_KEY,
       signal: controller.signal,
     })
-    return jsonResponse({ lines }, 200, validated.origin)
+    const result = parseGeminiHandwritingResult(
+      outputText,
+      validated.products,
+    )
+    return jsonResponse(result, 200, validated.origin)
   } catch (error) {
     if (error instanceof RequestValidationError) {
       return jsonResponse(
@@ -134,19 +164,17 @@ export async function handleRequest(
         responseOrigin,
       )
     }
-    if (controller.signal.aborted) {
-      return jsonResponse({ code: 'OCR_TIMEOUT' }, 504, responseOrigin)
+    if (timedOut || controller.signal.aborted) {
+      return jsonResponse({ code: 'TIMEOUT' }, 504, responseOrigin)
     }
-    if (error instanceof GoogleVisionError) {
-      return error.kind === 'rate-limited'
-        ? jsonResponse({ code: 'OCR_LIMIT' }, 429, responseOrigin)
-        : jsonResponse(
-            { code: 'OCR_UNAVAILABLE' },
-            502,
-            responseOrigin,
-          )
+    if (error instanceof GeminiAnalysisError) {
+      return geminiErrorResponse(error, responseOrigin)
     }
-    return jsonResponse({ code: 'INTERNAL_ERROR' }, 500, responseOrigin)
+    return jsonResponse(
+      { code: 'SERVICE_UNAVAILABLE' },
+      500,
+      responseOrigin,
+    )
   } finally {
     clearTimeout(timeout)
     request.signal.removeEventListener('abort', abortForClient)
