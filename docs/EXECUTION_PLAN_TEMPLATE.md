@@ -27,11 +27,11 @@ Describe the observable user or operator result. Avoid defining success as “co
 
 ### In scope
 
-- 
+- <item>
 
 ### Out of scope
 
-- 
+- <item>
 
 ## Invariants and constraints
 
@@ -74,7 +74,7 @@ Each phase should be independently understandable, testable, reviewable, and rel
 
 ### Focused tests
 
-- 
+- <test or not-applicable rationale>
 
 ### Full gates
 
@@ -84,22 +84,27 @@ npm run test:worker
 npm run check:worker-bundle
 npm run test:coverage
 npm run build
+git fetch origin main
+git diff --check origin/main...HEAD
 git diff --check
 ```
 
-Mark commands not applicable and explain why. Do not silently omit them.
+Use the merge-base range command for committed branch changes and the argument-free command for uncommitted working-tree changes. Mark commands not applicable and explain why. Do not silently omit them.
 
 ### Independent review
 
 - Reviewer agents/scope:
+- Reviewed head SHA:
 - Required evidence:
 - Findings:
 - Resolution:
 - Re-review result:
+- P0 resolution status:
+- P1-P2 resolution or acceptance status:
 
 ### Manual/public checks
 
-- 
+- <check or not-applicable rationale>
 
 ## External and user-owned actions
 
@@ -108,7 +113,9 @@ List secrets, dashboards, production settings, physical-device checks, terms, bi
 ## Release and rollback
 
 - Merge condition:
-- Deployment condition:
+- Reviewed head SHA:
+- Approval head SHA:
+- Deployment condition: Pages build and deploy success for the merge SHA after every merge to `main`
 - Smoke path:
 - Rollback trigger:
 - Rollback procedure:
@@ -123,9 +130,11 @@ List secrets, dashboards, production settings, physical-device checks, terms, bi
 
 - Starting `main` SHA:
 - PR head SHA:
-- CI run/result:
+- Reviewed head SHA:
+- Approval head SHA:
+- CI run/result for current head:
 - Independent-review result:
 - Squash SHA:
-- Pages run/result:
+- Pages run/result for merge SHA:
 - Public URL/smoke result:
 - Remaining limitations:
