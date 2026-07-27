@@ -7,33 +7,34 @@ description: Validate, merge, and verify an approved otsukai pull request throug
 
 Deliver a pull request through the repository release path. Do not interpret a request to “finish” as permission to bypass the risk and approval rules in `AGENTS.md` and `docs/CODEX_WORKFLOW.md`.
 
-This skill validates and delivers an already reviewed head. It does not implement fixes. If the head must change, stop and return to implementation and full independent review.
+This skill validates and delivers an already reviewed integration state. It does not implement fixes. If the base, head, or tested PR merge commit must change, stop and return to implementation and full independent review.
 
 ## Preconditions
 
 Confirm all of the following before merge:
 
 - the target PR and base branch are unambiguous
-- the branch is based on an acceptable current `main`
-- the PR scope matches the approved goal
 - risk class is recorded
-- the exact expected head SHA is recorded
-- an independent review covers the complete branch diff at that exact head SHA
+- the exact reviewed base SHA and reviewed head SHA are recorded
+- an independent review covers the complete branch diff for that base/head pair
 - no unresolved P0 finding remains; P0 findings cannot be accepted or waived
-- no unresolved P1-P2 finding remains unless explicitly accepted by the user after seeing the current-head review result
-- the applicable human approval gate is satisfied for the exact expected head SHA
-- required PR CI succeeded for the exact expected head SHA
+- no unresolved P1-P2 finding remains unless explicitly accepted by the user after seeing the current review result
+- the applicable human approval gate is satisfied for the exact reviewed base/head pair
+- required PR CI succeeded for the exact CI-tested base SHA, head SHA, and PR merge commit SHA
+- current base SHA equals the reviewed and CI-tested base SHA
+- current head SHA equals the reviewed, approved, and CI-tested head SHA
+- the current PR merge commit SHA equals the CI-tested PR merge commit SHA
 - no secret value appears in the diff, PR, logs, or instructions
 
-For medium/high-risk changes, absence of explicit post-review merge approval for the exact current head is a blocker. Stop at a ready PR and report what approval is missing.
+For medium/high-risk changes, absence of explicit post-review merge approval for the exact reviewed base/head pair is a blocker. Stop at a ready PR and report what approval is missing.
 
 Never use this skill to create paid services, accept billing or terms, rotate/reveal secrets, change DNS or permissions, deploy a Worker, or edit GitHub/Cloudflare production settings without an explicit action-specific instruction.
 
 ## Procedure
 
-1. Record starting `main` SHA, PR number, base, head branch, expected head SHA, reviewed head SHA, and approval head SHA.
+1. Record PR number, base branch, current base SHA, head branch, current head SHA, reviewed base/head SHA, approval base/head SHA, CI-tested base/head SHA, and CI-tested PR merge commit SHA.
 2. Inspect changed files and confirm there are no unrelated or generated artifacts.
-3. Verify the PR description contains goal, scope, risk, validation, independent review, manual checks, rollback, and user actions.
+3. Verify the PR description contains goal, scope, risk, validation, integration-state evidence, independent review, manual checks, rollback, and user actions.
 4. Confirm local validation evidence. Run applicable commands when an execution environment is available:
 
 ```bash
@@ -51,20 +52,26 @@ The merge-base range command validates committed PR changes. The argument-free c
 
 Do not mark an unavailable command as passed.
 
-5. Confirm required PR CI is successful for the expected head SHA. Queued, in-progress, skipped, cancelled, stale, or infrastructure-failed states are not success.
-6. If CI fails because of the change, do not edit within the shipping stage. Stop and return to implementation. Any fix creates a new head that requires full branch review, new CI, and fresh medium/high-risk merge approval.
-7. Immediately before merge, re-check base, current head SHA, expected/reviewed/approved head SHA equality, mergeability, findings, approval, required CI, and current `main`.
-8. Squash merge using the expected head SHA. Never force-push `main`.
-9. Record Squash SHA and verify the latest `main` is the expected result.
-10. For every merge to `main`, wait for the Pages workflow associated with the merged SHA. Require both build and deploy success even when the change affects only documentation or agent configuration.
-11. Verify `https://takami0928.github.io/otsukai/` when tooling permits. Perform a behavior-specific smoke path only when the change affects deployed behavior. Distinguish HTTP availability from full physical-device or LINE validation.
-12. Delete the merged branch when safe and no active worktree depends on it.
+5. Read the successful PR CI context and record its tested base SHA, tested head SHA, and tested PR merge commit SHA. Queued, in-progress, skipped, cancelled, stale, or infrastructure-failed states are not success.
+6. Immediately before merge, fetch current PR/base metadata and compare all reviewed, approved, CI-tested, and current SHAs.
+7. If current `main` differs from the reviewed or CI-tested base SHA, do not merge. Update the PR branch with the latest `main` using a non-force path, then return to complete-branch independent review, new CI, and fresh medium/high-risk approval.
+8. If CI fails because of the change, do not edit within the shipping stage. Stop and return to implementation. Any fix creates a new head/integration state that requires full review, new CI, and fresh medium/high-risk approval.
+9. Squash merge using the expected head SHA only after the current PR merge commit still equals the CI-tested merge commit. Never force-push `main`.
+10. Record the Squash SHA and verify the latest `main` contains the merge result.
+11. Verify Pages delivery:
+    - Prefer build and deploy success for the exact Squash SHA.
+    - If that run was cancelled or superseded because a newer `main` push started, do not deploy the older SHA.
+    - Instead require build and deploy success for the latest current-main SHA and verify the Squash SHA is an ancestor of that deployed SHA.
+    - A cancelled, skipped, failed, or merely superseded run is not success without the successful containing deployment.
+12. Verify `https://takami0928.github.io/otsukai/` when tooling permits. Perform a behavior-specific smoke path only when the change affects deployed behavior. Distinguish HTTP availability from full physical-device or LINE validation.
+13. Delete the merged branch when safe and no active worktree depends on it.
 
 ## Failure handling
 
 - Do not repeatedly rerun a code-caused failure without changing anything.
 - Retry a failed job once only when evidence indicates a transient infrastructure failure.
-- Stop rather than guessing when main moved, the head SHA changed, review evidence is stale, approval is missing, required CI does not cover the current head, or production configuration is required.
+- Stop rather than guessing when the base or head moved, the current PR merge commit differs from the CI-tested merge commit, review evidence is stale, approval is missing, required CI does not cover the current integration state, or production configuration is required.
+- Keep the Pages workflow latest-only; do not redeploy an older SHA after a newer `main` SHA may already be in production.
 - Report partial completion accurately; never convert an unverified deployment into success.
 
 ## Output
@@ -72,15 +79,19 @@ Do not mark an unavailable command as passed.
 Report:
 
 - starting and final `main` SHA
-- branch, PR, expected/final head SHA
-- reviewed head SHA and approval head SHA
+- branch and PR
+- reviewed base/head SHA
+- approval base/head SHA
+- CI-tested base/head/PR-merge SHA
+- final head SHA and current PR merge commit before merge
 - risk and approval evidence
 - changed behavior and preserved invariants
 - local validation commands/results
 - independent-review result and fixes
-- CI workflow run/result for the merged head
+- CI workflow run/result for the tested integration state
 - Squash SHA
-- Pages workflow run/result for the merge SHA
+- Pages workflow run/result and deployed main SHA
+- proof that the deployed SHA equals or contains the Squash SHA
 - public URL and smoke result
 - branch cleanup
 - user actions and unverified physical-device/external checks
