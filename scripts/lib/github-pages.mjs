@@ -80,6 +80,61 @@ export function createGitHubPagesClient({
     return user.login
   }
 
+  async function verifyDeploymentRefAllowed(ref) {
+    const environment = await captureJson([
+      'api',
+      `repos/${repository}/environments/github-pages`,
+    ])
+    const policy = environment?.deployment_branch_policy
+    if (!policy || typeof policy !== 'object') {
+      throw new GitHubPagesError(
+        'GitHub Pages deployment branch policy is unavailable.',
+        'DEPLOYMENT_POLICY_UNAVAILABLE',
+      )
+    }
+    if (policy.custom_branch_policies === true) {
+      const response = await captureJson([
+        'api',
+        `repos/${repository}/environments/github-pages/deployment-branch-policies`,
+        '--paginate',
+        '--slurp',
+      ])
+      const policies = Array.isArray(response)
+        ? response.flatMap((page) =>
+            Array.isArray(page?.branch_policies)
+              ? page.branch_policies
+              : [],
+          )
+        : Array.isArray(response?.branch_policies)
+          ? response.branch_policies
+          : []
+      if (
+        !policies.some(
+          (candidate) =>
+            candidate?.type === 'branch' && candidate?.name === ref,
+        )
+      ) {
+        throw new GitHubPagesError(
+          `The ref is not allowed to deploy to GitHub Pages: ${ref}`,
+          'DEPLOYMENT_REF_NOT_ALLOWED',
+        )
+      }
+      return
+    }
+    if (policy.protected_branches === true) {
+      const branch = await captureJson([
+        'api',
+        `repos/${repository}/branches/${encodeURIComponent(ref)}`,
+      ])
+      if (branch?.protected !== true) {
+        throw new GitHubPagesError(
+          `The ref is not an allowed protected branch: ${ref}`,
+          'DEPLOYMENT_REF_NOT_ALLOWED',
+        )
+      }
+    }
+  }
+
   async function dispatch({ ref, mode, sessionId }) {
     const result = await runCaptured(
       ghCommand,
@@ -243,7 +298,7 @@ export function createGitHubPagesClient({
       try {
         return validateDeploymentManifest(
           await fetchManifest(expected.sessionId),
-          expected,
+          { ...expected, now: now() },
         )
       } catch (error) {
         lastError = error
@@ -259,6 +314,7 @@ export function createGitHubPagesClient({
 
   return {
     getAuthenticatedActor,
+    verifyDeploymentRefAllowed,
     dispatch,
     listWorkflowRuns,
     waitForRun,
@@ -282,6 +338,12 @@ export function validateDeploymentManifest(manifest, expected) {
     'builtAt',
     'expiresAt',
   ])
+  const builtAt = Date.parse(manifest?.builtAt)
+  const expiresAt = Date.parse(manifest?.expiresAt)
+  const manualDuration =
+    Number.isNaN(builtAt) || Number.isNaN(expiresAt)
+      ? Number.NaN
+      : expiresAt - builtAt
   if (
     !manifest ||
     typeof manifest !== 'object' ||
@@ -296,10 +358,14 @@ export function validateDeploymentManifest(manifest, expected) {
     manifest.endpointConfigured !== true ||
     manifest.turnstileSiteKeyConfigured !== true ||
     typeof manifest.builtAt !== 'string' ||
-    Number.isNaN(Date.parse(manifest.builtAt)) ||
+    Number.isNaN(builtAt) ||
     (expected.mode === 'manual-on' &&
       (typeof manifest.expiresAt !== 'string' ||
-        Number.isNaN(Date.parse(manifest.expiresAt))))
+        Number.isNaN(expiresAt) ||
+        manualDuration < 30 * 60 * 1000 ||
+        manualDuration > 60 * 60 * 1000 ||
+        (typeof expected.now === 'number' &&
+          expiresAt <= expected.now)))
   ) {
     throw new GitHubPagesError(
       'Deployment manifest does not match the requested session.',

@@ -84,6 +84,69 @@ describe('selectManualWorkflowRun', () => {
 })
 
 describe('GitHub Pages client', () => {
+  it('accepts only an exact custom deployment branch policy', async () => {
+    const responses = [
+      {
+        deployment_branch_policy: {
+          protected_branches: false,
+          custom_branch_policies: true,
+        },
+      },
+      [
+        {
+          branch_policies: [
+            {
+              type: 'branch',
+              name: 'refactor/manual-test-orchestration',
+            },
+          ],
+        },
+      ],
+    ]
+    const client = createGitHubPagesClient({
+      repository: 'takami0928/otsukai',
+      repositoryRoot: 'C:\\repo',
+      runCaptured: async () => capturedJson(responses.shift()),
+      runInteractive: async () => 0,
+    })
+
+    await expect(
+      client.verifyDeploymentRefAllowed(
+        'refactor/manual-test-orchestration',
+      ),
+    ).resolves.toBeUndefined()
+  })
+
+  it('rejects a ref before deployment when policy does not allow it', async () => {
+    const responses = [
+      {
+        deployment_branch_policy: {
+          protected_branches: false,
+          custom_branch_policies: true,
+        },
+      },
+      [
+        {
+          branch_policies: [
+            { type: 'branch', name: 'main' },
+          ],
+        },
+      ],
+    ]
+    const client = createGitHubPagesClient({
+      repository: 'takami0928/otsukai',
+      repositoryRoot: 'C:\\repo',
+      runCaptured: async () => capturedJson(responses.shift()),
+      runInteractive: async () => 0,
+    })
+
+    await expect(
+      client.verifyDeploymentRefAllowed('feature/not-allowed'),
+    ).rejects.toMatchObject({
+      code: 'DEPLOYMENT_REF_NOT_ALLOWED',
+    })
+  })
+
   it('dispatches typed inputs and finds the matching run amid others', async () => {
     const capturedCalls = []
     let listAttempt = 0
@@ -229,6 +292,23 @@ describe('deployment manifest validation', () => {
     expect(validateDeploymentManifest(manifest(), expected)).toEqual(
       manifest(),
     )
+  })
+
+  it('rejects an expired or overlong manual-test manifest', () => {
+    expect(() =>
+      validateDeploymentManifest(manifest(), {
+        ...expected,
+        now: Date.parse('2026-07-28T00:45:00.000Z'),
+      }),
+    ).toThrow(GitHubPagesError)
+    expect(() =>
+      validateDeploymentManifest(
+        manifest({
+          expiresAt: '2026-07-28T02:00:00.000Z',
+        }),
+        expected,
+      ),
+    ).toThrow(GitHubPagesError)
   })
 
   it.each([

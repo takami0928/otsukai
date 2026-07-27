@@ -144,38 +144,21 @@ export async function main(
   let interrupted = false
   let fatalInterruption = false
   const recovery = createOneShotRecovery(orchestrator)
-  const handleInterruption = async (
-    kind,
-    { fatal = false, recoverImmediately = false } = {},
-  ) => {
+  const handleInterruption = (kind, { fatal = false } = {}) => {
     interrupted = true
     fatalInterruption ||= fatal
     console.error(`${kind} received; attempting one safe recovery.`)
     orchestrator.requestInterruption?.(kind.toLowerCase())
-    if (!recoverImmediately) {
-      return
-    }
-    try {
-      await recovery.run(kind.toLowerCase())
-    } catch (error) {
-      console.error(
-        error instanceof Error
-          ? error.message
-          : 'Signal recovery failed. Run the recover command.',
-      )
-    }
   }
   const sigintHandler = () => void handleInterruption('SIGINT')
   const sigtermHandler = () => void handleInterruption('SIGTERM')
   const uncaughtExceptionHandler = () =>
     void handleInterruption('uncaughtException', {
       fatal: true,
-      recoverImmediately: true,
     })
   const unhandledRejectionHandler = () =>
     void handleInterruption('unhandledRejection', {
       fatal: true,
-      recoverImmediately: true,
     })
   process.once('SIGINT', sigintHandler)
   process.once('SIGTERM', sigtermHandler)
@@ -213,7 +196,9 @@ export async function main(
         }
         return fatalInterruption ? 1 : 130
       }
-      if (recovery.current()) {
+      if (interrupted && !recovery.current()) {
+        await recovery.run('interrupted')
+      } else if (recovery.current()) {
         await recovery.current()
       }
       if (interrupted) {

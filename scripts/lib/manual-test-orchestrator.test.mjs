@@ -15,11 +15,15 @@ import {
 import {
   readManualTestState,
   resolveStatePaths,
+  writeManualTestStateAtomic,
 } from './manual-test-state.mjs'
 
 const sha = 'd'.repeat(40)
 const initialVersion = 'a4d01088-76b4-4176-8b08-86542147e5be'
 const diagnosticVersion = 'b4d01088-76b4-4176-8b08-86542147e5be'
+const initialDeployment = '11111111-1111-4111-8111-111111111111'
+const diagnosticDeployment = '22222222-2222-4222-8222-222222222222'
+const restoredDeployment = '33333333-3333-4333-8333-333333333333'
 const initialVariables = [
   {
     name: 'VITE_HANDWRITING_IMPORT_ENABLED',
@@ -83,6 +87,7 @@ async function createFixture() {
   let pendingRun
   const pagesClient = {
     getAuthenticatedActor: vi.fn(async () => 'kouhei'),
+    verifyDeploymentRefAllowed: vi.fn(async () => {}),
     dispatch: vi.fn(async (options) => {
       pageOperations.push(options)
       pendingRun = { id: nextRun }
@@ -115,7 +120,7 @@ async function createFixture() {
     })),
   }
   let activeWorker = {
-    deploymentId: 'initial-deployment',
+    deploymentId: initialDeployment,
     versionId: initialVersion,
     diagnosticMode: 'false',
     allowedOrigin: MANUAL_TEST_ALLOWED_ORIGIN,
@@ -125,7 +130,7 @@ async function createFixture() {
     verifyPreflightResources: vi.fn(async () => {}),
     deployDiagnosticsEnabled: vi.fn(async () => {
       activeWorker = {
-        deploymentId: 'diagnostic-deployment',
+        deploymentId: diagnosticDeployment,
         versionId: diagnosticVersion,
         diagnosticMode: 'true',
         allowedOrigin: MANUAL_TEST_ALLOWED_ORIGIN,
@@ -134,7 +139,7 @@ async function createFixture() {
     }),
     restoreExactVersion: vi.fn(async (versionId) => {
       activeWorker = {
-        deploymentId: 'restored-deployment',
+        deploymentId: restoredDeployment,
         versionId,
         diagnosticMode: 'false',
         allowedOrigin: MANUAL_TEST_ALLOWED_ORIGIN,
@@ -143,6 +148,7 @@ async function createFixture() {
     }),
   }
 
+  let recoveryAttempt = 0
   function createOrchestrator(overrides = {}) {
     return createManualTestOrchestrator({
       repositoryRoot: root,
@@ -152,6 +158,10 @@ async function createFixture() {
       runInteractive,
       now: () => Date.parse('2026-07-28T00:00:00.000Z'),
       createSessionId: () => 'session-123',
+      createAttemptId: () => {
+        recoveryAttempt += 1
+        return `attempt${String(recoveryAttempt).padStart(5, '0')}`
+      },
       logger: { error: vi.fn() },
       ...overrides,
     })
@@ -369,6 +379,30 @@ describe('manual-test orchestration', () => {
     )
   })
 
+  it('uses a new OFF attempt after a crash immediately following dispatch', async () => {
+    const fixture = await createFixture()
+    await fixture.createOrchestrator().start()
+    const { statePath } = resolveStatePaths(fixture.root)
+    const active = await readManualTestState(statePath)
+    await writeManualTestStateAtomic(statePath, {
+      ...active,
+      phase: 'stop-requested',
+      pagesOffSessionId: `${active.sessionId}-off`,
+      pagesOffRunId: null,
+      recoveryStatus: 'in-progress:stop',
+    })
+
+    const recovered = await fixture.createOrchestrator().recover()
+
+    expect(recovered.phase).toBe('complete')
+    const offOperation = fixture.pageOperations.find(
+      ({ mode }) => mode === 'manual-off',
+    )
+    expect(offOperation.sessionId).not.toBe(
+      `${active.sessionId}-off`,
+    )
+  })
+
   it('refuses a corrupt state file without changing external state', async () => {
     const fixture = await createFixture()
     const { statePath } = resolveStatePaths(fixture.root)
@@ -401,5 +435,16 @@ describe('manual-test orchestration', () => {
     expect(fixture.workerClient.restoreExactVersion).toHaveBeenCalledWith(
       initialVersion,
     )
+
+    const recovered = await fixture.createOrchestrator().recover()
+    expect(recovered).toMatchObject({
+      phase: 'complete',
+      recoveryStatus: 'recovered',
+    })
+    const offSessions = fixture.pageOperations
+      .filter(({ mode }) => mode === 'manual-off')
+      .map(({ sessionId }) => sessionId)
+    expect(offSessions).toHaveLength(2)
+    expect(new Set(offSessions).size).toBe(2)
   })
 })

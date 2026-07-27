@@ -67,6 +67,11 @@ const INITIAL_VARIABLE_KEYS = new Set([
   'fingerprint',
 ])
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
+const SAFE_REF_PATTERN = /^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]{1,128}$/u
+const ACTOR_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u
+
 export class ManualTestStateError extends Error {
   constructor(message, code) {
     super(message)
@@ -86,6 +91,14 @@ function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function isOptionalUuid(value) {
+  return value === undefined || value === null || UUID_PATTERN.test(value)
+}
+
+function isOptionalRunId(value) {
+  return value === undefined || value === null || /^[1-9][0-9]*$/u.test(value)
+}
+
 export function validateManualTestState(value) {
   const initialVariables = value?.initialRepositoryVariables
   if (
@@ -100,8 +113,9 @@ export function validateManualTestState(value) {
     Number.isNaN(Date.parse(value.startTime)) ||
     typeof value.expirationTime !== 'string' ||
     Number.isNaN(Date.parse(value.expirationTime)) ||
-    typeof value.repository !== 'string' ||
+    value.repository !== 'takami0928/otsukai' ||
     typeof value.ref !== 'string' ||
+    !SAFE_REF_PATTERN.test(value.ref) ||
     typeof value.mainSha !== 'string' ||
     !/^[0-9a-f]{40}$/u.test(value.mainSha) ||
     !isRecord(initialVariables) ||
@@ -114,9 +128,27 @@ export function validateManualTestState(value) {
     initialVariables.turnstileSiteKeyConfigured !== true ||
     typeof initialVariables.fingerprint !== 'string' ||
     !/^[0-9a-f]{64}$/u.test(initialVariables.fingerprint) ||
+    typeof value.actor !== 'string' ||
+    !ACTOR_PATTERN.test(value.actor) ||
     typeof value.initialWorkerDeploymentId !== 'string' ||
+    !UUID_PATTERN.test(value.initialWorkerDeploymentId) ||
     typeof value.initialWorkerVersionId !== 'string' ||
-    typeof value.recoveryStatus !== 'string'
+    !UUID_PATTERN.test(value.initialWorkerVersionId) ||
+    !isOptionalUuid(value.diagnosticWorkerDeploymentId) ||
+    !isOptionalUuid(value.diagnosticWorkerVersionId) ||
+    !isOptionalUuid(value.restoredWorkerDeploymentId) ||
+    !isOptionalUuid(value.restoredWorkerVersionId) ||
+    !isOptionalRunId(value.pagesOnRunId) ||
+    !isOptionalRunId(value.pagesOffRunId) ||
+    (value.pagesOffSessionId !== undefined &&
+      (typeof value.pagesOffSessionId !== 'string' ||
+        !/^[A-Za-z0-9-]{1,64}$/u.test(value.pagesOffSessionId))) ||
+    typeof value.manualURL !== 'string' ||
+    typeof value.recoveryStatus !== 'string' ||
+    !/^[A-Za-z0-9:-]{1,96}$/u.test(value.recoveryStatus) ||
+    (value.completedAt !== undefined &&
+      (typeof value.completedAt !== 'string' ||
+        Number.isNaN(Date.parse(value.completedAt))))
   ) {
     throw new ManualTestStateError(
       'The manual-test state file is invalid.',
@@ -132,9 +164,27 @@ export async function readManualTestState(statePath) {
     serialized = await readFile(statePath, 'utf8')
   } catch (error) {
     if (error?.code === 'ENOENT') {
-      return undefined
+      try {
+        serialized = await readFile(`${statePath}.backup`, 'utf8')
+        await rename(`${statePath}.backup`, statePath).catch(
+          (restoreError) => {
+            if (
+              restoreError?.code !== 'EEXIST' &&
+              restoreError?.code !== 'ENOTEMPTY'
+            ) {
+              throw restoreError
+            }
+          },
+        )
+      } catch (backupError) {
+        if (backupError?.code === 'ENOENT') {
+          return undefined
+        }
+        throw backupError
+      }
+    } else {
+      throw error
     }
-    throw error
   }
   try {
     return validateManualTestState(JSON.parse(serialized))
@@ -166,7 +216,7 @@ export async function writeManualTestStateAtomic(statePath, state) {
   await mkdir(dirname(statePath), { recursive: true })
   const suffix = `${process.pid}-${Date.now()}`
   const temporaryPath = `${statePath}.${suffix}.tmp`
-  const backupPath = `${statePath}.${suffix}.bak`
+  const backupPath = `${statePath}.backup`
   const serialized = `${JSON.stringify(state, null, 2)}\n`
   await writeFile(temporaryPath, serialized, {
     encoding: 'utf8',
@@ -189,6 +239,7 @@ export async function writeManualTestStateAtomic(statePath, state) {
 
   let movedExistingState = false
   try {
+    await rm(backupPath, { force: true })
     if (await pathExists(statePath)) {
       await rename(statePath, backupPath)
       movedExistingState = true

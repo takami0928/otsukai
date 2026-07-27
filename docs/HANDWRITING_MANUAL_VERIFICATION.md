@@ -23,6 +23,7 @@
 - `ALLOWED_ORIGINS`が`https://takami0928.github.io`だけ
 - Turnstile hostnameが`takami0928.github.io`だけ
 - 取り込み機能と診断機能がOFF
+- 実行対象refがGitHub Pages環境のdeployment branch policyで許可済み
 
 Secretの実値を表示・読み取りしないでください。
 

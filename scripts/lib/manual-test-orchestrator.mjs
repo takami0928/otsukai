@@ -104,6 +104,17 @@ function offSessionId(sessionId) {
   return `${sessionId}-off`
 }
 
+function nextOffSessionId(sessionId, createId) {
+  const suffix = createId().replaceAll('-', '').slice(0, 12)
+  if (!/^[A-Za-z0-9]{12}$/u.test(suffix)) {
+    throw new ManualTestOrchestrationError(
+      'Could not create a safe recovery attempt ID.',
+      'INVALID_RECOVERY_ATTEMPT_ID',
+    )
+  }
+  return `${sessionId}-off-${suffix}`
+}
+
 export function createManualTestOrchestrator({
   repositoryRoot,
   workerConfig = join(repositoryRoot, 'worker', 'wrangler.toml'),
@@ -114,6 +125,7 @@ export function createManualTestOrchestrator({
   logger = console,
   now = Date.now,
   createSessionId = randomUUID,
+  createAttemptId = randomUUID,
   readState = readManualTestState,
   writeState = writeManualTestStateAtomic,
   acquireLock = acquireManualTestLock,
@@ -275,6 +287,7 @@ export function createManualTestOrchestrator({
     }
     await workerClient.verifyPreflightResources()
     const actor = await pagesClient.getAuthenticatedActor()
+    await pagesClient.verifyDeploymentRefAllowed(ref)
 
     return {
       ref,
@@ -303,14 +316,24 @@ export function createManualTestOrchestrator({
   ) {
     let state = startingState
     const failures = []
-    const offId = state.pagesOffSessionId || offSessionId(state.sessionId)
+    const retryingOffDeployment = Boolean(
+      state.pagesOffRunId ||
+        state.phase === 'stop-requested' ||
+        state.phase === 'pages-off-dispatched' ||
+        state.phase === 'recovery-required',
+    )
+    const offId = retryingOffDeployment
+      ? nextOffSessionId(state.sessionId, createAttemptId)
+      : state.pagesOffSessionId || offSessionId(state.sessionId)
     state = await persist(state, {
       phase: 'stop-requested',
       pagesOffSessionId: offId,
+      pagesOffRunId: null,
       recoveryStatus: `in-progress:${reason}`,
     })
 
     try {
+      await pagesClient.verifyDeploymentRefAllowed(state.ref)
       const offRun = {
         ref: state.ref,
         mode: 'manual-off',
@@ -394,14 +417,13 @@ export function createManualTestOrchestrator({
   }
 
   async function recoverActiveSession(reason = 'interrupted') {
-    if (!activeState) {
-      return undefined
-    }
     if (!activeRecoveryPromise) {
-      activeRecoveryPromise = recoverState(activeState, {
-        recoveryStatus: `recovered-after-${reason}`,
-        reason,
-      })
+      activeRecoveryPromise = activeState
+        ? recoverState(activeState, {
+            recoveryStatus: `recovered-after-${reason}`,
+            reason,
+          })
+        : stop({ recover: true })
     }
     return activeRecoveryPromise
   }
@@ -506,6 +528,7 @@ export function createManualTestOrchestrator({
         state = await persist(state, {
           phase: 'active',
         })
+        assertNotInterrupted()
         activeState = undefined
         return state
       } catch (error) {

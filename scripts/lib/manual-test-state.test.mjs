@@ -34,6 +34,7 @@ function validState(overrides = {}) {
     repository: 'takami0928/otsukai',
     ref: 'main',
     mainSha: 'a'.repeat(40),
+    actor: 'takami0928',
     initialRepositoryVariables: {
       importEnabled: 'false',
       diagnosticsEnabled: 'false',
@@ -41,8 +42,12 @@ function validState(overrides = {}) {
       turnstileSiteKeyConfigured: true,
       fingerprint: 'f'.repeat(64),
     },
-    initialWorkerDeploymentId: 'deployment-id',
-    initialWorkerVersionId: 'version-id',
+    initialWorkerDeploymentId:
+      '11111111-1111-4111-8111-111111111111',
+    initialWorkerVersionId:
+      '22222222-2222-4222-8222-222222222222',
+    manualURL:
+      'https://takami0928.github.io/otsukai/?handwritingDiagnostics=1&manualTestSessionId=session-1#/create',
     recoveryStatus: 'not-required',
     ...overrides,
   }
@@ -96,6 +101,25 @@ describe('manual-test state', () => {
         validState({ sourceText: 'forbidden' }),
       ),
     ).rejects.toBeInstanceOf(ManualTestStateError)
+  })
+
+  it('reads the recoverable backup if a Windows fallback was interrupted', async () => {
+    const root = await temporaryRepository()
+    const { statePath } = resolveStatePaths(root)
+    const { mkdir } = await import('node:fs/promises')
+    await mkdir(join(root, '.manual-test'), { recursive: true })
+    await writeFile(
+      `${statePath}.backup`,
+      JSON.stringify(validState({ phase: 'recovery-required' })),
+      'utf8',
+    )
+
+    await expect(readManualTestState(statePath)).resolves.toMatchObject({
+      phase: 'recovery-required',
+    })
+    expect(JSON.parse(await readFile(statePath, 'utf8'))).toMatchObject({
+      phase: 'recovery-required',
+    })
   })
 
   it('prevents concurrent use and releases the lock idempotently', async () => {
