@@ -5,7 +5,7 @@
 Turn Codex from a single implementing agent into a controlled delivery system:
 
 ```text
-brief -> plan -> implement -> independent review -> human approval gate -> CI -> merge -> deploy verification
+brief -> plan -> implement -> independent review -> PR CI -> human approval gate -> current-head CI recheck -> merge -> Pages verification
 ```
 
 The purpose is not to maximize the number of simultaneous agents. It is to keep the main thread focused on requirements and decisions while assigning bounded exploration and review work to read-only agents.
@@ -60,8 +60,8 @@ Gate:
 - written plan before implementation
 - dedicated branch/worktree
 - independent read-only review after implementation
-- ready PR with CI evidence
-- explicit human merge approval after review results are available
+- ready PR with successful CI evidence for the reviewed head SHA
+- explicit human merge approval after the current-head review result and CI evidence are available
 
 ### High risk
 
@@ -106,6 +106,8 @@ For a complex or multi-phase change, create a tracked plan from `docs/EXECUTION_
 - Run focused tests during iteration.
 - Update product/operation documentation in the same PR when behavior or configuration changes.
 - Record real blockers rather than weakening validation.
+- Never pass validation by skipping, narrowing, deleting, or broadly snapshot-updating relevant tests.
+- Preserve DOM order, CSS classes, focus behavior, ARIA attributes, roles, and keyboard behavior during refactoring unless the approved goal explicitly changes them.
 
 Recommended model posture:
 
@@ -122,13 +124,14 @@ The reviewer must:
 
 - be a separate read-only agent or detached `/review` session
 - compare the complete branch against `main`, not only the last turn
+- identify and record the exact reviewed head SHA
 - read the task goal and applicable invariants
 - prioritize correctness, compatibility, security/privacy, state transitions, malformed inputs, race/double-execution risks, and missing tests
 - provide file/symbol evidence and reproduction logic where possible
 - avoid style-only comments unless they conceal a defect
 - return `no findings` explicitly when no actionable issue is found
 
-For medium/high-risk changes, the implementing agent may address findings, but must not be the only final reviewer. Re-run the independent review after material fixes.
+Any change to the PR head after review, including a small CI fix or documentation correction, invalidates the prior final review. Review the new complete branch diff again; do not classify a head-changing fix as too small to review.
 
 Finding severity:
 
@@ -137,15 +140,17 @@ Finding severity:
 - P2: credible edge-case defect or material test gap
 - P3: non-blocking maintainability/documentation concern
 
-P0-P2 must be resolved or explicitly accepted by the user before merge.
+P0 must be resolved and independently re-reviewed before merge. P1-P2 must be resolved or explicitly accepted by the user after the current-head review result is presented.
 
 ## 6. Human approval gate
 
 Approval means a specific authorization for the next risky action, not general enthusiasm for the project.
 
 - Low risk: an explicit request such as “implement, merge, and deploy” can serve as advance approval after clean review and CI.
-- Medium risk: present the PR, risk summary, independent-review result, tests, and remaining manual checks; obtain merge approval.
+- Medium risk: present the PR, exact head SHA, risk summary, current-head independent-review result, CI evidence, and remaining manual checks; obtain merge approval for that head.
 - High risk: obtain separate approval before production mutation, and identify exactly what will change, where, and how to roll it back.
+
+For medium/high-risk work, any head change invalidates prior merge approval. After the new complete-branch review and successful CI, present the new head SHA and results and obtain fresh approval.
 
 The following are always user-owned unless explicitly delegated with the required access and approval:
 
@@ -157,7 +162,7 @@ The following are always user-owned unless explicitly delegated with the require
 
 ## 7. CI and release
 
-Use `$otsukai-ship` only after the relevant approval gate is satisfied.
+Use `$otsukai-ship` only after the relevant approval gate is satisfied for the exact current head SHA.
 
 Required PR workflow currently runs:
 
@@ -170,18 +175,27 @@ npm run test:coverage
 npm run build
 ```
 
-Also run `git diff --check` locally when possible.
+Also validate the committed branch range and working tree when possible:
+
+```bash
+git fetch origin main
+git diff --check origin/main...HEAD
+git diff --check
+```
+
+The release skill is a validation-and-delivery stage, not an implementation stage. If PR CI fails because of the change, stop and return to implementation. After any fix changes the head SHA, run the full branch review again, obtain successful CI for that head, and obtain fresh medium/high-risk merge approval before resuming release.
 
 Release sequence:
 
-1. verify PR base/head, scope, review findings, and approval
-2. wait for required CI success
-3. Squash merge with expected head SHA
-4. verify latest `main` equals the merge result
-5. verify the Pages build/deploy for that SHA when deployed code changed
-6. check the public URL and the smallest relevant smoke path
-7. delete the merged branch when safe
-8. report evidence and unverified items
+1. verify PR base/head, scope, exact reviewed head SHA, findings, and approval
+2. confirm required PR CI success for the current head SHA
+3. immediately re-check that the PR head still equals the reviewed and approved SHA
+4. Squash merge with the expected head SHA
+5. verify latest `main` equals the merge result
+6. for every merge to `main`, wait for the Pages workflow associated with the merge SHA and require both build and deploy success
+7. check the public URL; perform the smallest relevant behavior smoke when the change affects deployed behavior
+8. delete the merged branch when safe
+9. report evidence and unverified items
 
 Queued, skipped, cancelled, stale, or infrastructure-failed checks are not success.
 
@@ -202,13 +216,13 @@ Implement the approved plan on a dedicated worktree. Run applicable tests, then 
 ### Review current branch
 
 ```text
-Use $otsukai-review-change on this branch against main. Use independent read-only agents, wait for all results, and return prioritized findings with file evidence.
+Use $otsukai-review-change on this branch against main. Use independent read-only agents, wait for all results, record the reviewed head SHA, and return prioritized findings with file evidence.
 ```
 
 ### Approved release
 
 ```text
-Merge is approved for PR <number>. Use $otsukai-ship, confirm the expected head SHA and clean review, wait for CI, Squash merge, verify Pages and the public smoke path, then report evidence.
+Merge is approved for PR <number> at head <SHA>. Use $otsukai-ship, confirm that independent review and CI both cover that exact head, Squash merge, verify the merge-SHA Pages run and public availability, then report evidence.
 ```
 
 ## 9. Metrics to observe
