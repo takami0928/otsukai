@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param()
+param(
+    [string]$Ref = 'main'
+)
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -9,5 +11,5 @@ if (-not (Get-Command 'node' -ErrorAction SilentlyContinue)) {
     throw 'Node.js is required.'
 }
 
-& node $CliPath 'stop'
+& node $CliPath 'stop' '--ref' $Ref
 exit $LASTEXITCODE

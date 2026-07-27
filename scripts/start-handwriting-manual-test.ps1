@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$PreflightOnly
+    [switch]$PreflightOnly,
+    [string]$Ref = 'main'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,5 +13,5 @@ if (-not (Get-Command 'node' -ErrorAction SilentlyContinue)) {
 }
 
 $commandName = if ($PreflightOnly) { 'preflight' } else { 'start' }
-& node $CliPath $commandName
+& node $CliPath $commandName '--ref' $Ref
 exit $LASTEXITCODE

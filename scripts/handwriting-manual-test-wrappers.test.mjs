@@ -74,7 +74,9 @@ describe('manual-test PowerShell wrappers', () => {
     expect(script).toContain(
       "$commandName = if ($PreflightOnly) { 'preflight' } else { 'start' }",
     )
-    expect(script).toContain('& node $CliPath $commandName')
+    expect(script).toContain(
+      "& node $CliPath $commandName '--ref' $Ref",
+    )
     expect(script).toContain('exit $LASTEXITCODE')
     expect(script).not.toMatch(
       /ConvertFrom-Json|wrangler|gh\s|Invoke-WebRequest|Repository Variable/u,
@@ -87,7 +89,7 @@ describe('manual-test PowerShell wrappers', () => {
       'utf8',
     )
 
-    expect(script).toContain("& node $CliPath 'stop'")
+    expect(script).toContain("& node $CliPath 'stop' '--ref' $Ref")
     expect(script).toContain('exit $LASTEXITCODE')
     expect(script).not.toMatch(
       /ConvertFrom-Json|wrangler|gh\s|Invoke-WebRequest|Repository Variable/u,
@@ -108,6 +110,8 @@ describe('manual-test PowerShell wrappers', () => {
             '-File',
             join(scriptsDirectory, 'start-handwriting-manual-test.ps1'),
             '-PreflightOnly',
+            '-Ref',
+            'refactor/manual-test-orchestration',
           ],
           { env: environment },
         )
@@ -119,17 +123,19 @@ describe('manual-test PowerShell wrappers', () => {
             'Bypass',
             '-File',
             join(scriptsDirectory, 'stop-handwriting-manual-test.ps1'),
+            '-Ref',
+            'refactor/manual-test-orchestration',
           ],
           { env: environment },
         )
 
         expect(start).toMatchObject({ exitCode: 0, stderr: '' })
         expect(start.stdout).toMatch(
-          /handwriting-manual-test\.mjs"? preflight/u,
+          /handwriting-manual-test\.mjs"? preflight --ref refactor\/manual-test-orchestration/u,
         )
         expect(stop).toMatchObject({ exitCode: 0, stderr: '' })
         expect(stop.stdout).toMatch(
-          /handwriting-manual-test\.mjs"? stop/u,
+          /handwriting-manual-test\.mjs"? stop --ref refactor\/manual-test-orchestration/u,
         )
       },
     )
