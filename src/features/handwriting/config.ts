@@ -9,6 +9,8 @@ type HandwritingEnvironment = {
   VITE_HANDWRITING_IMPORT_ENABLED?: string
   VITE_HANDWRITING_DIAGNOSTICS_ENABLED?: string
   VITE_HANDWRITING_IMPORT_ENDPOINT?: string
+  VITE_HANDWRITING_MANUAL_TEST_EXPIRES_AT?: string
+  VITE_HANDWRITING_MANUAL_TEST_SESSION_ID?: string
   VITE_TURNSTILE_SITE_KEY?: string
 }
 
@@ -28,6 +30,7 @@ function isAllowedEndpoint(value: string): boolean {
 export function resolveHandwritingImportConfig(
   environment: HandwritingEnvironment,
   locationHref = 'https://example.invalid/',
+  now = Date.now(),
 ): HandwritingImportConfig {
   const endpoint =
     environment.VITE_HANDWRITING_IMPORT_ENDPOINT?.trim() ?? ''
@@ -40,22 +43,43 @@ export function resolveHandwritingImportConfig(
     environment.VITE_HANDWRITING_DIAGNOSTICS_ENABLED
       ?.trim()
       .toLowerCase() === 'true'
+  const manualTestSessionId =
+    environment.VITE_HANDWRITING_MANUAL_TEST_SESSION_ID?.trim() ?? ''
+  const manualTestExpiresAt =
+    environment.VITE_HANDWRITING_MANUAL_TEST_EXPIRES_AT?.trim() ?? ''
+  const isManualTestBuild = Boolean(
+    manualTestSessionId || manualTestExpiresAt,
+  )
   let diagnosticsQueryEnabled = false
+  let manualTestAccessGranted = !isManualTestBuild
   try {
+    const url = new URL(locationHref)
     diagnosticsQueryEnabled =
-      new URL(locationHref).searchParams.get('handwritingDiagnostics') ===
-      '1'
+      url.searchParams.get('handwritingDiagnostics') === '1'
+    const expiresAt = Date.parse(manualTestExpiresAt)
+    manualTestAccessGranted =
+      !isManualTestBuild ||
+      (diagnosticsQueryEnabled &&
+        Boolean(manualTestSessionId) &&
+        url.searchParams.get('manualTestSessionId') ===
+          manualTestSessionId &&
+        !Number.isNaN(expiresAt) &&
+        now < expiresAt)
   } catch {
     diagnosticsQueryEnabled = false
+    manualTestAccessGranted = !isManualTestBuild
   }
 
   return {
     enabled:
       requested &&
+      manualTestAccessGranted &&
       Boolean(turnstileSiteKey) &&
       isAllowedEndpoint(endpoint),
     diagnosticsEnabled:
-      diagnosticsRequested && diagnosticsQueryEnabled,
+      diagnosticsRequested &&
+      diagnosticsQueryEnabled &&
+      manualTestAccessGranted,
     endpoint,
     turnstileSiteKey,
   }
@@ -65,5 +89,6 @@ export function getHandwritingImportConfig(): HandwritingImportConfig {
   return resolveHandwritingImportConfig(
     import.meta.env,
     window.location.href,
+    Date.now(),
   )
 }

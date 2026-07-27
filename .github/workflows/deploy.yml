@@ -1,10 +1,31 @@
 name: Deploy to GitHub Pages
 
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch' &&
+      inputs.manual_test_mode != 'repository' &&
+      format('Deploy Pages [manual:{0}]', inputs.manual_test_session_id) ||
+      'Deploy to GitHub Pages' }}
+
 on:
   push:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      manual_test_mode:
+        description: Pages build mode
+        required: true
+        default: repository
+        type: choice
+        options:
+          - repository
+          - manual-on
+          - manual-off
+      manual_test_session_id:
+        description: Manual-test session ID (required outside repository mode)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -18,6 +39,11 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      REPOSITORY_HANDWRITING_IMPORT_ENABLED: ${{ vars.VITE_HANDWRITING_IMPORT_ENABLED }}
+      REPOSITORY_HANDWRITING_DIAGNOSTICS_ENABLED: ${{ vars.VITE_HANDWRITING_DIAGNOSTICS_ENABLED }}
+      VITE_HANDWRITING_IMPORT_ENDPOINT: ${{ vars.VITE_HANDWRITING_IMPORT_ENDPOINT }}
+      VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,14 +60,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Prepare deployment state
+        env:
+          MANUAL_TEST_MODE: >-
+            ${{ github.event_name == 'workflow_dispatch' &&
+                inputs.manual_test_mode || 'repository' }}
+          MANUAL_TEST_SESSION_ID: >-
+            ${{ github.event_name == 'workflow_dispatch' &&
+                inputs.manual_test_session_id || '' }}
+        run: node scripts/write-handwriting-deployment-state.mjs prepare
+
       - name: Build
         env:
           BASE_PATH: /otsukai/
-          VITE_HANDWRITING_IMPORT_ENABLED: ${{ vars.VITE_HANDWRITING_IMPORT_ENABLED }}
-          VITE_HANDWRITING_DIAGNOSTICS_ENABLED: ${{ vars.VITE_HANDWRITING_DIAGNOSTICS_ENABLED }}
-          VITE_HANDWRITING_IMPORT_ENDPOINT: ${{ vars.VITE_HANDWRITING_IMPORT_ENDPOINT }}
-          VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }}
         run: npm run build
+
+      - name: Write deployment state manifest
+        run: node scripts/write-handwriting-deployment-state.mjs write
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

@@ -59,30 +59,63 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 リポジトリルートの最新`main`から実行します。
 
 ```powershell
+npm run manual:handwriting:preflight
+npm run manual:handwriting:start
+```
+
+Windows PowerShellの互換ラッパーを使う場合:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\start-handwriting-manual-test.ps1 `
+  -PreflightOnly
+
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\scripts\start-handwriting-manual-test.ps1
 ```
 
-このスクリプトは事前条件を確認してから、Workerの`DIAGNOSTIC_MODE=true`をデプロイし、次のRepository Variablesを一時的に`true`へ変更し、既存の`deploy.yml`を実行します。
+PowerShellファイルはNode CLIを起動し、その終了コードを返すだけです。外部コマンドのstdout、stderr、終了コードの分離、JSON解析、Pages run特定、状態保存、復旧判断はNode側で行います。
 
-- `VITE_HANDWRITING_DIAGNOSTICS_ENABLED`
+開始処理は事前条件を確認し、最初の状態変更前に`.manual-test/handwriting-manual-session.json`を原子的に保存します。その後、Worker診断版をデプロイし、`deploy.yml`を`manual-on`モードと一意のsession IDで実行します。Repository Variablesの次の値は常に`false`のままで、一時変更しません。
+
 - `VITE_HANDWRITING_IMPORT_ENABLED`
+- `VITE_HANDWRITING_DIAGNOSTICS_ENABLED`
 
-途中で失敗した場合は、可能な範囲で両フラグとWorker診断をOFFへ戻します。開始後は、成功・失敗にかかわらず終了スクリプトが必須です。
+手動検証用のON値は、そのPages buildにだけworkflow入力から渡されます。EndpointとTurnstile Site Keyは既存Repository Variablesから参照しますが、実値はログや状態ファイルへ保存しません。
 
-Pages成功後、開始スクリプトは公開HTMLとJavaScript bundleを取得し、両フラグがONで、EndpointとTurnstile Site Keyが設定されたbundleであることを確認します。この確認が完了するまで`MANUAL TEST IS ENABLED`は表示されません。表示前に`wrangler tail`やブラウザ検証を開始しないでください。
+Pages成功後、Node CLIは公開`handwriting-deployment-state.json`を取得し、commit SHA、mode、session ID、両フラグ、EndpointとSite Keyの設定有無を厳密に照合します。minifyされたJavaScript bundleを正規表現では検査しません。この確認が完了するまで`MANUAL TEST IS ENABLED`は表示されません。表示前に`wrangler tail`やブラウザ検証を開始しないでください。
 
-手動検証URL:
+開始成功時は、実際のsession ID入りURLが表示されます。形式は次のとおりですが、山括弧を含む例を手入力せず、CLIが表示した完成済みURLを使います。
 
 ```text
-https://takami0928.github.io/otsukai/?handwritingDiagnostics=1#/create
+https://takami0928.github.io/otsukai/?handwritingDiagnostics=1&manualTestSessionId=実際のsession-id#/create
 ```
 
-診断パネルは、公開ビルド変数が`true`で、かつ`handwritingDiagnostics=1`がハッシュより前のquery parameterにある場合だけ表示されます。通常URLやハッシュ内だけのqueryでは表示されません。
+manual-on buildでも、診断パネルと手書き取り込みUIは次をすべて満たす場合だけ表示されます。
+
+- `handwritingDiagnostics=1`がハッシュより前のquery parameterにある
+- `manualTestSessionId`がそのbuildのsession IDと一致する
+- buildから45分の有効期限内である
+
+通常公開URL、異なるsession ID、期限切れURL、ハッシュ内だけのqueryでは表示されません。
 
 開始スクリプトは、デプロイした実際のWorker version IDを埋め込んだ完成済み`wrangler tail`コマンドを表示します。`MANUAL TEST IS ENABLED`が表示された後、そのコマンド全体をコピーして別ターミナルで実行してください。`<version>`や`<表示されたWorker version>`などの山括弧付き文字列をそのまま入力しないでください。
 
 Worker診断ログは1行JSONで、`requestId`、stage、所要時間、安全なstatus・件数だけを含みます。
+
+現在の安全な状態だけを確認する場合:
+
+```powershell
+npm run manual:handwriting:status
+```
+
+開始処理の中断やPC再起動後に未完了stateが残った場合:
+
+```powershell
+npm run manual:handwriting:recover
+```
+
+同時起動はlockで拒否されます。`SIGINT`、`SIGTERM`、未処理例外の後は一度だけ自動復旧を試み、完了できなければstateを`recovery-required`として残します。stateやlockを手で削除せず、`status`と`recover`を使ってください。
 
 ## テスト順序
 
@@ -143,29 +176,35 @@ Worker診断ログは1行JSONで、`requestId`、stage、所要時間、安全�
 手動検証の成否にかかわらず、必ず実行します。
 
 ```powershell
+npm run manual:handwriting:stop
+```
+
+Windows PowerShell互換ラッパー:
+
+```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\scripts\stop-handwriting-manual-test.ps1
 ```
 
-停止スクリプトは次を行います。
+停止処理は次を行います。
 
-1. `VITE_HANDWRITING_IMPORT_ENABLED=false`
-2. `VITE_HANDWRITING_DIAGNOSTICS_ENABLED=false`
-3. 既存`deploy.yml`の実行と成功待機
-4. Workerの`DIAGNOSTIC_MODE=false`で再デプロイ
-5. 公開HTMLとJavaScript bundleで両機能がOFFであることを確認
-6. EndpointとSite Key Variablesが残っていることを確認
+1. 一意のOFF session IDで`manual-off` Pagesを実行
+2. 対象runのworkflow、event、run-name、commit SHA、actorを照合
+3. OFF manifestを取得し、両機能がOFFであることを確認
+4. Wrangler `versions deploy`で開始前の正確なWorker versionへ100%のトラフィックを戻す
+5. Repository Variablesの開始前後fingerprintが完全一致することを確認
+6. stateを`complete`にし、lockを除去
 
 最終確認:
 
 - `VITE_HANDWRITING_IMPORT_ENABLED=false`
 - `VITE_HANDWRITING_DIAGNOSTICS_ENABLED=false`
 - Pages再デプロイ成功
-- Worker `DIAGNOSTIC_MODE=false`
+- Workerが開始前versionで`DIAGNOSTIC_MODE=false`
 - Endpoint Variable保持
 - Site Key Variable保持
 - Worker Secrets保持
 - Origin変更なし
 - Turnstile hostname変更なし
 
-停止処理が失敗した場合は、そのまま運用を継続せず、表示されたエラーを安全な範囲で確認してOFF復元を完了してください。
+停止処理が失敗した場合は、そのまま運用を継続せず、`npm run manual:handwriting:status`で安全なメタデータだけを確認し、`npm run manual:handwriting:recover`でOFF復元を完了してください。状態ファイルには画像、商品情報、トークン、APIキー、Secretを保存しません。
