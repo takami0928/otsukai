@@ -12,7 +12,7 @@ Before planning or editing, read only the sources relevant to the task:
 - `docs/PROJECT_MAP.md`: code ownership and high-risk invariants
 - `docs/CODEX_WORKFLOW.md`: planning, independent review, approval, and release workflow
 - `worker/README.md`: Gemini, Cloudflare Worker, Turnstile, secrets, deployment, and privacy
-- `.github/workflows/verify-pr.yml`: pull-request quality gates
+- `.github/workflows/verify-pr.yml`: pull-request quality gates and recorded base/head/merge context
 - `.github/workflows/deploy.yml`: GitHub Pages deployment
 
 `docs/refactoring-plan.md` and `docs/refactoring-runbook.md` remain historical sources for the completed refactoring program. Use them only when a task explicitly concerns that program.
@@ -72,7 +72,7 @@ There is no lint script. Do not invent one or add a dependency solely for lintin
 Classify every non-trivial change using `docs/CODEX_WORKFLOW.md`.
 
 - Low risk: the user's original instruction may count as merge approval only when it explicitly requests end-to-end delivery.
-- Medium risk: stop after current-head independent review and successful PR CI unless the user explicitly approves that reviewed head for merge.
+- Medium risk: stop after current-base/current-head independent review and successful PR CI unless the user explicitly approves that reviewed integration state for merge.
 - High risk: stop before any production mutation. Require explicit approval for each external or destructive action.
 - P0 findings must be fixed and independently re-reviewed. They cannot be waived by user risk acceptance.
 
@@ -85,9 +85,11 @@ Never autonomously create paid services, rotate or reveal secrets, change DNS, e
 - Keep one coherent change per branch and PR. Split large programs into independently releasable phases.
 - Use the pull-request template and include goal, scope, risk, changed behavior, preserved invariants, validation, independent review, manual checks, rollback, and user actions.
 - Wait for required CI to succeed; queued, cancelled, skipped, or infrastructure-failed runs are not success.
-- Bind review evidence and medium/high-risk merge approval to the exact PR head SHA. Any head change invalidates the prior review; medium/high-risk changes also require fresh merge approval after the new review result is presented.
+- Bind final review evidence to the exact reviewed base SHA and head SHA. Bind CI evidence to the exact tested base SHA, head SHA, and PR merge commit SHA.
+- Immediately before merge, require current base and head to equal the reviewed and CI-tested values, and require the current PR merge commit SHA to equal the CI-tested merge commit SHA.
+- If `main` moves, update the PR branch with the latest `main`; the resulting head/integration change requires complete re-review, new CI, and fresh medium/high-risk merge approval.
 - Use Squash merge when merge is authorized.
-- After every merge to `main`, verify the Pages workflow associated with that merge SHA reaches build and deploy success. Make the depth of public smoke testing proportional to the changed behavior.
+- After every merge to `main`, verify successful Pages deployment of either the exact merge SHA or a newer current-main SHA that contains the merge. A cancelled superseded run is not success by itself.
 - Delete merged feature branches when safe.
 
 ## Final report
@@ -98,9 +100,11 @@ Report verifiable evidence only:
 - branch and PR
 - changed files and behavior
 - commands and test results
-- independent-review head SHA, findings, and resolutions
-- approval head SHA for medium/high-risk changes
+- reviewed base/head SHA, findings, and resolutions
+- CI-tested base/head/PR-merge SHA
+- approval base/head SHA for medium/high-risk changes
 - CI and Pages run results
-- merge SHA and public URL when applicable
+- merge SHA and deployed main SHA
+- public URL when applicable
 - actions still required from the user
 - known limitations or unverified items
