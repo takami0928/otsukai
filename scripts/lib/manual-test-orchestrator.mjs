@@ -117,6 +117,7 @@ export function createManualTestOrchestrator({
   readState = readManualTestState,
   writeState = writeManualTestStateAtomic,
   acquireLock = acquireManualTestLock,
+  wranglerInvocation = { command: 'npx', argsPrefix: [] },
 }) {
   const { statePath, lockPath } = resolveStatePaths(repositoryRoot)
   let activeState
@@ -230,8 +231,8 @@ export function createManualTestOrchestrator({
     for (const [command, args] of [
       ['gh', ['auth', 'status']],
       [
-        process.platform === 'win32' ? 'npx.cmd' : 'npx',
-        ['wrangler', 'whoami'],
+        wranglerInvocation.command,
+        [...wranglerInvocation.argsPrefix, 'wrangler', 'whoami'],
       ],
     ]) {
       const exitCode = await runInteractive(command, args, {

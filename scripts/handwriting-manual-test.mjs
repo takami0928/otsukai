@@ -15,6 +15,7 @@ import {
 import {
   runCaptured,
   runInteractive,
+  resolveNpxInvocation,
 } from './lib/native-command.mjs'
 
 const scriptPath = fileURLToPath(import.meta.url)
@@ -75,6 +76,7 @@ export function createOneShotRecovery(orchestrator) {
 }
 
 export function createProductionOrchestrator() {
+  const npxInvocation = resolveNpxInvocation()
   const workerClient = createCloudflareWorkerClient({
     repositoryRoot,
     workerConfig,
@@ -83,6 +85,8 @@ export function createProductionOrchestrator() {
     expectedHostname: MANUAL_TEST_TURNSTILE_HOSTNAME,
     runCaptured,
     runInteractive,
+    npxCommand: npxInvocation.command,
+    npxArgsPrefix: npxInvocation.argsPrefix,
   })
   const pagesClient = createGitHubPagesClient({
     repository: MANUAL_TEST_REPOSITORY,
@@ -98,6 +102,7 @@ export function createProductionOrchestrator() {
     workerClient,
     runCaptured,
     runInteractive,
+    wranglerInvocation: npxInvocation,
   })
 }
 

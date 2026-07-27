@@ -3,6 +3,7 @@ import {
   NativeCommandError,
   parseJsonStdout,
   requireSuccess,
+  resolveNpxInvocation,
   runCaptured,
   runInteractive,
 } from './native-command.mjs'
@@ -103,5 +104,28 @@ describe('runInteractive', () => {
 
     expect(result).toBe(3)
     expect(Array.isArray(result)).toBe(false)
+  })
+})
+
+describe('resolveNpxInvocation', () => {
+  it('runs the Windows npx JavaScript entry point without a command shell', () => {
+    expect(
+      resolveNpxInvocation({
+        platform: 'win32',
+        execPath: 'C:\\Program Files\\nodejs\\node.exe',
+      }),
+    ).toEqual({
+      command: 'C:\\Program Files\\nodejs\\node.exe',
+      argsPrefix: [
+        'C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npx-cli.js',
+      ],
+    })
+  })
+
+  it('uses the native npx executable on non-Windows platforms', () => {
+    expect(resolveNpxInvocation({ platform: 'linux' })).toEqual({
+      command: 'npx',
+      argsPrefix: [],
+    })
   })
 })

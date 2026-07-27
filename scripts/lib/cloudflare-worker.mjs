@@ -48,12 +48,13 @@ export function createCloudflareWorkerClient({
   expectedHostname,
   runCaptured,
   runInteractive,
-  npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx',
+  npxCommand = 'npx',
+  npxArgsPrefix = [],
 }) {
   async function captureWranglerJson(args) {
     const result = await runCaptured(
       npxCommand,
-      ['wrangler', ...args],
+      [...npxArgsPrefix, 'wrangler', ...args],
       { cwd: repositoryRoot },
     )
     return parseJsonStdout(npxCommand, result)
@@ -138,6 +139,7 @@ export function createCloudflareWorkerClient({
     const exitCode = await runInteractive(
       npxCommand,
       [
+        ...npxArgsPrefix,
         'wrangler',
         'deploy',
         '--config',
@@ -179,6 +181,7 @@ export function createCloudflareWorkerClient({
     const exitCode = await runInteractive(
       npxCommand,
       [
+        ...npxArgsPrefix,
         'wrangler',
         'versions',
         'deploy',

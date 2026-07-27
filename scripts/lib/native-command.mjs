@@ -1,6 +1,22 @@
 import { spawn } from 'node:child_process'
+import { dirname, join } from 'node:path'
 
 const DEFAULT_MAX_OUTPUT_BYTES = 10 * 1024 * 1024
+
+export function resolveNpxInvocation({
+  platform = process.platform,
+  execPath = process.execPath,
+} = {}) {
+  if (platform !== 'win32') {
+    return { command: 'npx', argsPrefix: [] }
+  }
+  return {
+    command: execPath,
+    argsPrefix: [
+      join(dirname(execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js'),
+    ],
+  }
+}
 
 export class NativeCommandError extends Error {
   constructor(command, exitCode, code = 'COMMAND_FAILED') {
