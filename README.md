@@ -246,9 +246,17 @@ Geminiが一意に対応させた`matched`だけを初期選択し、複数候�
 
 フロント設定例は[`.env.example`](.env.example)、Google AI Studio、Cloudflare Worker、Turnstile、Secrets、無料枠の利用条件とUsage確認、デプロイ、障害時無効化は[`worker/README.md`](worker/README.md)を参照してください。Gemini APIキーなどのSecretは`VITE_`環境変数へ入れません。
 
-実画像を通常ブラウザで安全に切り分ける手順、段階別の判定表、テスト画像生成、診断のON/OFF復元は[`docs/HANDWRITING_MANUAL_VERIFICATION.md`](docs/HANDWRITING_MANUAL_VERIFICATION.md)にまとめています。診断は既定OFFで、ビルド変数と専用query parameterの両方が有効な場合だけ表示・保存します。
+実画像を通常ブラウザで安全に切り分ける手順、段階別の判定表、テスト画像生成、診断のON/OFF復元は[`docs/HANDWRITING_MANUAL_VERIFICATION.md`](docs/HANDWRITING_MANUAL_VERIFICATION.md)にまとめています。診断は既定OFFです。手動検証buildでも、専用query、build固有のsession ID、45分の有効期限がすべて一致する場合だけ表示・保存します。
 
-手動検証は、開始スクリプトが公開bundleのON状態を確認して`MANUAL TEST IS ENABLED`を表示するまで開始しません。Workerログは、開始成功後にスクリプトが実際のversion ID入りで表示する完成済み`wrangler tail`コマンドをコピーして開始します。`<version>`などの山括弧付きプレースホルダーをそのまま入力しないでください。
+手動検証の状態変更、Pages run特定、復旧はNode CLIが担当し、PowerShellファイルは薄い互換ラッパーです。Repository Variablesの両フラグは`false`から変更せず、workflow_dispatchの対象buildだけを一時的にONにします。公開`handwriting-deployment-state.json`がsession ID、commit SHA、設定状態まで一致した後だけ`MANUAL TEST IS ENABLED`を表示します。Workerログは、その後に表示される実version ID入りの完成済み`wrangler tail`コマンドをコピーして開始してください。
+
+```bash
+npm run manual:handwriting:preflight
+npm run manual:handwriting:start
+npm run manual:handwriting:status
+npm run manual:handwriting:stop
+npm run manual:handwriting:recover
+```
 
 ## ローカル開発
 
