@@ -19,6 +19,34 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify PR context and diff hygiene
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TESTED_MERGE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          echo "base_sha=${BASE_SHA}"
+          echo "head_sha=${HEAD_SHA}"
+          echo "tested_merge_sha=${TESTED_MERGE_SHA}"
+
+          git cat-file -e "${BASE_SHA}^{commit}"
+          git cat-file -e "${HEAD_SHA}^{commit}"
+          git diff --check "${BASE_SHA}...${HEAD_SHA}"
+          git diff --check
+
+          {
+            echo "### PR verification context"
+            echo "- Base SHA: \`${BASE_SHA}\`"
+            echo "- Head SHA: \`${HEAD_SHA}\`"
+            echo "- Tested merge commit SHA: \`${TESTED_MERGE_SHA}\`"
+            echo "- Branch-range and working-tree diff checks: passed"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Setup Node
         uses: actions/setup-node@v4
