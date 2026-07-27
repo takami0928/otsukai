@@ -248,6 +248,8 @@ Geminiが一意に対応させた`matched`だけを初期選択し、複数候�
 
 実画像を通常ブラウザで安全に切り分ける手順、段階別の判定表、テスト画像生成、診断のON/OFF復元は[`docs/HANDWRITING_MANUAL_VERIFICATION.md`](docs/HANDWRITING_MANUAL_VERIFICATION.md)にまとめています。診断は既定OFFで、ビルド変数と専用query parameterの両方が有効な場合だけ表示・保存します。
 
+手動検証は、開始スクリプトが公開bundleのON状態を確認して`MANUAL TEST IS ENABLED`を表示するまで開始しません。Workerログは、開始成功後にスクリプトが実際のversion ID入りで表示する完成済み`wrangler tail`コマンドをコピーして開始します。`<version>`などの山括弧付きプレースホルダーをそのまま入力しないでください。
+
 ## ローカル開発
 
 ```bash

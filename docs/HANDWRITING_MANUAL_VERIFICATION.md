@@ -10,7 +10,7 @@
 2. Chrome DevToolsを開きます。
 3. Networkの`Preserve log`をONにします。
 4. Consoleの`Preserve log`をONにします。
-5. 別ターミナルで、開始スクリプトが表示した`wrangler tail`コマンドを実行します。
+5. 開始スクリプトが`MANUAL TEST IS ENABLED`を表示した後、別ターミナルでスクリプトが表示した`wrangler tail`コマンドを実行します。
 6. DevTools、診断パネル、Workerログから機密内容をコピーしないでください。
 
 開始前に次を確認します。
@@ -70,6 +70,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 
 途中で失敗した場合は、可能な範囲で両フラグとWorker診断をOFFへ戻します。開始後は、成功・失敗にかかわらず終了スクリプトが必須です。
 
+Pages成功後、開始スクリプトは公開HTMLとJavaScript bundleを取得し、両フラグがONで、EndpointとTurnstile Site Keyが設定されたbundleであることを確認します。この確認が完了するまで`MANUAL TEST IS ENABLED`は表示されません。表示前に`wrangler tail`やブラウザ検証を開始しないでください。
+
 手動検証URL:
 
 ```text
@@ -78,15 +80,7 @@ https://takami0928.github.io/otsukai/?handwritingDiagnostics=1#/create
 
 診断パネルは、公開ビルド変数が`true`で、かつ`handwritingDiagnostics=1`がハッシュより前のquery parameterにある場合だけ表示されます。通常URLやハッシュ内だけのqueryでは表示されません。
 
-開始スクリプトは、デプロイしたWorker versionに限定した次の形式のコマンドを表示します。
-
-```powershell
-npx.cmd wrangler tail otsukai-handwriting-import `
-  --config worker/wrangler.toml `
-  --format pretty `
-  --method POST `
-  --version-id <表示されたWorker version>
-```
+開始スクリプトは、デプロイした実際のWorker version IDを埋め込んだ完成済み`wrangler tail`コマンドを表示します。`MANUAL TEST IS ENABLED`が表示された後、そのコマンド全体をコピーして別ターミナルで実行してください。`<version>`や`<表示されたWorker version>`などの山括弧付き文字列をそのまま入力しないでください。
 
 Worker診断ログは1行JSONで、`requestId`、stage、所要時間、安全なstatus・件数だけを含みます。
 
