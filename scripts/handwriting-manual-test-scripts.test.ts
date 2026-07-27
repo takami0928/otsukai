@@ -63,13 +63,63 @@ describe('handwriting manual-test PowerShell scripts', () => {
   it('keeps the normal enable path and the stop-script OFF path', () => {
     const startScript = readScript('start-handwriting-manual-test.ps1')
     const stopScript = readScript('stop-handwriting-manual-test.ps1')
+    const pagesScript = readScript('handwriting-manual-test-pages.ps1')
 
     expect(startScript).toContain('MANUAL TEST IS ENABLED')
     expect(startScript).toContain('Deploy-Worker -DiagnosticsEnabled $true')
+    expect(startScript).toContain(
+      '$pagesRunId = Start-PagesDeployment -Repository $Repository',
+    )
+    expect(startScript).toContain('-ExpectedEnabled $true')
     expect(stopScript).toContain(
       "Set-RepositoryVariable -Name $variableName -Value 'false'",
     )
     expect(stopScript).toContain('Deploy-WorkerDiagnosticsOff')
-    expect(stopScript).toContain('$pagesRunId = Start-PagesDeployment')
+    expect(stopScript).toContain(
+      '$pagesRunId = Start-PagesDeployment -Repository $Repository',
+    )
+    expect(stopScript).toContain('-ExpectedEnabled $false')
+    expect(startScript).toContain(
+      ". $PagesHelpers",
+    )
+    expect(stopScript).toContain(
+      ". $PagesHelpers",
+    )
+    expect(pagesScript.match(/function Start-PagesDeployment/g)).toHaveLength(1)
+  })
+
+  it('selects Pages runs without reading or parsing timestamps', () => {
+    const startScript = readScript('start-handwriting-manual-test.ps1')
+    const stopScript = readScript('stop-handwriting-manual-test.ps1')
+    const pagesScript = readScript('handwriting-manual-test-pages.ps1')
+
+    for (const script of [startScript, stopScript, pagesScript]) {
+      expect(script).not.toMatch(/createdAt|DateTimeOffset/)
+    }
+    expect(pagesScript).toContain("'--json', 'databaseId'")
+    expect(pagesScript).toContain(
+      '$ExistingRunIds -notcontains $runId',
+    )
+    expect(pagesScript).not.toContain('Sort-Object')
+  })
+
+  it('verifies the public ON bundle before announcing success', () => {
+    const script = readScript('start-handwriting-manual-test.ps1')
+    const verification = script.indexOf('-ExpectedEnabled $true')
+    const enabledMessage = script.indexOf('MANUAL TEST IS ENABLED')
+
+    expect(verification).toBeGreaterThan(-1)
+    expect(enabledMessage).toBeGreaterThan(verification)
+    expect(script).toContain('Restore-SafeState')
+    expect(script).toMatch(
+      /catch\s*\{[\s\S]*if\s*\(\$stateChanged\)[\s\S]*Restore-SafeState/,
+    )
+  })
+
+  it('prints a completed tail command with the deployed version ID', () => {
+    const script = readScript('start-handwriting-manual-test.ps1')
+
+    expect(script).toContain('--version-id $($version.version_id)')
+    expect(script).not.toMatch(/--version-id\s+</)
   })
 })

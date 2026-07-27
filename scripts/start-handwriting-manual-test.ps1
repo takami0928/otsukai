@@ -10,11 +10,13 @@ $ExpectedHostname = 'takami0928.github.io'
 $WorkerName = 'otsukai-handwriting-import'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $WorkerConfig = Join-Path $RepoRoot 'worker/wrangler.toml'
+$PagesHelpers = Join-Path $PSScriptRoot 'handwriting-manual-test-pages.ps1'
 $StopCommand =
     'powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\stop-handwriting-manual-test.ps1'
 $stateChanged = $false
 
 Set-Location $RepoRoot
+. $PagesHelpers
 
 function Invoke-Checked {
     param(
@@ -97,74 +99,9 @@ function Deploy-Worker {
     )
 }
 
-function Start-PagesDeployment {
-    $existingRunsJson = Get-CheckedOutput -Command 'gh' -Arguments @(
-        'run', 'list',
-        '--workflow', 'deploy.yml',
-        '--branch', 'main',
-        '--event', 'workflow_dispatch',
-        '--limit', '20',
-        '--repo', $Repository,
-        '--json', 'databaseId'
-    )
-    $existingRunIds = @(
-        @($existingRunsJson | ConvertFrom-Json) |
-            ForEach-Object { [string]$_.databaseId }
-    )
-    $dispatchedAt = [DateTimeOffset]::UtcNow.AddMinutes(-1)
-    Invoke-Checked -Command 'gh' -Arguments @(
-        'workflow', 'run', 'deploy.yml',
-        '--ref', 'main',
-        '--repo', $Repository
-    )
-
-    $runId = $null
-    for ($attempt = 0; $attempt -lt 30 -and -not $runId; $attempt += 1) {
-        Start-Sleep -Seconds 2
-        $runsJson = Get-CheckedOutput -Command 'gh' -Arguments @(
-            'run', 'list',
-            '--workflow', 'deploy.yml',
-            '--branch', 'main',
-            '--event', 'workflow_dispatch',
-            '--limit', '10',
-            '--repo', $Repository,
-            '--json', 'databaseId,createdAt'
-        )
-        $run = @($runsJson | ConvertFrom-Json) |
-            Where-Object {
-                $existingRunIds -notcontains [string]$_.databaseId -and
-                [DateTimeOffset]::Parse($_.createdAt) -ge $dispatchedAt
-            } |
-            Sort-Object {
-                [DateTimeOffset]::Parse($_.createdAt)
-            } -Descending |
-            Select-Object -First 1
-        if ($run) {
-            $runId = [string]$run.databaseId
-        }
-    }
-    if (-not $runId) {
-        throw 'Could not determine the dispatched GitHub Pages run ID.'
-    }
-    Invoke-Checked -Command 'gh' -Arguments @(
-        'run', 'watch', $runId,
-        '--repo', $Repository,
-        '--exit-status'
-    )
-    $runJson = Get-CheckedOutput -Command 'gh' -Arguments @(
-        'run', 'view', $runId,
-        '--repo', $Repository,
-        '--json', 'status,conclusion,url'
-    )
-    $run = $runJson | ConvertFrom-Json
-    if ($run.status -ne 'completed' -or $run.conclusion -ne 'success') {
-        throw "GitHub Pages run $runId did not succeed."
-    }
-    return $runId
-}
-
 function Restore-SafeState {
     Write-Warning 'Attempting to restore the public feature flags and Worker diagnostics to OFF.'
+    $recoveryFailures = [System.Collections.Generic.List[string]]::new()
     foreach ($variableName in @(
         'VITE_HANDWRITING_IMPORT_ENABLED',
         'VITE_HANDWRITING_DIAGNOSTICS_ENABLED'
@@ -173,25 +110,47 @@ function Restore-SafeState {
             Set-RepositoryVariable -Name $variableName -Value 'false'
         }
         catch {
-            Write-Warning (
+            $recoveryFailures.Add(
                 "Could not restore $variableName to false: " +
                 $_.Exception.Message
             )
         }
     }
+    $rollbackPagesRunId = $null
     try {
-        $null = Start-PagesDeployment
+        $rollbackPagesRunId = Start-PagesDeployment -Repository $Repository
     }
     catch {
-        Write-Warning "Pages rollback did not complete: $($_.Exception.Message)"
+        $recoveryFailures.Add(
+            "Pages rollback did not complete: $($_.Exception.Message)"
+        )
     }
     try {
         Deploy-Worker -DiagnosticsEnabled $false
     }
     catch {
-        Write-Warning "Worker diagnostic rollback did not complete: $($_.Exception.Message)"
+        $recoveryFailures.Add(
+            'Worker diagnostic rollback did not complete: ' +
+            $_.Exception.Message
+        )
     }
-    Write-Warning "Run this recovery command if needed: $StopCommand"
+    if ($rollbackPagesRunId) {
+        try {
+            $null = Confirm-PublicHandwritingFlags `
+                -PagesRunId $rollbackPagesRunId `
+                -ExpectedEnabled $false
+        }
+        catch {
+            $recoveryFailures.Add(
+                "Public OFF verification failed: $($_.Exception.Message)"
+            )
+        }
+    }
+    if ($recoveryFailures.Count -gt 0) {
+        $recoveryFailures | ForEach-Object { Write-Warning $_ }
+        Write-Warning 'Automatic recovery did not complete every required step.'
+        Write-Warning "Manual recovery command: $StopCommand"
+    }
 }
 
 try {
@@ -365,18 +324,27 @@ try {
     Set-RepositoryVariable `
         -Name 'VITE_HANDWRITING_IMPORT_ENABLED' `
         -Value 'true'
-    $pagesRunId = Start-PagesDeployment
+    $pagesRunId = Start-PagesDeployment -Repository $Repository
+    $assetPath = Confirm-PublicHandwritingFlags `
+        -PagesRunId $pagesRunId `
+        -ExpectedEnabled $true
 
     $manualUrl =
         'https://takami0928.github.io/otsukai/?handwritingDiagnostics=1#/create'
-    $tailCommand =
-        "npx.cmd wrangler tail $WorkerName --config worker/wrangler.toml --format pretty --method POST --version-id $($version.version_id)"
+    $tailCommand = @(
+        "npx.cmd wrangler tail $WorkerName ``"
+        '  --config worker/wrangler.toml `'
+        '  --format pretty `'
+        '  --method POST `'
+        "  --version-id $($version.version_id)"
+    ) -join [Environment]::NewLine
 
     Write-Host ''
     Write-Host 'MANUAL TEST IS ENABLED' -ForegroundColor Yellow
     Write-Host "Worker deployment ID: $($deployment.id)"
     Write-Host "Worker version: $($version.version_id)"
     Write-Host "Pages run: $pagesRunId"
+    Write-Host "Public bundle: $assetPath"
     Write-Host "Manual verification URL: $manualUrl"
     Write-Host ''
     Write-Host 'Start Worker tail in a separate terminal:'

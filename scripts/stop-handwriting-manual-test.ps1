@@ -7,8 +7,10 @@ $AllowedOrigin = 'https://takami0928.github.io'
 $WorkerName = 'otsukai-handwriting-import'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $WorkerConfig = Join-Path $RepoRoot 'worker/wrangler.toml'
+$PagesHelpers = Join-Path $PSScriptRoot 'handwriting-manual-test-pages.ps1'
 
 Set-Location $RepoRoot
+. $PagesHelpers
 
 function Invoke-Checked {
     param(
@@ -52,72 +54,6 @@ function Set-RepositoryVariable {
     )
 }
 
-function Start-PagesDeployment {
-    $existingRunsJson = Get-CheckedOutput -Command 'gh' -Arguments @(
-        'run', 'list',
-        '--workflow', 'deploy.yml',
-        '--branch', 'main',
-        '--event', 'workflow_dispatch',
-        '--limit', '20',
-        '--repo', $Repository,
-        '--json', 'databaseId'
-    )
-    $existingRunIds = @(
-        @($existingRunsJson | ConvertFrom-Json) |
-            ForEach-Object { [string]$_.databaseId }
-    )
-    $dispatchedAt = [DateTimeOffset]::UtcNow.AddMinutes(-1)
-    Invoke-Checked -Command 'gh' -Arguments @(
-        'workflow', 'run', 'deploy.yml',
-        '--ref', 'main',
-        '--repo', $Repository
-    )
-
-    $runId = $null
-    for ($attempt = 0; $attempt -lt 30 -and -not $runId; $attempt += 1) {
-        Start-Sleep -Seconds 2
-        $runsJson = Get-CheckedOutput -Command 'gh' -Arguments @(
-            'run', 'list',
-            '--workflow', 'deploy.yml',
-            '--branch', 'main',
-            '--event', 'workflow_dispatch',
-            '--limit', '10',
-            '--repo', $Repository,
-            '--json', 'databaseId,createdAt'
-        )
-        $run = @($runsJson | ConvertFrom-Json) |
-            Where-Object {
-                $existingRunIds -notcontains [string]$_.databaseId -and
-                [DateTimeOffset]::Parse($_.createdAt) -ge $dispatchedAt
-            } |
-            Sort-Object {
-                [DateTimeOffset]::Parse($_.createdAt)
-            } -Descending |
-            Select-Object -First 1
-        if ($run) {
-            $runId = [string]$run.databaseId
-        }
-    }
-    if (-not $runId) {
-        throw 'Could not determine the dispatched GitHub Pages run ID.'
-    }
-    Invoke-Checked -Command 'gh' -Arguments @(
-        'run', 'watch', $runId,
-        '--repo', $Repository,
-        '--exit-status'
-    )
-    $runJson = Get-CheckedOutput -Command 'gh' -Arguments @(
-        'run', 'view', $runId,
-        '--repo', $Repository,
-        '--json', 'status,conclusion,url'
-    )
-    $run = $runJson | ConvertFrom-Json
-    if ($run.status -ne 'completed' -or $run.conclusion -ne 'success') {
-        throw "GitHub Pages run $runId did not succeed."
-    }
-    return $runId
-}
-
 function Deploy-WorkerDiagnosticsOff {
     Invoke-Checked -Command 'npx.cmd' -Arguments @(
         'wrangler', 'deploy',
@@ -126,48 +62,6 @@ function Deploy-WorkerDiagnosticsOff {
         '--var', 'DIAGNOSTIC_MODE:false',
         '--strict'
     )
-}
-
-function Confirm-PublicFeatureIsOff {
-    param([Parameter(Mandatory = $true)][string]$PagesRunId)
-
-    $publicUrl =
-        "https://takami0928.github.io/otsukai/?offcheck=$PagesRunId"
-    $page = Invoke-WebRequest `
-        -UseBasicParsing `
-        -Uri $publicUrl `
-        -Headers @{ 'Cache-Control' = 'no-cache' }
-    if ($page.StatusCode -ne 200) {
-        throw "Public Pages returned HTTP $($page.StatusCode)."
-    }
-    $scriptMatch = [regex]::Match(
-        $page.Content,
-        '<script[^>]+src="([^"]+\.js)"'
-    )
-    if (-not $scriptMatch.Success) {
-        throw 'The deployed JavaScript asset was not found.'
-    }
-    $assetUrl = [Uri]::new(
-        [Uri]'https://takami0928.github.io',
-        $scriptMatch.Groups[1].Value
-    ).AbsoluteUri
-    $asset = Invoke-WebRequest `
-        -UseBasicParsing `
-        -Uri $assetUrl `
-        -Headers @{ 'Cache-Control' = 'no-cache' }
-    if ($asset.StatusCode -ne 200) {
-        throw "The deployed bundle returned HTTP $($asset.StatusCode)."
-    }
-    $bundle = $asset.Content
-    if (
-        $bundle -notmatch
-            'VITE_HANDWRITING_IMPORT_ENABLED\s*:\s*"false"' -or
-        $bundle -notmatch
-            'VITE_HANDWRITING_DIAGNOSTICS_ENABLED\s*:\s*"false"'
-    ) {
-        throw 'The public bundle does not contain both OFF flags.'
-    }
-    return $scriptMatch.Groups[1].Value
 }
 
 $failures = [System.Collections.Generic.List[string]]::new()
@@ -188,7 +82,7 @@ foreach ($variableName in @(
 }
 
 try {
-    $pagesRunId = Start-PagesDeployment
+    $pagesRunId = Start-PagesDeployment -Repository $Repository
 }
 catch {
     $failures.Add(
@@ -271,7 +165,9 @@ if ($canDeployWorker) {
 
 if ($pagesRunId) {
     try {
-        $assetPath = Confirm-PublicFeatureIsOff -PagesRunId $pagesRunId
+        $assetPath = Confirm-PublicHandwritingFlags `
+            -PagesRunId $pagesRunId `
+            -ExpectedEnabled $false
     }
     catch {
         $failures.Add(
