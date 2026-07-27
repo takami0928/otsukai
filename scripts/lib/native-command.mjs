@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { dirname, join } from 'node:path'
+import { win32 } from 'node:path'
 
 const DEFAULT_MAX_OUTPUT_BYTES = 10 * 1024 * 1024
 
@@ -13,7 +13,13 @@ export function resolveNpxInvocation({
   return {
     command: execPath,
     argsPrefix: [
-      join(dirname(execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js'),
+      win32.join(
+        win32.dirname(execPath),
+        'node_modules',
+        'npm',
+        'bin',
+        'npx-cli.js',
+      ),
     ],
   }
 }
