@@ -1,107 +1,96 @@
 # AGENTS.md
 
-## Scope
+## Scope and purpose
 
-These instructions apply to the entire repository.
+These instructions apply to the entire repository. This repository contains the smartphone-first `おつかいメモ` web app. Preserve the household shopping flow, published URL compatibility, privacy constraints, and free-tier-first operating model.
+
+## Read first
+
+Before planning or editing, read only the sources relevant to the task:
+
+- `README.md`: product behavior, compatibility rules, input limits, and local development
+- `docs/PROJECT_MAP.md`: code ownership and high-risk invariants
+- `docs/CODEX_WORKFLOW.md`: planning, independent review, approval, and release workflow
+- `worker/README.md`: Gemini, Cloudflare Worker, Turnstile, secrets, deployment, and privacy
+- `.github/workflows/verify-pr.yml`: pull-request quality gates
+- `.github/workflows/deploy.yml`: GitHub Pages deployment
+
+`docs/refactoring-plan.md` and `docs/refactoring-runbook.md` remain historical sources for the completed refactoring program. Use them only when a task explicitly concerns that program.
+
+Do not paste whole documents into prompts. Cite the files and sections that control the change.
 
 ## Project commands
 
 Run commands from the repository root.
 
-- Install: `npm ci`
-- Test: `npm test`
-- Build: `npm run build`
-- Diff validation: `git diff --check`
+```bash
+npm ci
+npm test
+npm run test:worker
+npm run check:worker-bundle
+npm run test:coverage
+npm run build
+git diff --check
+```
 
-There is no lint script. Do not invent one or add a dependency solely for linting during refactoring.
+There is no lint script. Do not invent one or add a dependency solely for linting.
 
-## Sources of truth
+## Working agreement
 
-Before refactoring, read:
-
-1. this file;
-2. `docs/refactoring-plan.md`;
-3. `docs/refactoring-runbook.md`;
-4. the current implementation and tests on the latest `main`.
-
-The current implementation and passing tests define existing behavior unless the plan explicitly says otherwise.
+- Start from an up-to-date `main`; record its SHA and use a dedicated branch or worktree.
+- Inspect the current implementation and tests before proposing a solution.
+- For anything beyond a trivial edit, state the goal, affected paths, invariants, risk class, test plan, and approval gate before writing code.
+- Make the smallest defensible change. Do not refactor unrelated code.
+- Preserve existing public behavior unless the task explicitly changes it.
+- Add or update focused tests for changed behavior and realistic regression risks.
+- Do not claim success from inspection alone. Run the applicable quality gates.
+- Use an independent read-only reviewer after implementation. The implementing agent's self-review is not sufficient for medium- or high-risk changes.
+- Resolve concrete review findings before release. Report unresolved findings explicitly.
 
 ## Product invariants
 
-Refactoring must preserve all user-visible behavior and compatibility unless a phase explicitly authorizes a change.
+- Keep published v1, v2, and v3 shopping URLs readable.
+- Never reorder, delete, or rewrite published entries in `src/data/shareProductIdsV2.ts`; append only when explicitly required.
+- Keep request and catalog recovery payloads bounded, validated, and safe on malformed input.
+- Preserve the 2,200-character final URL limits and current fallback behavior.
+- Preserve Japanese IME and grapheme-aware input handling. Do not replace it with native `maxLength` or user-agent timing workarounds.
+- Treat `localStorage` as device- and browser-context-local. Do not imply cross-device synchronization.
+- Preserve shopping status semantics, cart confirmation, consultation behavior, completion rules, result sharing, and latest-action Undo unless explicitly changed.
+- Keep handwriting import optional and safely disabled when public configuration is incomplete.
+- Never expose `GEMINI_API_KEY`, `TURNSTILE_SECRET_KEY`, external raw responses, images, model output, or other secrets in client code, logs, GitHub variables, commits, or shared URLs.
+- Do not change the fixed Gemini model, external-service contract, billing posture, or privacy behavior without explicit user approval.
 
-Do not change:
+## Risk and approval
 
-- published v1 or v2 request URL formats, decoding, compression, fixtures, or backward compatibility;
-- `ShoppingRequestPayload.title` or its position in v1/v2 payloads; it remains an internal compatibility field even though the visible title is fixed;
-- fixed product IDs, `requestKey`, `requestId`, item IDs, or the 2,200-character share URL limit;
-- Web Share API payload semantics, clipboard fallback, `AbortError` handling, or the LINE external-browser hint;
-- localStorage keys, stored shapes, normalization, save timing, or restore behavior;
-- Japanese IME handling, grapheme-count limits, quantity limits, or URL-budget validation;
-- shopping status meanings and transitions, two-step cart confirmation, consultation-list behavior, checkout verification, completion rules, or result sharing;
-- the five-second latest-action Undo behavior, including reason, note, and cart-order restoration;
-- user-facing text, CSS classes, DOM order, focus behavior, ARIA attributes, and responsive behavior, except when a phase explicitly requires a mechanical relocation with identical output;
-- dependencies, lockfile, GitHub Actions workflows, Pages configuration, or the product/category master.
+Classify every non-trivial change using `docs/CODEX_WORKFLOW.md`.
 
-## Refactoring rules
+- Low risk: the user's original instruction may count as merge approval only when it explicitly requests end-to-end delivery.
+- Medium risk: stop after independent review and a ready PR unless the user explicitly approves merge after seeing the review result.
+- High risk: stop before any production mutation. Require explicit approval for each external or destructive action.
 
-- Refactor only. Do not add features or redesign the UI.
-- Use one phase and one pull request at a time, even when a single user instruction authorizes the full plan.
-- Complete, merge, deploy, and validate one phase before starting the next.
-- Prefer small, domain-specific modules over generic abstractions.
-- Do not introduce Context, an external state store, a state-machine library, or an app-wide reducer.
-- Do not use broad formatting changes, unrelated renames, speculative memoization, or dependency upgrades.
-- Do not weaken, delete, skip, or broadly rewrite tests merely to make a change pass.
-- Add focused characterization or unit tests when extraction would otherwise leave behavior insufficiently protected.
-- Preserve established component boundaries unless the active phase explicitly changes them.
-- A phase may be completed with a documented decision not to introduce an abstraction when the evidence shows that the abstraction would increase coupling or alter semantics.
+Never autonomously create paid services, rotate or reveal secrets, change DNS, enable billing, alter authentication or permissions, delete production data, deploy a Worker, or change GitHub/Cloudflare production settings.
 
-## GitHub operations
+## GitHub delivery
 
-- Use the connected GitHub App, GitHub API, MCP, or connector when available.
-- `gh` is an optional helper, not a prerequisite. Do not ask the user to run `gh auth login` when an API/connector path is available.
-- Use HTTPS to clone this public repository when a local checkout is needed.
+- Prefer available GitHub connectors/APIs; `gh` is a helper, not a prerequisite.
 - Never force-push `main`.
-- Use Squash merge for refactoring pull requests.
+- Keep one coherent change per branch and PR. Split large programs into independently releasable phases.
+- Use the pull-request template and include goal, scope, risk, changed behavior, preserved invariants, validation, independent review, manual checks, rollback, and user actions.
+- Wait for required CI to succeed; queued, cancelled, skipped, or infrastructure-failed runs are not success.
+- Use Squash merge when merge is authorized.
+- After a merge to `main`, verify the Pages workflow and public URL when the deployed app is affected.
+- Delete merged feature branches when safe.
 
-## Autonomous full-plan mode
+## Final report
 
-Only enter autonomous full-plan mode when the user explicitly instructs Codex to execute the full refactoring plan through deployment.
+Report verifiable evidence only:
 
-In that mode:
-
-- follow `docs/refactoring-runbook.md`;
-- execute all remaining phases in numerical order;
-- create a separate branch and PR for every phase;
-- require successful local validation and CI before each merge;
-- verify the Pages deployment and relevant public-site smoke tests after every merge;
-- continue automatically to the next phase without requesting routine confirmation;
-- stop only for a genuine blocker listed in the runbook;
-- never treat queued, cancelled, or infrastructure-failed CI as success.
-
-Outside autonomous full-plan mode, perform only the phase explicitly requested and leave its PR unmerged unless the user explicitly authorizes merge and deployment.
-
-## Documentation updates
-
-Each phase PR must update only the corresponding phase record in `docs/refactoring-plan.md` with:
-
-- status;
-- branch and PR number when known;
-- implementation summary;
-- tests and build results;
-- deployment and smoke-test result;
-- any intentionally retained debt or evidence-based decision not to abstract.
-
-Do not change the overall objective, invariants, phase ordering, or phase scope without explicit user approval.
-
-## Reporting
-
-At the end of autonomous full-plan mode, report:
-
-- each phase, PR, CI result, squash SHA, and Pages run/result;
-- final `main` SHA;
-- public URL and end-to-end smoke results;
-- tests added and final test count;
-- skipped or decision-only work with rationale;
-- unverified physical-device or LINE-app checks;
-- any remaining risk or blocker.
+- starting and final `main` SHA
+- branch and PR
+- changed files and behavior
+- commands and test results
+- independent-review findings and resolutions
+- CI and Pages run results
+- merge SHA and public URL when applicable
+- actions still required from the user
+- known limitations or unverified items
