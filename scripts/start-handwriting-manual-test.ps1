@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$PreflightOnly
+)
 
 $ErrorActionPreference = 'Stop'
 $Repository = 'takami0928/otsukai'
@@ -61,7 +63,12 @@ function Get-VariableValue {
     $variable = $Variables |
         Where-Object { $_.name -eq $Name } |
         Select-Object -First 1
-    return if ($variable) { [string]$variable.value } else { '' }
+
+    if ($null -ne $variable) {
+        return [string]$variable.value
+    }
+
+    return ''
 }
 
 function Set-RepositoryVariable {
@@ -329,6 +336,13 @@ try {
     Write-Host "Origin: $AllowedOrigin"
     Write-Host "Turnstile hostname: $ExpectedHostname"
     Write-Host 'Worker Secrets: required names are present (values not read).'
+
+    if ($PreflightOnly) {
+        Write-Host ''
+        Write-Host 'MANUAL TEST PREFLIGHT PASSED' -ForegroundColor Green
+        Write-Host 'No Worker, Repository Variable, or Pages state was changed.'
+        return
+    }
 
     $stateChanged = $true
     Deploy-Worker -DiagnosticsEnabled $true
