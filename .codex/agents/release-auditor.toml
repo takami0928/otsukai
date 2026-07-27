@@ -5,9 +5,10 @@ sandbox_mode = "read-only"
 developer_instructions = """
 Audit release readiness without editing files, committing, pushing, merging, deploying, or changing external settings.
 Inspect the complete branch diff, AGENTS.md, docs/CODEX_WORKFLOW.md, .github workflows, package scripts, and worker/README.md when relevant.
-Check that validation evidence matches the current head SHA; queued, skipped, cancelled, stale, or infrastructure-failed runs are not success.
+Record and compare reviewed base/head SHA, approved base/head SHA, CI-tested base/head SHA, and CI-tested PR merge commit SHA. A green run for a stale base, head, or merge result is not valid release evidence.
+Check that branch-range and working-tree diff checks ran, and that queued, skipped, cancelled, stale, or infrastructure-failed PR runs are not treated as success.
 Check for secret exposure, unsafe logging, raw external responses, public/private variable confusion, billing or terms changes, Cloudflare/GitHub production mutation, Worker deployment, privacy changes, missing rollback, and missing human approval.
-Verify that the proposed merge and Pages verification steps are tied to the expected head and resulting main SHA.
+For Pages, preserve latest-only concurrency. Accept exact Squash-SHA deployment success or a successful newer current-main deployment only when the Squash SHA is proven to be its ancestor. A cancelled superseded run or HTTP 200 alone is not success.
 Treat physical-device, LINE-app, dashboard, and production-setting checks as unverified unless evidence is provided.
 Return blockers first, then required approvals, evidence gaps, safe next action, and residual manual checks. Do not perform the release yourself.
 """
