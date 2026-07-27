@@ -160,6 +160,37 @@ describe('deployment manifest', () => {
     expect(serialized).not.toContain('public-site-key')
   })
 
+  it('creates a safe repository-mode manifest for an ordinary main deployment', () => {
+    const buildEnvironment = createDeploymentBuildEnvironment({
+      mode: 'repository',
+      sessionId: '',
+      repositoryImportEnabled: 'false',
+      repositoryDiagnosticsEnabled: 'false',
+      now: Date.parse('2026-07-28T00:00:00.000Z'),
+    })
+
+    expect(
+      createDeploymentManifest({
+        ...buildEnvironment,
+        GITHUB_SHA: 'b'.repeat(40),
+        VITE_HANDWRITING_IMPORT_ENDPOINT:
+          'https://worker.example.invalid/',
+        VITE_TURNSTILE_SITE_KEY: 'public-site-key',
+      }),
+    ).toEqual({
+      schemaVersion: 1,
+      commitSha: 'b'.repeat(40),
+      manualTestMode: 'repository',
+      manualTestSessionId: '',
+      handwritingImportEnabled: false,
+      diagnosticsEnabled: false,
+      endpointConfigured: true,
+      turnstileSiteKeyConfigured: true,
+      builtAt: '2026-07-28T00:00:00.000Z',
+      expiresAt: null,
+    })
+  })
+
   it('records missing public configuration only as booleans', () => {
     expect(
       createDeploymentManifest(
@@ -197,7 +228,19 @@ describe('deployment manifest', () => {
       'GEMINI_OUTPUT_SENTINEL',
     ]
     const serialized = JSON.stringify(
-      createDeploymentManifest(manifestEnvironment()),
+      createDeploymentManifest(
+        manifestEnvironment({
+          GEMINI_API_KEY: forbidden[0],
+          TURNSTILE_SECRET_KEY: forbidden[1],
+          TURNSTILE_TOKEN: forbidden[2],
+          IMAGE_DATA: forbidden[3],
+          PRODUCT_NAME: forbidden[4],
+          PRODUCT_ALIAS: forbidden[5],
+          PRODUCT_ID: forbidden[6],
+          SOURCE_TEXT: forbidden[7],
+          GEMINI_OUTPUT: forbidden[8],
+        }),
+      ),
     )
 
     for (const value of forbidden) {

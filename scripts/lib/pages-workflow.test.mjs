@@ -22,6 +22,19 @@ describe('Pages manual-test workflow contract', () => {
     )
   })
 
+  it('defaults ordinary main and unspecified dispatches to repository mode', () => {
+    const modeInputStart = workflow.indexOf('manual_test_mode:')
+    const modeInput = workflow.slice(modeInputStart, modeInputStart + 400)
+
+    expect(modeInputStart).toBeGreaterThanOrEqual(0)
+    expect(modeInput).toContain('default: repository')
+    expect(workflow).toContain(
+      "inputs.manual_test_mode || 'repository'",
+    )
+    expect(workflow).toMatch(/push:\s*\n\s+branches:\s*\n\s+- main/u)
+    expect(modeInput).not.toContain('default: manual-on')
+  })
+
   it('generates and uploads the nonsecret deployment manifest', () => {
     expect(workflow).toContain(
       'node scripts/write-handwriting-deployment-state.mjs prepare',
