@@ -35,10 +35,16 @@ describe('BrowserTurnstileTokenProvider', () => {
   it('uses explicit execution with the import action and resets after use', async () => {
     const api = createApi((options) => options.callback('one-use-token'))
     const container = document.createElement('div')
+    const record = vi.fn()
     const provider = new BrowserTurnstileTokenProvider(
       container,
       'site-key',
       async () => api,
+      {
+        enabled: true,
+        record,
+        adoptRequestId: vi.fn(),
+      },
     )
 
     await expect(provider.getToken()).resolves.toBe('one-use-token')
@@ -53,6 +59,15 @@ describe('BrowserTurnstileTokenProvider', () => {
       }),
     )
     expect(api.execute).toHaveBeenCalledWith('widget-id')
+    expect(record.mock.calls.map(([stage]) => stage)).toEqual([
+      'turnstile-load-started',
+      'turnstile-ready',
+      'turnstile-execute-started',
+      'turnstile-token-received',
+    ])
+    expect(JSON.stringify(record.mock.calls)).not.toContain(
+      'one-use-token',
+    )
     provider.reset()
     expect(api.reset).toHaveBeenCalledWith('widget-id')
   })

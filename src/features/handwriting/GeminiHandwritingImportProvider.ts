@@ -4,6 +4,12 @@ import {
   HandwritingImportError,
   isAbortError,
 } from './errors'
+import {
+  createHandwritingRequestId,
+  isValidHandwritingRequestId,
+  toSafeWorkerErrorCode,
+  type HandwritingDiagnosticsReporter,
+} from './diagnostics'
 import { parseHandwritingImportResult } from './resultValidation'
 import type { TurnstileTokenProvider } from './turnstile'
 import type {
@@ -16,6 +22,7 @@ export const MAX_IMPORT_PRODUCT_CANDIDATES = 200
 export const MAX_IMPORT_PRODUCT_ID_CHARACTERS = 128
 export const MAX_IMPORT_PRODUCT_ALIASES = 10
 export const MAX_IMPORT_PRODUCTS_JSON_BYTES = 128 * 1024
+export const HANDWRITING_REQUEST_ID_HEADER = 'X-Otsukai-Request-Id'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -113,28 +120,53 @@ export class GeminiHandwritingImportProvider
     private readonly endpoint: string,
     private readonly turnstile: TurnstileTokenProvider,
     private readonly fetchImplementation: typeof fetch = fetch,
+    private readonly diagnostics?: HandwritingDiagnosticsReporter,
   ) {}
 
   async analyze(
     image: Blob,
     products: readonly ImportProductCandidate[],
-    options: { signal?: AbortSignal } = {},
+    options: {
+      signal?: AbortSignal
+      requestId?: string
+    } = {},
   ): Promise<HandwritingImportResult> {
     try {
       const serializedProducts = validateProducts(products)
-      const token = await this.turnstile.getToken(options)
+      const requestId = isValidHandwritingRequestId(options.requestId)
+        ? options.requestId
+        : createHandwritingRequestId()
+      const token = await this.turnstile.getToken({
+        signal: options.signal,
+      })
       const body = new FormData()
       body.append('image', image, 'handwriting.jpg')
       body.append('turnstileToken', token)
       body.append('products', serializedProducts)
+      body.append('requestId', requestId)
 
+      this.diagnostics?.record('worker-request-started')
       const response = await this.fetchImplementation(this.endpoint, {
         method: 'POST',
         body,
         signal: options.signal,
       })
+      const responseRequestId = response.headers.get(
+        HANDWRITING_REQUEST_ID_HEADER,
+      )
+      if (responseRequestId) {
+        this.diagnostics?.adoptRequestId(responseRequestId)
+      }
+      this.diagnostics?.record('worker-response-received', {
+        httpStatus: response.status,
+      })
       if (!response.ok) {
-        throw mapEndpointFailure(response.status, await readErrorCode(response))
+        const code = await readErrorCode(response)
+        this.diagnostics?.record('worker-response-received', {
+          httpStatus: response.status,
+          workerErrorCode: toSafeWorkerErrorCode(code),
+        })
+        throw mapEndpointFailure(response.status, code)
       }
 
       const parsed = parseHandwritingImportResult(
@@ -147,6 +179,18 @@ export class GeminiHandwritingImportProvider
       if (parsed.items.length === 0) {
         throw new HandwritingImportError('no-products-detected')
       }
+      this.diagnostics?.record('worker-response-validated', {
+        resultItemCount: parsed.items.length,
+        matchedCount: parsed.items.filter(
+          (item) => item.status === 'matched',
+        ).length,
+        ambiguousCount: parsed.items.filter(
+          (item) => item.status === 'ambiguous',
+        ).length,
+        unknownCount: parsed.items.filter(
+          (item) => item.status === 'unknown',
+        ).length,
+      })
       return parsed
     } catch (error) {
       if (isAbortError(error) || options.signal?.aborted) {

@@ -246,6 +246,8 @@ Geminiが一意に対応させた`matched`だけを初期選択し、複数候�
 
 フロント設定例は[`.env.example`](.env.example)、Google AI Studio、Cloudflare Worker、Turnstile、Secrets、無料枠の利用条件とUsage確認、デプロイ、障害時無効化は[`worker/README.md`](worker/README.md)を参照してください。Gemini APIキーなどのSecretは`VITE_`環境変数へ入れません。
 
+実画像を通常ブラウザで安全に切り分ける手順、段階別の判定表、テスト画像生成、診断のON/OFF復元は[`docs/HANDWRITING_MANUAL_VERIFICATION.md`](docs/HANDWRITING_MANUAL_VERIFICATION.md)にまとめています。診断は既定OFFで、ビルド変数と専用query parameterの両方が有効な場合だけ表示・保存します。
+
 ## ローカル開発
 
 ```bash

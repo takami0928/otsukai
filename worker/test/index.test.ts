@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GeminiAnalysisError } from '../src/gemini'
 import {
+  HANDWRITING_REQUEST_ID_HEADER,
   handleRequest,
   type WorkerDependencies,
   type WorkerEnv,
@@ -15,6 +16,7 @@ const env: WorkerEnv = {
   GEMINI_API_KEY: 'gemini-secret-value',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-value',
   ALLOWED_ORIGINS: allowedOrigin,
+  DIAGNOSTIC_MODE: 'false',
 }
 const products = [
   {
@@ -42,6 +44,8 @@ function importRequest(
     token?: string
     method?: string
     productsJson?: string
+    requestId?: string
+    omitRequestId?: boolean
     extraField?: [string, string]
   } = {},
 ): Request {
@@ -52,6 +56,12 @@ function importRequest(
     'products',
     options.productsJson ?? JSON.stringify(products),
   )
+  if (!options.omitRequestId) {
+    formData.append(
+      'requestId',
+      options.requestId ?? 'client-request-123',
+    )
+  }
   if (options.extraField) {
     formData.append(...options.extraField)
   }
@@ -121,11 +131,74 @@ describe('Cloudflare handwriting import Worker', () => {
       allowedOrigin,
     )
     expect(response.headers.get('Cache-Control')).toBe('no-store')
+    expect(response.headers.get(HANDWRITING_REQUEST_ID_HEADER)).toBe(
+      'client-request-123',
+    )
+    expect(
+      response.headers.get('Access-Control-Expose-Headers'),
+    ).toBe(HANDWRITING_REQUEST_ID_HEADER)
     await expect(response.json()).resolves.toEqual(
       JSON.parse(successfulOutput()),
     )
     expect(fetchImplementation).toHaveBeenCalledTimes(1)
     expect(analyzeImplementation).toHaveBeenCalledTimes(1)
+  })
+
+  it('replaces an invalid requestId with a safe Worker ID', async () => {
+    const response = await handleRequest(
+      importRequest({ requestId: 'bad id\nlog-injection' }),
+      env,
+      {
+        fetchImplementation: successfulTurnstileFetch(),
+        analyzeImplementation: vi.fn(async () => successfulOutput()),
+        createRequestId: () => 'worker-safe-fallback',
+      },
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get(HANDWRITING_REQUEST_ID_HEADER)).toBe(
+      'worker-safe-fallback',
+    )
+  })
+
+  it('never uses an unsafe generated fallback as a response or log ID', async () => {
+    const logImplementation = vi.fn()
+    const response = await handleRequest(
+      importRequest({ requestId: 'bad id\nlog-injection' }),
+      { ...env, DIAGNOSTIC_MODE: 'true' },
+      {
+        fetchImplementation: successfulTurnstileFetch(),
+        analyzeImplementation: vi.fn(async () => successfulOutput()),
+        createRequestId: () => 'unsafe\nfallback',
+        logImplementation,
+      },
+    )
+
+    const responseRequestId = response.headers.get(
+      HANDWRITING_REQUEST_ID_HEADER,
+    )
+    expect(response.status).toBe(200)
+    expect(responseRequestId).toMatch(/^[A-Za-z0-9-]{1,64}$/u)
+    expect(logImplementation.mock.calls.flat().join('\n')).not.toContain(
+      'unsafe\nfallback',
+    )
+  })
+
+  it('accepts an older request without requestId and returns a Worker ID', async () => {
+    const response = await handleRequest(
+      importRequest({ omitRequestId: true }),
+      env,
+      {
+        fetchImplementation: successfulTurnstileFetch(),
+        analyzeImplementation: vi.fn(async () => successfulOutput()),
+        createRequestId: () => 'worker-generated-request',
+      },
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get(HANDWRITING_REQUEST_ID_HEADER)).toBe(
+      'worker-generated-request',
+    )
   })
 
   it('rejects Turnstile failure before analysis', async () => {
@@ -409,6 +482,97 @@ describe('Cloudflare handwriting import Worker', () => {
     expect(log).not.toHaveBeenCalled()
     expect(error).not.toHaveBeenCalled()
     expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('logs only safe one-line diagnostic stages when explicitly enabled', async () => {
+    const logImplementation = vi.fn()
+    let currentTime = 1_000
+    const response = await handleRequest(
+      importRequest(),
+      { ...env, DIAGNOSTIC_MODE: 'true' },
+      {
+        fetchImplementation: successfulTurnstileFetch(),
+        analyzeImplementation: vi.fn(async () => successfulOutput()),
+        createRequestId: () => 'worker-provisional-request',
+        now: () => currentTime++,
+        logImplementation,
+      },
+    )
+
+    expect(response.status).toBe(200)
+    const entries = logImplementation.mock.calls.map(([line]) =>
+      JSON.parse(String(line)) as Record<string, unknown>,
+    )
+    expect(entries.map((entry) => entry.stage)).toEqual([
+      'request-received',
+      'request-validated',
+      'turnstile-verification-started',
+      'turnstile-verified',
+      'gemini-request-started',
+      'gemini-request-completed',
+      'result-validated',
+      'response-sent',
+    ])
+    expect(entries[1]).toEqual(
+      expect.objectContaining({
+        event: 'handwriting_import',
+        requestId: 'client-request-123',
+        imageBytes: 4,
+        productCandidateCount: 2,
+      }),
+    )
+    expect(entries[6]).toEqual(
+      expect.objectContaining({
+        resultItemCount: 2,
+        matchedCount: 1,
+        ambiguousCount: 0,
+        unknownCount: 1,
+      }),
+    )
+    const logged = logImplementation.mock.calls.flat().join('\n')
+    expect(logged).not.toContain(env.GEMINI_API_KEY)
+    expect(logged).not.toContain(env.TURNSTILE_SECRET_KEY)
+    expect(logged).not.toContain('single-use-token')
+    expect(logged).not.toContain(products[0].name)
+    expect(logged).not.toContain(products[0].aliases[0])
+    expect(logged).not.toContain(products[0].id)
+    expect(logged).not.toContain(successfulOutput())
+    expect(logged).not.toContain('sourceText')
+    expect(logged).not.toContain('candidateProductIds')
+  })
+
+  it('logs a safe rejection class without request data', async () => {
+    const logImplementation = vi.fn()
+    const response = await handleRequest(
+      importRequest({ token: '' }),
+      { ...env, DIAGNOSTIC_MODE: 'true' },
+      {
+        logImplementation,
+        createRequestId: () => 'worker-rejected-request',
+      },
+    )
+    expect(response.status).toBe(403)
+    const logged = logImplementation.mock.calls.flat().join('\n')
+    expect(logged).toContain('"stage":"request-rejected"')
+    expect(logged).toContain('"errorClass":"request-validation"')
+    expect(logged).not.toContain(env.TURNSTILE_SECRET_KEY)
+    expect(logged).not.toContain('single-use-token')
+  })
+
+  it('does not fail an import when the diagnostic logger is unavailable', async () => {
+    const response = await handleRequest(
+      importRequest(),
+      { ...env, DIAGNOSTIC_MODE: 'true' },
+      {
+        fetchImplementation: successfulTurnstileFetch(),
+        analyzeImplementation: vi.fn(async () => successfulOutput()),
+        logImplementation: () => {
+          throw new Error('logging unavailable')
+        },
+      },
+    )
+
+    expect(response.status).toBe(200)
   })
 
   it('fails safely when a required secret is missing', async () => {

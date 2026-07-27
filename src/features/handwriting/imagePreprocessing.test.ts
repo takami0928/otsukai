@@ -175,6 +175,39 @@ describe('preprocessHandwritingImage', () => {
     expect(pipeline.close).toHaveBeenCalledTimes(1)
   })
 
+  it('records safe preprocessing stages and dimensions without file content', async () => {
+    installImagePipeline()
+    const record = vi.fn()
+    await preprocessHandwritingImage(jpegFile(), {
+      diagnostics: {
+        enabled: true,
+        record,
+        adoptRequestId: vi.fn(),
+      },
+    })
+
+    expect(record.mock.calls.map(([stage]) => stage)).toEqual([
+      'source-validated',
+      'decode-started',
+      'decode-completed',
+      'resize-calculated',
+      'canvas-render-started',
+      'canvas-render-completed',
+      'encode-started',
+      'encode-completed',
+      'preprocessing-completed',
+    ])
+    expect(record).toHaveBeenCalledWith('decode-completed', {
+      decodedWidth: 2_400,
+      decodedHeight: 1_800,
+    })
+    expect(record).toHaveBeenCalledWith('resize-calculated', {
+      resizedWidth: 1_600,
+      resizedHeight: 1_200,
+    })
+    expect(JSON.stringify(record.mock.calls)).not.toContain('memo.jpg')
+  })
+
   it('runs an optional grayscale comparison variant without changing the default', async () => {
     const pipeline = installImagePipeline()
     await preprocessHandwritingImage(jpegFile(), {

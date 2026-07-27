@@ -20,7 +20,10 @@ export interface HandwritingImportProvider {
   analyze(
     image: Blob,
     products: readonly ImportProductCandidate[],
-    options?: { signal?: AbortSignal },
+    options?: {
+      signal?: AbortSignal
+      requestId?: string
+    },
   ): Promise<HandwritingImportResult>
 }
 

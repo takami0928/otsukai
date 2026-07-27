@@ -48,6 +48,8 @@ function successBody() {
 describe('GeminiHandwritingImportProvider', () => {
   it('sends one image, one fresh token, and current products with aliases', async () => {
     const tokenProvider = turnstile()
+    const record = vi.fn()
+    const adoptRequestId = vi.fn()
     const fetchImplementation = vi.fn(async (_url, init) => {
       expect(init?.method).toBe('POST')
       expect(init?.signal).toBeInstanceOf(AbortSignal)
@@ -55,22 +57,50 @@ describe('GeminiHandwritingImportProvider', () => {
       expect(form.getAll('image')).toHaveLength(1)
       expect(form.get('turnstileToken')).toBe('fresh-token')
       expect(JSON.parse(String(form.get('products')))).toEqual(products)
-      return Response.json(successBody())
+      expect(form.get('requestId')).toBe('client-request-123')
+      return Response.json(successBody(), {
+        headers: {
+          'X-Otsukai-Request-Id': 'client-request-123',
+        },
+      })
     }) as typeof fetch
     const provider = new GeminiHandwritingImportProvider(
       'https://import.example.test/',
       tokenProvider,
       fetchImplementation,
+      {
+        enabled: true,
+        record,
+        adoptRequestId,
+      },
     )
     const controller = new AbortController()
 
     await expect(
-      provider.analyze(image, products, { signal: controller.signal }),
+      provider.analyze(image, products, {
+        signal: controller.signal,
+        requestId: 'client-request-123',
+      }),
     ).resolves.toEqual(successBody())
     expect(tokenProvider.getToken).toHaveBeenCalledWith({
       signal: controller.signal,
     })
     expect(tokenProvider.reset).toHaveBeenCalledTimes(1)
+    expect(adoptRequestId).toHaveBeenCalledWith('client-request-123')
+    expect(record.mock.calls.map(([stage]) => stage)).toEqual([
+      'worker-request-started',
+      'worker-response-received',
+      'worker-response-validated',
+    ])
+    expect(record).toHaveBeenLastCalledWith(
+      'worker-response-validated',
+      {
+        resultItemCount: 1,
+        matchedCount: 1,
+        ambiguousCount: 0,
+        unknownCount: 0,
+      },
+    )
   })
 
   it('rejects a response containing an unknown product ID', async () => {

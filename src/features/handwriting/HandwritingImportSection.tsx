@@ -19,6 +19,11 @@ import {
   BrowserTurnstileTokenProvider,
   type TurnstileTokenProvider,
 } from './turnstile'
+import {
+  createHandwritingDiagnosticsStore,
+  createHandwritingRequestId,
+} from './diagnostics'
+import { HandwritingDiagnosticsPanel } from './HandwritingDiagnosticsPanel'
 import type {
   HandwritingAnalyzedItem,
   HandwritingImportProvider,
@@ -121,6 +126,14 @@ export function HandwritingImportSection({
 }: HandwritingImportSectionProps) {
   const turnstileContainerRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController>()
+  const diagnosticsStore = useMemo(
+    () =>
+      createHandwritingDiagnosticsStore(config.diagnosticsEnabled),
+    [config.diagnosticsEnabled],
+  )
+  const [diagnosticsView, setDiagnosticsView] = useState(() =>
+    diagnosticsStore.getView(),
+  )
   const [defaultProvider, setDefaultProvider] =
     useState<HandwritingImportProvider>()
   const [phase, setPhase] = useState<ProcessingPhase>('idle')
@@ -141,6 +154,11 @@ export function HandwritingImportSection({
   )
 
   useEffect(() => {
+    setDiagnosticsView(diagnosticsStore.getView())
+    return diagnosticsStore.subscribe(setDiagnosticsView)
+  }, [diagnosticsStore])
+
+  useEffect(() => {
     if (
       !config.enabled ||
       importProvider ||
@@ -152,11 +170,15 @@ export function HandwritingImportSection({
       new BrowserTurnstileTokenProvider(
         turnstileContainerRef.current,
         config.turnstileSiteKey,
+        undefined,
+        diagnosticsStore,
       )
     setDefaultProvider(
       new GeminiHandwritingImportProvider(
         config.endpoint,
         turnstile,
+        fetch,
+        diagnosticsStore,
       ),
     )
 
@@ -167,8 +189,15 @@ export function HandwritingImportSection({
     config.enabled,
     config.endpoint,
     config.turnstileSiteKey,
+    diagnosticsStore,
     importProvider,
   ])
+
+  useEffect(() => {
+    if (items.length > 0) {
+      diagnosticsStore.record('confirmation-rendered')
+    }
+  }, [diagnosticsStore, items.length])
 
   useEffect(
     () => () => {
@@ -200,7 +229,13 @@ export function HandwritingImportSection({
     }
 
     const controller = new AbortController()
+    const requestId = createHandwritingRequestId()
     abortControllerRef.current = controller
+    diagnosticsStore.begin({
+      requestId,
+      sourceImageBytes: file.size,
+      sourceMime: file.type,
+    })
     setItems([])
     setChoices({})
     setMessage('')
@@ -211,6 +246,7 @@ export function HandwritingImportSection({
       const image = await preprocessImage(file, {
         signal: controller.signal,
         adjustment: { mode: 'none' },
+        diagnostics: diagnosticsStore,
       })
       if (controller.signal.aborted) {
         throw new HandwritingImportError('cancelled')
@@ -219,7 +255,7 @@ export function HandwritingImportSection({
       const rawResult = await provider.analyze(
         image,
         productCandidates,
-        { signal: controller.signal },
+        { signal: controller.signal, requestId },
       )
       const result = parseHandwritingImportResult(
         rawResult,
@@ -236,6 +272,18 @@ export function HandwritingImportSection({
         id: `analysis-item-${index + 1}`,
         analysis,
       }))
+      diagnosticsStore.record('confirmation-render-started', {
+        resultItemCount: result.items.length,
+        matchedCount: result.items.filter(
+          (item) => item.status === 'matched',
+        ).length,
+        ambiguousCount: result.items.filter(
+          (item) => item.status === 'ambiguous',
+        ).length,
+        unknownCount: result.items.filter(
+          (item) => item.status === 'unknown',
+        ).length,
+      })
       setItems(nextItems)
       setChoices(
         Object.fromEntries(
@@ -248,12 +296,18 @@ export function HandwritingImportSection({
         ),
       )
     } catch (error) {
+      const diagnosticError =
+        isAbortError(error)
+          ? new HandwritingImportError('cancelled')
+          : error instanceof HandwritingImportError
+            ? error
+            : new HandwritingImportError('service-unavailable')
+      diagnosticsStore.record(
+        diagnosticError.code === 'cancelled' ? 'cancelled' : 'failed',
+        { errorCode: diagnosticError.code },
+      )
       setMessage(
-        toHandwritingErrorMessage(
-          isAbortError(error)
-            ? new HandwritingImportError('cancelled')
-            : error,
-        ),
+        toHandwritingErrorMessage(diagnosticError),
       )
     } finally {
       if (abortControllerRef.current === controller) {
@@ -382,6 +436,12 @@ export function HandwritingImportSection({
           className="handwriting-turnstile"
           aria-label="認証確認"
         />
+        {config.diagnosticsEnabled ? (
+          <HandwritingDiagnosticsPanel
+            store={diagnosticsStore}
+            view={diagnosticsView}
+          />
+        ) : null}
       </section>
 
       {items.length > 0 ? (

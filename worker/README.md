@@ -97,9 +97,12 @@ npx wrangler secret put TURNSTILE_SECRET_KEY --config worker/wrangler.toml
 ```toml
 [vars]
 ALLOWED_ORIGINS = "https://takami0928.github.io"
+DIAGNOSTIC_MODE = "false"
 ```
 
 Originは完全一致でカンマ区切り指定します。パスや末尾スラッシュは含めません。CORSはブラウザ制御であり認証ではないため、許可Originに加えてTurnstileを毎回検証します。
+
+`DIAGNOSTIC_MODE`は通常`false`のままにします。手動検証時だけ`true`へデプロイすると、requestId、処理stage、所要時間、安全なstatus・件数を1行JSONで出力します。画像、商品名、alias、商品ID、モデル出力、Turnstileトークン、APIキー、Secret、本文は出力しません。開始・停止スクリプトと判定手順は[`../docs/HANDWRITING_MANUAL_VERIFICATION.md`](../docs/HANDWRITING_MANUAL_VERIFICATION.md)を参照してください。
 
 ## ローカル開発
 
@@ -129,6 +132,7 @@ npm run worker:deploy
 
 ```text
 VITE_HANDWRITING_IMPORT_ENABLED=true
+VITE_HANDWRITING_DIAGNOSTICS_ENABLED=false
 VITE_HANDWRITING_IMPORT_ENDPOINT=https://your-worker.example.workers.dev/
 VITE_TURNSTILE_SITE_KEY=公開Site Key
 ```
