@@ -213,10 +213,13 @@ export function createManualTestOrchestrator({
       )
     }
     const mainSha = await capturedText('git', ['rev-parse', 'HEAD'])
-    const originSha = await capturedText('git', [
-      'rev-parse',
-      `origin/${ref}`,
+    const remoteReference = await capturedText('git', [
+      'ls-remote',
+      '--exit-code',
+      'origin',
+      `refs/heads/${ref}`,
     ])
+    const originSha = remoteReference.split(/\s+/u)[0]
     if (mainSha !== originSha || !/^[0-9a-f]{40}$/u.test(mainSha)) {
       throw new ManualTestOrchestrationError(
         'HEAD does not match the requested origin ref.',

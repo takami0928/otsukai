@@ -65,6 +65,9 @@ async function createFixture() {
       if (args[0] === 'status') {
         return result('')
       }
+      if (args[0] === 'ls-remote') {
+        return result(`${sha}\trefs/heads/main`)
+      }
       if (args[0] === 'rev-parse') {
         return result(sha)
       }
