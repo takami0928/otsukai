@@ -1849,6 +1849,67 @@ select:focus {
   overflow: hidden;
 }
 
+.handwriting-diagnostics-panel {
+  min-width: 0;
+  margin-top: 0.85rem;
+  padding: 0.75rem;
+  border: 1px solid #b8d4c8;
+  border-radius: 9px;
+  background: #f2f8f5;
+  overflow-wrap: anywhere;
+}
+
+.handwriting-diagnostics-panel h3 {
+  margin: 0;
+  color: #273832;
+  font-size: 1rem;
+}
+
+.handwriting-diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0.7rem 0 0;
+}
+
+.handwriting-diagnostics-grid > div {
+  min-width: 0;
+  padding: 0.45rem 0.5rem;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.handwriting-diagnostics-grid dt {
+  color: #60736c;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.handwriting-diagnostics-grid dd {
+  min-width: 0;
+  margin: 0.15rem 0 0;
+  color: #2f4f43;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.handwriting-diagnostics-request-id {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.handwriting-diagnostics-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
+.handwriting-diagnostics-message {
+  margin: 0.55rem 0 0;
+  color: #436457;
+  font-size: 0.8rem;
+}
+
 .dialog-backdrop {
   position: fixed;
   z-index: 30;
@@ -1968,6 +2029,16 @@ select:focus {
   .catalog-backup-actions,
   .catalog-recovery-actions {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .handwriting-diagnostics-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .handwriting-diagnostics-actions {
+    display: grid;
   }
 }
 

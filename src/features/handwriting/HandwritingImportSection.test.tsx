@@ -7,6 +7,7 @@ import { products } from '../../data/products'
 import type { EffectiveProduct } from '../../types/householdCatalog'
 import { HandwritingImportError } from './errors'
 import { HandwritingImportSection } from './HandwritingImportSection'
+import { HANDWRITING_DIAGNOSTICS_STORAGE_KEY } from './diagnostics'
 import type {
   HandwritingImportProvider,
   HandwritingImportResult,
@@ -16,6 +17,7 @@ import type {
 
 const config = {
   enabled: true,
+  diagnosticsEnabled: false,
   endpoint: 'https://import.example.test/',
   turnstileSiteKey: 'site-key',
 }
@@ -53,6 +55,7 @@ describe('HandwritingImportSection', () => {
   beforeEach(() => {
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
       true
+    window.localStorage.clear()
     container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)
@@ -61,6 +64,7 @@ describe('HandwritingImportSection', () => {
   afterEach(() => {
     act(() => root.unmount())
     container.remove()
+    window.localStorage.clear()
     vi.restoreAllMocks()
   })
 
@@ -72,6 +76,7 @@ describe('HandwritingImportSection', () => {
       changedItemCount: 1,
     })),
     enabled = true,
+    diagnosticsEnabled = false,
     productsForView = effectiveProducts,
   }: {
     provider: HandwritingImportProvider
@@ -90,12 +95,13 @@ describe('HandwritingImportSection', () => {
         | 'invalid-selection'
     }
     enabled?: boolean
+    diagnosticsEnabled?: boolean
     productsForView?: EffectiveProduct[]
   }) {
     await act(async () => {
       root.render(
         <HandwritingImportSection
-          config={{ ...config, enabled }}
+          config={{ ...config, enabled, diagnosticsEnabled }}
           effectiveProducts={productsForView}
           importProvider={provider}
           preprocessImage={preprocessImage}
@@ -503,5 +509,144 @@ describe('HandwritingImportSection', () => {
     expect(container.textContent).not.toContain('手書きメモから追加')
     expect(container.querySelector('input[type="file"]')).toBeNull()
     expect(analyze).not.toHaveBeenCalled()
+  })
+
+  it('does not render or persist diagnostics when diagnostics are off', async () => {
+    await renderSection({
+      provider: {
+        analyze: vi.fn(async () =>
+          result([
+            {
+              sourceText: '迚帑ｹｳ',
+              status: 'matched',
+              productId: 'milk',
+              candidateProductIds: [],
+            },
+          ]),
+        ),
+      },
+    })
+    await chooseImage()
+    await vi.waitFor(() =>
+      expect(container.querySelector('[role="dialog"]')).not.toBeNull(),
+    )
+
+    expect(
+      container.querySelector('.handwriting-diagnostics-panel'),
+    ).toBeNull()
+    expect(
+      window.localStorage.getItem(HANDWRITING_DIAGNOSTICS_STORAGE_KEY),
+    ).toBeNull()
+  })
+
+  it('shows safe diagnostic stages, copies them, and clears them at 390px', async () => {
+    container.style.width = '390px'
+    const clipboardDescriptor = Object.getOwnPropertyDescriptor(
+      navigator,
+      'clipboard',
+    )
+    const writeText = vi.fn(
+      async (_text: string): Promise<void> => undefined,
+    )
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const analyze = vi.fn(async () =>
+      result([
+        {
+          sourceText: '迚帑ｹｳ',
+          status: 'matched',
+          productId: 'milk',
+          candidateProductIds: [],
+        },
+        {
+          sourceText: '髮ｻ豎',
+          status: 'unknown',
+          productId: null,
+          candidateProductIds: [],
+        },
+      ]),
+    )
+    await renderSection({
+      provider: { analyze },
+      diagnosticsEnabled: true,
+    })
+    await chooseImage()
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain('confirmation-rendered'),
+    )
+
+    const panel = container.querySelector<HTMLElement>(
+      '.handwriting-diagnostics-panel',
+    )
+    expect(panel).not.toBeNull()
+    expect(panel?.textContent).toContain(
+      '2件（matched 1 / ambiguous 0 / unknown 1）',
+    )
+    expect(analyze).toHaveBeenCalledWith(
+      preparedImage,
+      expect.any(Array),
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+        requestId: expect.stringMatching(/^[A-Za-z0-9-]{1,64}$/u),
+      }),
+    )
+
+    const persisted =
+      window.localStorage.getItem(HANDWRITING_DIAGNOSTICS_STORAGE_KEY) ?? ''
+    expect(persisted).toContain('confirmation-rendered')
+    expect(persisted).not.toContain('memo.jpg')
+    expect(persisted).not.toContain('sourceText')
+    expect(persisted).not.toContain('productId')
+
+    await click(button('診断情報をコピー'))
+    expect(writeText).toHaveBeenCalledTimes(1)
+    const copied = String(writeText.mock.calls[0][0])
+    expect(copied).not.toContain('sourceText')
+    expect(copied).not.toContain('productId')
+
+    await click(button('診断情報を消去'))
+    expect(
+      window.localStorage.getItem(HANDWRITING_DIAGNOSTICS_STORAGE_KEY),
+    ).toBeNull()
+    expect(panel?.textContent).toContain('idle')
+    if (clipboardDescriptor) {
+      Object.defineProperty(
+        navigator,
+        'clipboard',
+        clipboardDescriptor,
+      )
+    } else {
+      Reflect.deleteProperty(navigator, 'clipboard')
+    }
+  })
+
+  it('shows the previous session final stage without exposing prior input', async () => {
+    window.localStorage.setItem(
+      HANDWRITING_DIAGNOSTICS_STORAGE_KEY,
+      JSON.stringify({
+        schemaVersion: 1,
+        requestId: 'previous-safe-request',
+        stage: 'decode-started',
+        timestamp: '2026-07-28T00:00:00.000Z',
+        elapsedMs: 25,
+        browser: {
+          name: 'Safari',
+          version: '19.0',
+          online: true,
+        },
+      }),
+    )
+    await renderSection({
+      provider: { analyze: vi.fn(async () => result([])) },
+      diagnosticsEnabled: true,
+    })
+
+    const panel = container.querySelector(
+      '.handwriting-diagnostics-panel',
+    )
+    expect(panel?.textContent).toContain('decode-started')
+    expect(panel?.textContent).not.toContain('sourceText')
   })
 })

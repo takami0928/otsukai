@@ -3,6 +3,7 @@ import {
   MAX_PRODUCT_NAME_CHARACTERS,
   sanitizeText,
 } from './text'
+import { resolveRequestId } from './requestId'
 import type { ImportProductCandidate } from './types'
 
 export const MAX_IMAGE_BYTES = 2 * 1024 * 1024
@@ -23,6 +24,7 @@ export type ValidatedHandwritingImportRequest = {
   image: File
   turnstileToken: string
   products: ImportProductCandidate[]
+  requestId: string
   origin: string
   remoteIp?: string
 }
@@ -223,6 +225,7 @@ export async function detectImageMime(
 export async function validateHandwritingImportRequest(
   request: Request,
   allowedOrigins: ReadonlySet<string>,
+  fallbackRequestId: string,
 ): Promise<ValidatedHandwritingImportRequest> {
   if (request.method !== 'POST') {
     throw new RequestValidationError(405, 'METHOD_NOT_ALLOWED')
@@ -257,17 +260,26 @@ export async function validateHandwritingImportRequest(
   const imageEntries = formData.getAll('image')
   const tokenEntries = formData.getAll('turnstileToken')
   const productEntries = formData.getAll('products')
+  const requestIdEntries = formData.getAll('requestId')
   if (
-    entries.length !== 3 ||
+    (entries.length !== 3 && entries.length !== 4) ||
     imageEntries.length !== 1 ||
     tokenEntries.length !== 1 ||
     productEntries.length !== 1 ||
+    requestIdEntries.length > 1 ||
     !isFile(imageEntries[0]) ||
     typeof tokenEntries[0] !== 'string' ||
     typeof productEntries[0] !== 'string' ||
+    (requestIdEntries.length === 1 &&
+      typeof requestIdEntries[0] !== 'string') ||
     entries.some(
       ([key, entry]) =>
-        !['image', 'turnstileToken', 'products'].includes(key) ||
+        ![
+          'image',
+          'turnstileToken',
+          'products',
+          'requestId',
+        ].includes(key) ||
         (key !== 'image' && typeof entry !== 'string'),
     )
   ) {
@@ -301,6 +313,10 @@ export async function validateHandwritingImportRequest(
     image,
     turnstileToken,
     products: validateProductsJson(productEntries[0]),
+    requestId: resolveRequestId(
+      requestIdEntries[0],
+      fallbackRequestId,
+    ),
     origin,
     ...(request.headers.get('CF-Connecting-IP')
       ? { remoteIp: request.headers.get('CF-Connecting-IP') ?? undefined }

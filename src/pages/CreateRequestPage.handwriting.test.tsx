@@ -9,6 +9,7 @@ import { CreateRequestPage } from './CreateRequestPage'
 
 const config = {
   enabled: true,
+  diagnosticsEnabled: false,
   endpoint: 'https://import.example.test/',
   turnstileSiteKey: 'site-key',
 }

@@ -1,4 +1,5 @@
 import { HandwritingImportError } from './errors'
+import type { HandwritingDiagnosticsReporter } from './diagnostics'
 
 export const MAX_HANDWRITING_IMAGE_BYTES = 2 * 1024 * 1024
 export const MAX_HANDWRITING_SOURCE_IMAGE_BYTES = 15 * 1024 * 1024
@@ -21,6 +22,7 @@ export type ImagePreprocessOptions = {
   adjustment?: ImageAdjustment
   maxDimension?: number
   maxBytes?: number
+  diagnostics?: HandwritingDiagnosticsReporter
 }
 
 type DecodedImage = {
@@ -264,6 +266,7 @@ async function renderAndEncode(
   adjustment: ImageAdjustment,
   maxBytes: number,
   signal?: AbortSignal,
+  diagnostics?: HandwritingDiagnosticsReporter,
 ): Promise<Blob | undefined> {
   const canvas = createCanvas(width, height)
   try {
@@ -271,15 +274,27 @@ async function renderAndEncode(
     if (!context) {
       throw new HandwritingImportError('request-invalid')
     }
+    diagnostics?.record('canvas-render-started', {
+      resizedWidth: width,
+      resizedHeight: height,
+    })
     context.fillStyle = '#ffffff'
     context.fillRect(0, 0, width, height)
     context.drawImage(decoded.source, 0, 0, width, height)
     applyCanvasAdjustment(context, width, height, adjustment)
+    diagnostics?.record('canvas-render-completed', {
+      resizedWidth: width,
+      resizedHeight: height,
+    })
     await yieldToBrowser()
 
+    diagnostics?.record('encode-started')
     for (const quality of [0.9, 0.82, 0.74, 0.66, 0.58]) {
       throwIfAborted(signal)
       const blob = await encodeJpeg(canvas, quality)
+      diagnostics?.record('encode-completed', {
+        encodedBytes: blob.size,
+      })
       if (blob.size <= maxBytes) {
         return blob
       }
@@ -300,6 +315,7 @@ export async function preprocessHandwritingImage(
     adjustment = { mode: 'none' },
     maxDimension = MAX_HANDWRITING_IMAGE_DIMENSION,
     maxBytes = MAX_HANDWRITING_IMAGE_BYTES,
+    diagnostics,
   } = options
   throwIfAborted(signal)
 
@@ -317,8 +333,17 @@ export async function preprocessHandwritingImage(
   if (!detectedMime || detectedMime !== file.type) {
     throw new HandwritingImportError('unsupported-image')
   }
+  diagnostics?.record('source-validated', {
+    sourceImageBytes: file.size,
+    sourceMime: detectedMime,
+  })
 
+  diagnostics?.record('decode-started')
   const decoded = await decodeImage(file, signal)
+  diagnostics?.record('decode-completed', {
+    decodedWidth: decoded.width,
+    decodedHeight: decoded.height,
+  })
   try {
     if (
       Math.min(decoded.width, decoded.height) <
@@ -334,6 +359,10 @@ export async function preprocessHandwritingImage(
       decoded.height,
       maxDimension,
     )
+    diagnostics?.record('resize-calculated', {
+      resizedWidth: dimensions.width,
+      resizedHeight: dimensions.height,
+    })
     for (let attempt = 0; attempt < 4; attempt += 1) {
       throwIfAborted(signal)
       const result = await renderAndEncode(
@@ -343,12 +372,16 @@ export async function preprocessHandwritingImage(
         adjustment,
         maxBytes,
         signal,
+        diagnostics,
       )
       if (result) {
         const outputMime = await detectImageMime(result)
         if (outputMime !== 'image/jpeg') {
           throw new HandwritingImportError('request-invalid')
         }
+        diagnostics?.record('preprocessing-completed', {
+          encodedBytes: result.size,
+        })
         return result
       }
       dimensions = {
