@@ -94,6 +94,7 @@ Use the merge-base range command for committed branch changes and the argument-f
 ### Independent review
 
 - Reviewer agents/scope:
+- Reviewed base SHA:
 - Reviewed head SHA:
 - Required evidence:
 - Findings:
@@ -101,6 +102,16 @@ Use the merge-base range command for committed branch changes and the argument-f
 - Re-review result:
 - P0 resolution status:
 - P1-P2 resolution or acceptance status:
+
+### PR CI integration evidence
+
+- CI run:
+- CI-tested base SHA:
+- CI-tested head SHA:
+- CI-tested PR merge commit SHA:
+- Branch-range diff check:
+- Working-tree diff check:
+- Base/head/merge equality recheck before merge:
 
 ### Manual/public checks
 
@@ -113,9 +124,11 @@ List secrets, dashboards, production settings, physical-device checks, terms, bi
 ## Release and rollback
 
 - Merge condition:
-- Reviewed head SHA:
-- Approval head SHA:
-- Deployment condition: Pages build and deploy success for the merge SHA after every merge to `main`
+- Reviewed base/head SHA:
+- Approval base/head SHA:
+- CI-tested base/head SHA:
+- CI-tested PR merge commit SHA:
+- Deployment condition: exact Squash SHA Pages success, or successful latest-main Pages deployment whose SHA contains the Squash SHA
 - Smoke path:
 - Rollback trigger:
 - Rollback procedure:
@@ -129,12 +142,16 @@ List secrets, dashboards, production settings, physical-device checks, terms, bi
 ## Completion evidence
 
 - Starting `main` SHA:
-- PR head SHA:
-- Reviewed head SHA:
-- Approval head SHA:
-- CI run/result for current head:
+- Current PR base SHA:
+- Current PR head SHA:
+- Reviewed base/head SHA:
+- Approval base/head SHA:
+- CI-tested base/head SHA:
+- CI-tested PR merge commit SHA:
 - Independent-review result:
 - Squash SHA:
-- Pages run/result for merge SHA:
+- Pages run/result:
+- Deployed main SHA:
+- Proof deployed SHA contains Squash SHA:
 - Public URL/smoke result:
 - Remaining limitations:
