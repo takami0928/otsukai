@@ -11,6 +11,7 @@
 
 - Risk: Low / Medium / High
 - Merge approval state:
+- Approval head SHA:
 - Production/external actions authorized:
 
 ## Changed behavior
@@ -35,23 +36,29 @@
 - [ ] `npm run check:worker-bundle`
 - [ ] `npm run test:coverage`
 - [ ] `npm run build`
-- [ ] `git diff --check`
+- [ ] `git fetch origin main`
+- [ ] `git diff --check origin/main...HEAD`
+- [ ] `git diff --check` for uncommitted changes
 
 Evidence / not-applicable rationale:
 
 ## Independent review
 
 - Reviewer/session:
+- Reviewed head SHA:
 - Scope:
 - Findings by severity:
 - Fixes and re-review result:
-- [ ] No unresolved P0-P2 findings remain, or the user explicitly accepted them.
+- [ ] No unresolved P0 finding remains; P0 was not waived or accepted.
+- [ ] No unresolved P1-P2 finding remains, or the user explicitly accepted it after seeing the current-head review result.
+- [ ] The PR head still equals the reviewed head SHA.
 
 ## Manual and public checks
 
 - Checks performed:
 - Physical-device/LINE checks not performed:
-- Pages/public smoke required after merge:
+- Pages workflow for merge SHA required after every merge: Yes
+- Behavior-specific public smoke required after merge:
 
 ## External configuration and user actions
 
@@ -66,7 +73,9 @@ Evidence / not-applicable rationale:
 
 - Starting `main` SHA:
 - PR head SHA:
-- CI run/result:
+- Reviewed head SHA:
+- Approval head SHA:
+- CI run/result for current head:
 - Expected merge method: Squash
-- Pages run/result after merge:
+- Pages run/result for merge SHA:
 - Public URL/smoke result:
