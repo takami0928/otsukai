@@ -33,19 +33,22 @@ describe('printable handwriting form', () => {
   })
 
   it('preserves the accepted 190 mm column geometry', () => {
-    expect(formHtml).toMatch(/table\s*\{[\s\S]*?width:\s*190mm;/u)
     expect(formHtml).toMatch(
-      /\.column-number\s*\{[\s\S]*?width:\s*10mm;/u,
+      /@media print\s*\{[\s\S]*?table\s*\{[\s\S]*?width:\s*190mm;/u,
     )
     expect(formHtml).toMatch(
-      /\.column-product\s*\{[\s\S]*?width:\s*70mm;/u,
+      /@media print\s*\{[\s\S]*?\.column-number\s*\{[\s\S]*?width:\s*10mm;/u,
     )
     expect(formHtml).toMatch(
-      /\.column-quantity\s*\{[\s\S]*?width:\s*20mm;/u,
+      /@media print\s*\{[\s\S]*?\.column-product\s*\{[\s\S]*?width:\s*70mm;/u,
     )
     expect(formHtml).toMatch(
-      /\.column-condition\s*\{[\s\S]*?width:\s*90mm;/u,
+      /@media print\s*\{[\s\S]*?\.column-quantity\s*\{[\s\S]*?width:\s*20mm;/u,
     )
+    expect(formHtml).toMatch(
+      /@media print\s*\{[\s\S]*?\.column-condition\s*\{[\s\S]*?width:\s*90mm;/u,
+    )
+    expect(formHtml).toMatch(/table\s*\{\s*width:\s*100%;/u)
   })
 
   it('prints the agreed handwriting guidance', () => {

@@ -115,7 +115,7 @@
       }
 
       table {
-        width: 190mm;
+        width: 100%;
         height: 190mm;
         border-collapse: collapse;
         table-layout: fixed;
@@ -141,21 +141,21 @@
       }
 
       .column-number {
-        width: 10mm;
+        width: 5.263%;
         text-align: center;
       }
 
       .column-product {
-        width: 70mm;
+        width: 36.842%;
       }
 
       .column-quantity {
-        width: 20mm;
+        width: 10.526%;
         text-align: center;
       }
 
       .column-condition {
-        width: 90mm;
+        width: 47.369%;
       }
 
       .row-number {
@@ -207,14 +207,46 @@
           print-color-adjust: exact;
           -webkit-print-color-adjust: exact;
         }
+
+        table {
+          width: 190mm;
+        }
+
+        .column-number {
+          width: 10mm;
+        }
+
+        .column-product {
+          width: 70mm;
+        }
+
+        .column-quantity {
+          width: 20mm;
+        }
+
+        .column-condition {
+          width: 90mm;
+        }
       }
 
       @media screen and (max-width: 700px) {
+        .screen-controls {
+          flex-direction: column;
+        }
+
+        .screen-controls button {
+          width: 100%;
+        }
+
         .form-sheet {
           height: auto;
           min-height: 277mm;
           padding-right: 8mm;
           padding-left: 8mm;
+        }
+
+        h1 {
+          font-size: 16pt;
         }
 
         .form-notes {
