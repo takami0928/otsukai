@@ -55,13 +55,37 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 
 元画像の長辺より大きい指定では拡大しません。
 
-## 手動検証の開始
+## 次回の接続確認と手動検証
+
+次回の#42トレース取得は、次の順序を変えずに行います。PowerShellでは`npm`ではなく`npm.cmd`を使用します。
+
+1. 安全な現在状態を確認します。
+
+   ```powershell
+   npm.cmd run manual:handwriting:status
+   ```
+
+2. 未完了sessionがある場合だけ復旧し、もう一度statusを確認します。
+
+   ```powershell
+   npm.cmd run manual:handwriting:recover
+   npm.cmd run manual:handwriting:status
+   ```
+
+3. 状態変更を伴わない接続probeを実行します。
+
+   ```powershell
+   npm.cmd run manual:handwriting:probe
+   ```
+
+4. `HANDWRITING CONNECTIVITY PROBE PASSED`が表示されることを確認します。このprobeはRepository Variableから公開Endpointだけを取得し、画像・Turnstileトークン・商品候補を含まない空のmultipart POSTを1回送ります。Workerの入力検証による`400 REQUEST_INVALID`、CORS、request ID、JSON応答を確認するだけで、session stateやlockを作成せず、Repository Variables、Pages、Worker deploymentを変更しません。Site KeyやSecretを取得・表示せず、Turnstile検証やGemini呼び出しには進みません。
+
+5. probe成功後にだけ手動検証を開始します。start自身が事前検査をすべて行います。
 
 リポジトリルートの最新`main`から実行します。
 
 ```powershell
-npm run manual:handwriting:preflight
-npm run manual:handwriting:start
+npm.cmd run manual:handwriting:start
 ```
 
 Windows PowerShellの互換ラッパーを使う場合:
@@ -119,35 +143,46 @@ Worker診断ログは1行JSONで、`requestId`、stage、所要時間、安全�
 現在の安全な状態だけを確認する場合:
 
 ```powershell
-npm run manual:handwriting:status
+npm.cmd run manual:handwriting:status
 ```
 
 開始処理の中断やPC再起動後に未完了stateが残った場合:
 
 ```powershell
-npm run manual:handwriting:recover
+npm.cmd run manual:handwriting:recover
 ```
 
 同時起動はlockで拒否されます。`SIGINT`、`SIGTERM`、未処理例外の後は一度だけ自動復旧を試み、完了できなければstateを`recovery-required`として残します。stateやlockを手で削除せず、`status`と`recover`を使ってください。
 
-## テスト順序
+## 800px画像1回のトレース取得
 
-次の順に、利用者が手動で1画像ずつ選択します。
+開始スクリプトが`MANUAL TEST IS ENABLED`を表示した後、次だけを行います。
 
-1. `long-edge-800.jpg`
-2. `long-edge-1200.jpg`
-3. `long-edge-1600.jpg`
-4. `long-edge-2400.jpg`
-5. 元画像
+1. 表示された完成済み`wrangler tail`コマンドを別PowerShellで実行します。
+2. 表示された正しいsession URLを通常のデスクトップChromeで開きます。
+3. DevToolsのNetworkとConsoleで`Preserve log`がONであることを確認します。
+4. `long-edge-800.jpg`を1回だけ選択し、「読み取りを開始」を1回だけ実行します。
+5. 診断情報から`requestId`、`failedAfterStage`、`httpStatus`、`workerErrorCode`を記録します。
+6. 同じ`requestId`の安全なWorker tail行を保存します。
+7. 成否にかかわらずstopを実行し、その後statusを確認します。
 
-各画像について次だけを記録します。
+   ```powershell
+   npm.cmd run manual:handwriting:stop
+   npm.cmd run manual:handwriting:status
+   ```
+
+このトレースでは1200px、1600px、2400px、元画像を続けて試しません。同じ800px画像も反復送信しません。追加試験は、最初の1回のブラウザ診断とWorker tailを評価してから別途判断します。
+
+1回の送信について次だけを記録します。
 
 | 項目 | 記録 |
 |---|---|
 | タブが維持されたか | yes / no |
-| ブラウザ診断の最終stage | stage名 |
+| ブラウザ診断の最終stage | `failed`等 |
+| 失敗直前stage | `failedAfterStage`または未発生 |
 | WorkerへのPOST | あり / なし |
 | HTTP status | 数値または未到達 |
+| Workerエラーコード | `workerErrorCode`または未到達 |
 | Workerの最終stage | stage名または未到達 |
 | 確認画面 | 到達 / 未到達 |
 | 結果件数 | total / matched / ambiguous / unknown |
@@ -166,30 +201,30 @@ npm run manual:handwriting:recover
 - 二重実行できない
 - 通常商品、自由追加、共有に回帰がない
 
-デスクトップChromeで切り分けた後、同じ公開URLを使ってAndroid ChromeとiPhone Safariでも代表画像（まず`long-edge-1600.jpg`、問題がなければ元画像）を手動確認します。物理端末で実施していない項目は未確認として記録し、デスクトップ結果から成功を推定しません。
+Android ChromeとiPhone Safariの確認はこの1回のトレースには含めません。物理端末で実施していない項目は未確認とし、デスクトップ結果から成功を推定しません。
 
 ## 結果の判定表
 
 | 観測結果 | 主な切り分け先 |
 |---|---|
-| `decode-started`で停止 | 元画像デコードまたはブラウザメモリ |
-| `decode-completed`後、`canvas-render-completed`前 | Canvas描画またはブラウザメモリ |
-| `preprocessing-completed`後、`turnstile-token-received`前 | Turnstileのロードまたはトークン取得 |
-| `worker-request-started`だがWorkerログなし | ネットワーク、CORS、ブラウザ |
+| `failedAfterStage=decode-started` | 元画像デコードまたはブラウザメモリ |
+| `failedAfterStage=decode-completed`または`canvas-render-started` | Canvas描画またはブラウザメモリ |
+| `failedAfterStage=preprocessing-completed`から`turnstile-execute-started` | Turnstileのロードまたはトークン取得 |
+| `failedAfterStage=worker-request-started`かつWorkerログなし | ネットワーク、CORS、ブラウザ |
 | `request-received`後、`turnstile-verified`前 | Worker入力検証またはTurnstile Siteverify |
 | `gemini-request-started`後に失敗 | Gemini、無料枠、タイムアウト、SDK |
-| `worker-response-received`後、`confirmation-rendered`前 | フロント結果検証または確認画面描画 |
-| 小画像成功、元画像失敗 | 元画像デコード時のメモリ負荷が有力 |
+| `failedAfterStage=worker-response-received` | Worker error response、JSON読取、フロント結果検証 |
+| `failedAfterStage=worker-response-validated`または`confirmation-render-started` | 確認画面描画 |
 | 通常Chrome成功、Codexブラウザだけ失敗 | Codexブラウザ自動化環境の問題が有力 |
 
-ブラウザ再読み込み後も、診断パネルの「前回セッションの最終stage」で最後の安全な記録を確認できます。「診断情報をコピー」は安全なメタデータだけをJSON化し、「診断情報を消去」は診断用localStorageキーだけを削除します。
+ブラウザ再読み込み後も、診断パネルの「前回セッションの最終stage」で最後の安全な記録を確認できます。失敗時は`stage=failed`に加えて「失敗直前」と`failedAfterStage`が残ります。「診断情報をコピー」は安全なメタデータだけをJSON化し、「診断情報を消去」は診断用localStorageキーだけを削除します。
 
 ## 終了
 
 手動検証の成否にかかわらず、必ず実行します。
 
 ```powershell
-npm run manual:handwriting:stop
+npm.cmd run manual:handwriting:stop
 ```
 
 Windows PowerShell互換ラッパー:
@@ -220,4 +255,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 - Origin変更なし
 - Turnstile hostname変更なし
 
-停止処理が失敗した場合は、そのまま運用を継続せず、`npm run manual:handwriting:status`で安全なメタデータだけを確認し、`npm run manual:handwriting:recover`でOFF復元を完了してください。状態ファイルには画像、商品情報、トークン、APIキー、Secretを保存しません。
+停止処理が失敗した場合は、そのまま運用を継続せず、`npm.cmd run manual:handwriting:status`で安全なメタデータだけを確認し、`npm.cmd run manual:handwriting:recover`でOFF復元を完了してください。状態ファイルには画像、商品情報、トークン、APIキー、Secretを保存しません。
