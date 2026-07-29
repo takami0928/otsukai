@@ -142,7 +142,11 @@ describe('HandwritingImportSection', () => {
     width = 1200,
     height = 1600,
   }: {
-    inputLabel?: '写真を撮る' | '端末の写真を選ぶ'
+    inputLabel?:
+      | '写真を撮る'
+      | '端末の写真を選ぶ'
+      | '撮り直す'
+      | '選び直す'
     file?: File
     start?: boolean
     loadPreview?: boolean
@@ -247,6 +251,16 @@ describe('HandwritingImportSection', () => {
     expect(container.textContent).toContain('3024 × 4032 px')
     expect(container.textContent).not.toContain('memo.jpg')
     expect(
+      container.querySelector(
+        'input[type="file"][aria-label="撮り直す"]',
+      ),
+    ).not.toBeNull()
+    expect(
+      container.querySelector(
+        'input[type="file"][aria-label="選び直す"]',
+      ),
+    ).not.toBeNull()
+    expect(
       container.querySelector('[data-handwriting-phase="previewing"]'),
     ).not.toBeNull()
     expect(rendered.preprocessImage).not.toHaveBeenCalled()
@@ -316,7 +330,7 @@ describe('HandwritingImportSection', () => {
       start: false,
     })
     await chooseImage({
-      inputLabel: '写真を撮る',
+      inputLabel: '撮り直す',
       file: secondFile,
       start: false,
     })

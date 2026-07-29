@@ -1829,6 +1829,11 @@ select:focus {
   text-align: center;
 }
 
+.handwriting-file-button:focus-within {
+  outline: 3px solid #9bc5b5;
+  outline-offset: 3px;
+}
+
 .handwriting-file-button.is-disabled {
   opacity: 0.42;
   cursor: default;

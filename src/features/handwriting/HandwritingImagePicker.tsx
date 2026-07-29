@@ -41,6 +41,11 @@ export function HandwritingImagePicker({
   onStart,
   onCancel,
 }: HandwritingImagePickerProps) {
+  const cameraActionLabel = preview ? '撮り直す' : '写真を撮る'
+  const libraryActionLabel = preview
+    ? '選び直す'
+    : '端末の写真を選ぶ'
+
   return (
     <>
       <div className="handwriting-source-actions">
@@ -49,13 +54,13 @@ export function HandwritingImagePicker({
             disabled ? ' is-disabled' : ''
           }`}
         >
-          {preview ? '撮り直す' : '写真を撮る'}
+          {cameraActionLabel}
           <input
             className="visually-hidden"
             type="file"
             accept="image/*"
             capture="environment"
-            aria-label="写真を撮る"
+            aria-label={cameraActionLabel}
             disabled={disabled}
             onChange={onFileChange}
           />
@@ -65,12 +70,12 @@ export function HandwritingImagePicker({
             disabled ? ' is-disabled' : ''
           }`}
         >
-          {preview ? '選び直す' : '端末の写真を選ぶ'}
+          {libraryActionLabel}
           <input
             className="visually-hidden"
             type="file"
             accept="image/*"
-            aria-label="端末の写真を選ぶ"
+            aria-label={libraryActionLabel}
             disabled={disabled}
             onChange={onFileChange}
           />

@@ -32,6 +32,30 @@ describe('printable handwriting form', () => {
     expect(formHtml).toContain('A4・縦向き・倍率100%')
   })
 
+  it('preserves the accepted 190 mm column geometry', () => {
+    expect(formHtml).toMatch(/table\s*\{[\s\S]*?width:\s*190mm;/u)
+    expect(formHtml).toMatch(
+      /\.column-number\s*\{[\s\S]*?width:\s*10mm;/u,
+    )
+    expect(formHtml).toMatch(
+      /\.column-product\s*\{[\s\S]*?width:\s*70mm;/u,
+    )
+    expect(formHtml).toMatch(
+      /\.column-quantity\s*\{[\s\S]*?width:\s*20mm;/u,
+    )
+    expect(formHtml).toMatch(
+      /\.column-condition\s*\{[\s\S]*?width:\s*90mm;/u,
+    )
+  })
+
+  it('prints the agreed handwriting guidance', () => {
+    expect(formHtml).toContain('個数は1〜20で書いてください。')
+    expect(formHtml).toContain('条件は短く書いてください。')
+    expect(formHtml).toContain('空行は読み取りません。')
+    expect(formHtml).toContain('同じ商品は原則1行へまとめてください。')
+    expect(formHtml).toContain('訂正は二重線で消し')
+  })
+
   it('contains no personal-information fields or external resources', () => {
     for (const forbiddenLabel of [
       '氏名',
