@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import type { EffectiveProduct } from '../../types/householdCatalog'
 import { createId } from '../../utils/id'
 import type { HandwritingImportApplyReason } from './applyImport'
@@ -10,9 +16,14 @@ import {
 } from './errors'
 import { GeminiHandwritingImportProvider } from './GeminiHandwritingImportProvider'
 import {
+  MAX_HANDWRITING_SOURCE_IMAGE_BYTES,
   preprocessHandwritingImage,
   type ImagePreprocessOptions,
 } from './imagePreprocessing'
+import {
+  HandwritingImagePicker,
+  type HandwritingImagePreview,
+} from './HandwritingImagePicker'
 import { buildImportProductCandidates } from './productCandidates'
 import { parseHandwritingImportResult } from './resultValidation'
 import {
@@ -31,7 +42,13 @@ import type {
   ImportProductCandidate,
 } from './types'
 
-type ProcessingPhase = 'idle' | 'preparing' | 'analyzing'
+type HandwritingImportPhase =
+  | 'idle'
+  | 'previewing'
+  | 'preparing'
+  | 'analyzing'
+  | 'confirmation'
+  | 'failed'
 
 type ApplySelectionsResult = {
   accepted: boolean
@@ -56,6 +73,22 @@ type HandwritingImportSectionProps = {
     options?: ImagePreprocessOptions,
   ) => Promise<Blob>
   createCustomItemId?: () => string
+  createPreviewUrl?: (file: File) => string
+  revokePreviewUrl?: (url: string) => void
+}
+
+const SUPPORTED_PREVIEW_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+])
+
+function defaultCreatePreviewUrl(file: File): string {
+  return URL.createObjectURL(file)
+}
+
+function defaultRevokePreviewUrl(url: string): void {
+  URL.revokeObjectURL(url)
 }
 
 function productName(
@@ -123,9 +156,12 @@ export function HandwritingImportSection({
   importProvider,
   preprocessImage = preprocessHandwritingImage,
   createCustomItemId = () => createId('custom'),
+  createPreviewUrl = defaultCreatePreviewUrl,
+  revokePreviewUrl = defaultRevokePreviewUrl,
 }: HandwritingImportSectionProps) {
   const turnstileContainerRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController>()
+  const previewUrlRef = useRef<string>()
   const diagnosticsStore = useMemo(
     () =>
       createHandwritingDiagnosticsStore(config.diagnosticsEnabled),
@@ -136,7 +172,8 @@ export function HandwritingImportSection({
   )
   const [defaultProvider, setDefaultProvider] =
     useState<HandwritingImportProvider>()
-  const [phase, setPhase] = useState<ProcessingPhase>('idle')
+  const [phase, setPhase] = useState<HandwritingImportPhase>('idle')
+  const [preview, setPreview] = useState<HandwritingImagePreview>()
   const [items, setItems] = useState<DisplayItem[]>([])
   const [choices, setChoices] = useState<Record<string, string>>({})
   const [message, setMessage] = useState('')
@@ -152,6 +189,19 @@ export function HandwritingImportSection({
       ),
     [productCandidates],
   )
+  const releasePreviewUrl = useCallback(() => {
+    const currentUrl = previewUrlRef.current
+    if (!currentUrl) {
+      return
+    }
+    previewUrlRef.current = undefined
+    revokePreviewUrl(currentUrl)
+  }, [revokePreviewUrl])
+
+  const clearPreview = useCallback(() => {
+    releasePreviewUrl()
+    setPreview(undefined)
+  }, [releasePreviewUrl])
 
   useEffect(() => {
     setDiagnosticsView(diagnosticsStore.getView())
@@ -194,16 +244,17 @@ export function HandwritingImportSection({
   ])
 
   useEffect(() => {
-    if (items.length > 0) {
+    if (phase === 'confirmation' && items.length > 0) {
       diagnosticsStore.record('confirmation-rendered')
     }
-  }, [diagnosticsStore, items.length])
+  }, [diagnosticsStore, items.length, phase])
 
   useEffect(
     () => () => {
       abortControllerRef.current?.abort()
+      releasePreviewUrl()
     },
-    [],
+    [releasePreviewUrl],
   )
 
   if (!config.enabled) {
@@ -211,23 +262,114 @@ export function HandwritingImportSection({
   }
 
   const provider = importProvider ?? defaultProvider
-  const isProcessing = phase !== 'idle'
+  const isProcessing =
+    phase === 'preparing' || phase === 'analyzing'
 
-  const handleFileChange = async (
+  const handleFileChange = (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const input = event.currentTarget
     const file = input.files?.[0]
     input.value = ''
+    if (!file || abortControllerRef.current || isProcessing) {
+      return
+    }
+
+    releasePreviewUrl()
+    setPreview(undefined)
+    setItems([])
+    setChoices({})
+    setMessage('')
+    setDialogError('')
+
     if (
-      !file ||
-      abortControllerRef.current ||
-      isProcessing ||
-      !provider
+      !SUPPORTED_PREVIEW_MIME_TYPES.has(file.type) ||
+      file.size > MAX_HANDWRITING_SOURCE_IMAGE_BYTES
+    ) {
+      const error = new HandwritingImportError(
+        file.size > MAX_HANDWRITING_SOURCE_IMAGE_BYTES
+          ? 'image-too-large'
+          : 'unsupported-image',
+      )
+      setMessage(toHandwritingErrorMessage(error))
+      setPhase('failed')
+      return
+    }
+
+    try {
+      const objectUrl = createPreviewUrl(file)
+      previewUrlRef.current = objectUrl
+      setPreview({
+        file,
+        objectUrl,
+        mime: file.type,
+        sizeBytes: file.size,
+        decodeFailed: false,
+      })
+      setPhase('previewing')
+    } catch {
+      setMessage(
+        toHandwritingErrorMessage(
+          new HandwritingImportError('request-invalid'),
+        ),
+      )
+      setPhase('failed')
+    }
+  }
+
+  const handlePreviewLoad = (
+    objectUrl: string,
+    width: number,
+    height: number,
+  ) => {
+    if (width <= 0 || height <= 0) {
+      return
+    }
+    setPreview((current) =>
+      current?.objectUrl === objectUrl
+        ? { ...current, width, height, decodeFailed: false }
+        : current,
+    )
+  }
+
+  const handlePreviewError = (objectUrl: string) => {
+    setPreview((current) =>
+      current?.objectUrl === objectUrl
+        ? {
+            ...current,
+            width: undefined,
+            height: undefined,
+            decodeFailed: true,
+          }
+        : current,
+    )
+  }
+
+  const handlePreviewCancel = () => {
+    if (isProcessing) {
+      return
+    }
+    clearPreview()
+    setMessage('')
+    setDialogError('')
+    setPhase('idle')
+  }
+
+  const handleStartAnalysis = async () => {
+    if (
+      phase !== 'previewing' ||
+      !preview ||
+      preview.decodeFailed ||
+      !preview.width ||
+      !preview.height ||
+      !provider ||
+      abortControllerRef.current
     ) {
       return
     }
 
+    const file = preview.file
+    clearPreview()
     const controller = new AbortController()
     const requestId = createHandwritingRequestId()
     abortControllerRef.current = controller
@@ -295,6 +437,7 @@ export function HandwritingImportSection({
           ]),
         ),
       )
+      setPhase('confirmation')
     } catch (error) {
       const diagnosticError =
         isAbortError(error)
@@ -309,10 +452,10 @@ export function HandwritingImportSection({
       setMessage(
         toHandwritingErrorMessage(diagnosticError),
       )
+      setPhase('failed')
     } finally {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = undefined
-        setPhase('idle')
       }
     }
   }
@@ -352,6 +495,7 @@ export function HandwritingImportSection({
     setDialogError('')
     setItems([])
     setChoices({})
+    setPhase('idle')
     setMessage(
       result.changedItemCount > 0
         ? `${result.changedItemCount}件の商品を依頼へ追加しました。`
@@ -363,11 +507,15 @@ export function HandwritingImportSection({
     setItems([])
     setChoices({})
     setDialogError('')
+    setPhase('idle')
   }
 
   return (
     <>
-      <section className="info-card handwriting-import-section">
+      <section
+        className="info-card handwriting-import-section"
+        data-handwriting-phase={phase}
+      >
         <div className="section-heading handwriting-import-heading">
           <div>
             <p className="eyebrow">画像から商品候補を選ぶ</p>
@@ -392,21 +540,26 @@ export function HandwritingImportSection({
           無料枠では、送信内容がGoogleのサービス改善に使用される場合があります。
         </p>
 
-        <label
-          className={`primary-button handwriting-file-button${
-            isProcessing || !provider ? ' is-disabled' : ''
-          }`}
-        >
-          写真を撮る・画像を選ぶ
-          <input
-            className="visually-hidden"
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            capture="environment"
-            disabled={isProcessing || !provider}
-            onChange={handleFileChange}
-          />
-        </label>
+        <p className="handwriting-form-link">
+          <a
+            href={`${import.meta.env.BASE_URL}handwriting-form-v1.html`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            印刷用フォームを開く
+          </a>
+        </p>
+
+        <HandwritingImagePicker
+          preview={preview}
+          disabled={isProcessing}
+          analysisReady={Boolean(provider)}
+          onFileChange={handleFileChange}
+          onPreviewLoad={handlePreviewLoad}
+          onPreviewError={handlePreviewError}
+          onStart={() => void handleStartAnalysis()}
+          onCancel={handlePreviewCancel}
+        />
 
         {isProcessing ? (
           <div className="handwriting-progress" aria-live="polite">
@@ -444,7 +597,7 @@ export function HandwritingImportSection({
         ) : null}
       </section>
 
-      {items.length > 0 ? (
+      {phase === 'confirmation' && items.length > 0 ? (
         <div className="dialog-backdrop">
           <section
             className="dialog-card handwriting-confirmation"

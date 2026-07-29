@@ -1802,15 +1802,95 @@ select:focus {
   margin-bottom: 0.45rem;
 }
 
-.handwriting-file-button {
-  width: 100%;
+.handwriting-form-link {
+  margin: 0.75rem 0 0;
+}
+
+.handwriting-form-link a {
+  color: #315c4d;
+  font-weight: 700;
+  text-underline-offset: 0.2em;
+}
+
+.handwriting-source-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
   margin-top: 0.75rem;
+}
+
+.handwriting-file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  text-align: center;
 }
 
 .handwriting-file-button.is-disabled {
   opacity: 0.42;
   cursor: default;
   pointer-events: none;
+}
+
+.handwriting-image-preview {
+  min-width: 0;
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid #d6e1dc;
+  border-radius: 10px;
+  background: #f8faf9;
+}
+
+.handwriting-image-preview img {
+  display: block;
+  width: 100%;
+  max-height: 20rem;
+  border-radius: 8px;
+  background: #e8eeeb;
+  object-fit: contain;
+}
+
+.handwriting-image-metadata {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0.65rem 0 0;
+}
+
+.handwriting-image-metadata > div {
+  min-width: 0;
+  padding: 0.45rem 0.5rem;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.handwriting-image-metadata dt {
+  color: #60736c;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.handwriting-image-metadata dd {
+  margin: 0.15rem 0 0;
+  color: #2f4f43;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.handwriting-preview-error {
+  margin: 0.65rem 0 0;
+  color: #8f3f3c;
+  font-size: 0.86rem;
+}
+
+.handwriting-preview-actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
 }
 
 .handwriting-progress {
@@ -2033,6 +2113,21 @@ select:focus {
 }
 
 @media (max-width: 480px) {
+  .handwriting-source-actions,
+  .handwriting-image-metadata,
+  .handwriting-preview-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .handwriting-source-actions,
+  .handwriting-preview-actions {
+    display: grid;
+  }
+
+  .handwriting-preview-actions button {
+    width: 100%;
+  }
+
   .handwriting-diagnostics-grid {
     grid-template-columns: minmax(0, 1fr);
   }
