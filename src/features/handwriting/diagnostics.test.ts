@@ -5,6 +5,7 @@ import {
   HANDWRITING_DIAGNOSTICS_STORAGE_KEY,
   isValidHandwritingRequestId,
   toSafeWorkerErrorCode,
+  type HandwritingDiagnosticStage,
 } from './diagnostics'
 
 function memoryStorage(initial?: string) {
@@ -21,6 +22,24 @@ function memoryStorage(initial?: string) {
       values.delete(key)
     }),
     value: () => values.get(HANDWRITING_DIAGNOSTICS_STORAGE_KEY),
+  }
+}
+
+function safeSnapshot(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    schemaVersion: 1,
+    requestId: 'previous-request',
+    stage: 'failed',
+    timestamp: '2026-07-28T00:00:00.000Z',
+    elapsedMs: 20,
+    browser: {
+      name: 'Safari',
+      version: '19.0',
+      online: true,
+    },
+    ...overrides,
   }
 }
 
@@ -107,18 +126,9 @@ describe('handwriting diagnostics', () => {
   })
 
   it('restores only a strictly validated previous snapshot', () => {
-    const validPrevious = JSON.stringify({
-      schemaVersion: 1,
-      requestId: 'previous-request',
+    const validPrevious = JSON.stringify(safeSnapshot({
       stage: 'decode-started',
-      timestamp: '2026-07-28T00:00:00.000Z',
-      elapsedMs: 20,
-      browser: {
-        name: 'Safari',
-        version: '19.0',
-        online: true,
-      },
-    })
+    }))
     const restored = createHandwritingDiagnosticsStore(true, {
       storage: memoryStorage(validPrevious),
     })
@@ -156,6 +166,7 @@ describe('handwriting diagnostics', () => {
       expect.objectContaining({
         requestId: 'first-request',
         stage: 'failed',
+        failedAfterStage: 'file-selected',
       }),
     )
     expect(store.getView().current).toEqual(
@@ -165,7 +176,170 @@ describe('handwriting diagnostics', () => {
         browser: expect.objectContaining({ online: false }),
       }),
     )
+    expect(store.getView().current).not.toHaveProperty('failedAfterStage')
   })
+
+  it.each<
+    {
+      label: string
+      stage: HandwritingDiagnosticStage
+      details?: {
+        httpStatus?: number
+        workerErrorCode?: 'REQUEST_INVALID' | 'SERVICE_UNAVAILABLE'
+      }
+    }
+  >([
+    { label: 'decode failure', stage: 'decode-started' },
+    { label: 'canvas failure', stage: 'canvas-render-started' },
+    { label: 'encode failure', stage: 'encode-started' },
+    {
+      label: 'Turnstile load failure',
+      stage: 'turnstile-load-started',
+    },
+    {
+      label: 'Turnstile execute failure',
+      stage: 'turnstile-execute-started',
+    },
+    { label: 'fetch rejection', stage: 'worker-request-started' },
+    {
+      label: 'Worker 4xx',
+      stage: 'worker-response-received',
+      details: {
+        httpStatus: 400,
+        workerErrorCode: 'REQUEST_INVALID',
+      },
+    },
+    {
+      label: 'Worker 5xx',
+      stage: 'worker-response-received',
+      details: {
+        httpStatus: 502,
+        workerErrorCode: 'SERVICE_UNAVAILABLE',
+      },
+    },
+    {
+      label: 'invalid JSON',
+      stage: 'worker-response-received',
+      details: { httpStatus: 200 },
+    },
+    {
+      label: 'invalid result',
+      stage: 'worker-response-received',
+      details: { httpStatus: 200 },
+    },
+    {
+      label: 'confirmation start failure',
+      stage: 'confirmation-render-started',
+    },
+    {
+      label: 'confirmation render failure',
+      stage: 'confirmation-rendered',
+    },
+  ])(
+    'preserves the last safe stage for $label',
+    ({ stage, details }) => {
+      const storage = memoryStorage()
+      const store = createHandwritingDiagnosticsStore(true, { storage })
+      store.begin({
+        requestId: 'failure-boundary-request',
+        sourceImageBytes: 100,
+        sourceMime: 'image/jpeg',
+      })
+      store.record(stage, details)
+      store.record('failed', { errorCode: 'service-unavailable' })
+
+      expect(store.getView().current).toEqual(
+        expect.objectContaining({
+          stage: 'failed',
+          failedAfterStage: stage,
+          errorCode: 'service-unavailable',
+          ...(details ?? {}),
+        }),
+      )
+      expect(JSON.parse(storage.value() ?? '{}')).toEqual(
+        expect.objectContaining({
+          stage: 'failed',
+          failedAfterStage: stage,
+        }),
+      )
+      expect(JSON.parse(store.serialize()).current).toEqual(
+        expect.objectContaining({ failedAfterStage: stage }),
+      )
+    },
+  )
+
+  it('does not retain a failure boundary for cancellation or later stages', () => {
+    const store = createHandwritingDiagnosticsStore(true, {
+      storage: memoryStorage(),
+    })
+    store.begin({
+      requestId: 'cancelled-request',
+      sourceImageBytes: 100,
+      sourceMime: 'image/jpeg',
+    })
+    store.record('worker-request-started')
+    store.record('failed')
+    expect(store.getView().current?.failedAfterStage).toBe(
+      'worker-request-started',
+    )
+
+    store.record('decode-started')
+    expect(store.getView().current?.stage).toBe('decode-started')
+    expect(store.getView().current).not.toHaveProperty('failedAfterStage')
+
+    store.record('worker-request-started')
+    store.record('failed')
+    store.record('cancelled')
+    expect(store.getView().current?.stage).toBe('cancelled')
+    expect(store.getView().current).not.toHaveProperty('failedAfterStage')
+  })
+
+  it('restores compatible failure boundaries and rejects unsafe values', () => {
+    const restored = createHandwritingDiagnosticsStore(true, {
+      storage: memoryStorage(
+        JSON.stringify(
+          safeSnapshot({
+            failedAfterStage: 'worker-request-started',
+            httpStatus: 502,
+          }),
+        ),
+      ),
+    })
+    expect(restored.getView().previous).toEqual(
+      expect.objectContaining({
+        schemaVersion: 1,
+        stage: 'failed',
+        failedAfterStage: 'worker-request-started',
+        httpStatus: 502,
+      }),
+    )
+    expect(JSON.parse(restored.serialize()).previous).toEqual(
+      expect.objectContaining({
+        failedAfterStage: 'worker-request-started',
+      }),
+    )
+  })
+
+  it.each([
+    ['non-string', 123, 'failed'],
+    ['unknown stage', 'future-stage', 'failed'],
+    ['idle', 'idle', 'failed'],
+    ['failed', 'failed', 'failed'],
+    ['cancelled', 'cancelled', 'failed'],
+    ['non-failed snapshot', 'decode-started', 'decode-completed'],
+  ])(
+    'rejects a $label failedAfterStage value',
+    (_label, failedAfterStage, stage) => {
+      const store = createHandwritingDiagnosticsStore(true, {
+        storage: memoryStorage(
+          JSON.stringify(
+            safeSnapshot({ stage, failedAfterStage }),
+          ),
+        ),
+      })
+      expect(store.getView().previous).toBeUndefined()
+    },
+  )
 
   it('adopts only a valid response request ID and clears persisted data', () => {
     const storage = memoryStorage()
@@ -204,9 +378,32 @@ describe('handwriting diagnostics', () => {
     ;(exposed.browser as unknown as Record<string, unknown>).sourceText =
       'must-not-persist'
     store.record('decode-started')
+    store.record('failed')
 
     expect(store.getView().current?.browser.version).not.toBe('mutated')
     expect(storage.value()).not.toContain('sourceText')
+    const failed = store.getView().current
+    if (!failed) {
+      throw new Error('expected failed diagnostics')
+    }
+    failed.failedAfterStage = 'encode-started'
+    expect(store.getView().current?.failedAfterStage).toBe(
+      'decode-started',
+    )
+
+    store.begin({
+      requestId: 'defensive-copy-next-request',
+      sourceImageBytes: 200,
+      sourceMime: 'image/png',
+    })
+    const exposedPrevious = store.getView().previous
+    if (!exposedPrevious) {
+      throw new Error('expected previous diagnostics')
+    }
+    exposedPrevious.failedAfterStage = 'encode-started'
+    expect(store.getView().previous?.failedAfterStage).toBe(
+      'decode-started',
+    )
   })
 
   it('prefers randomUUID and supports a getRandomValues fallback', () => {

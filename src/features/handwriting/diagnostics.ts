@@ -41,6 +41,7 @@ export type HandwritingDiagnosticSnapshot = {
   schemaVersion: 1
   requestId: string
   stage: HandwritingDiagnosticStage
+  failedAfterStage?: HandwritingDiagnosticStage
   timestamp: string
   elapsedMs: number
   browser: HandwritingDiagnosticBrowser
@@ -171,6 +172,11 @@ const DIAGNOSTIC_STAGES = new Set<HandwritingDiagnosticStage>([
   'failed',
   'cancelled',
 ])
+const TERMINAL_DIAGNOSTIC_STAGES = new Set<HandwritingDiagnosticStage>([
+  'idle',
+  'failed',
+  'cancelled',
+])
 const WORKER_ERROR_CODES = new Set<SafeWorkerErrorCode>([
   'METHOD_NOT_ALLOWED',
   'ORIGIN_NOT_ALLOWED',
@@ -204,6 +210,7 @@ const SNAPSHOT_KEYS = new Set([
   'schemaVersion',
   'requestId',
   'stage',
+  'failedAfterStage',
   'timestamp',
   'elapsedMs',
   'browser',
@@ -300,6 +307,18 @@ function optionalInteger(value: unknown): value is number | undefined {
   )
 }
 
+function isFailureBoundaryStage(
+  value: unknown,
+): value is HandwritingDiagnosticStage {
+  return (
+    typeof value === 'string' &&
+    DIAGNOSTIC_STAGES.has(value as HandwritingDiagnosticStage) &&
+    !TERMINAL_DIAGNOSTIC_STAGES.has(
+      value as HandwritingDiagnosticStage,
+    )
+  )
+}
+
 function parseSnapshot(
   value: unknown,
 ): HandwritingDiagnosticSnapshot | undefined {
@@ -310,6 +329,9 @@ function parseSnapshot(
     !isValidHandwritingRequestId(value.requestId) ||
     typeof value.stage !== 'string' ||
     !DIAGNOSTIC_STAGES.has(value.stage as HandwritingDiagnosticStage) ||
+    (typeof value.failedAfterStage !== 'undefined' &&
+      (!isFailureBoundaryStage(value.failedAfterStage) ||
+        value.stage !== 'failed')) ||
     typeof value.timestamp !== 'string' ||
     Number.isNaN(Date.parse(value.timestamp)) ||
     !isFiniteNonNegativeNumber(value.elapsedMs)
@@ -352,6 +374,12 @@ function parseSnapshot(
     schemaVersion: 1,
     requestId: value.requestId,
     stage: value.stage as HandwritingDiagnosticStage,
+    ...(typeof value.failedAfterStage === 'string'
+      ? {
+          failedAfterStage:
+            value.failedAfterStage as HandwritingDiagnosticStage,
+        }
+      : {}),
     timestamp: value.timestamp,
     elapsedMs: value.elapsedMs,
     browser,
@@ -566,6 +594,14 @@ function copyView(view: HandwritingDiagnosticsView): HandwritingDiagnosticsView 
   }
 }
 
+function withoutFailureBoundary(
+  snapshot: HandwritingDiagnosticSnapshot,
+): HandwritingDiagnosticSnapshot {
+  const next = { ...snapshot }
+  delete next.failedAfterStage
+  return next
+}
+
 export function createHandwritingDiagnosticsStore(
   enabled: boolean,
   dependencies: DiagnosticsDependencies = {},
@@ -650,10 +686,15 @@ export function createHandwritingDiagnosticsStore(
         return
       }
       const timestamp = now()
+      const failedAfterStage =
+        stage === 'failed' && isFailureBoundaryStage(current.stage)
+          ? current.stage
+          : undefined
       current = applyDetails(
         {
-          ...current,
+          ...withoutFailureBoundary(current),
           stage,
+          ...(failedAfterStage ? { failedAfterStage } : {}),
           timestamp: new Date(timestamp).toISOString(),
           elapsedMs: Math.max(0, timestamp - startedAt),
         },

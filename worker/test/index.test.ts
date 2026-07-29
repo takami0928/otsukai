@@ -331,6 +331,40 @@ describe('Cloudflare handwriting import Worker', () => {
     expect(fetchImplementation).not.toHaveBeenCalled()
   })
 
+  it('rejects the empty connectivity probe before Turnstile or Gemini', async () => {
+    const fetchImplementation = vi.fn() as unknown as typeof fetch
+    const analyzeImplementation = vi.fn()
+    const response = await handleRequest(
+      new Request('https://worker.example.test/', {
+        method: 'POST',
+        headers: { Origin: allowedOrigin },
+        body: new FormData(),
+      }),
+      env,
+      {
+        fetchImplementation,
+        analyzeImplementation,
+        createRequestId: () => 'worker-probe-request',
+      },
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      code: 'REQUEST_INVALID',
+    })
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
+      allowedOrigin,
+    )
+    expect(response.headers.get('Access-Control-Expose-Headers')).toBe(
+      HANDWRITING_REQUEST_ID_HEADER,
+    )
+    expect(response.headers.get(HANDWRITING_REQUEST_ID_HEADER)).toBe(
+      'worker-probe-request',
+    )
+    expect(fetchImplementation).not.toHaveBeenCalled()
+    expect(analyzeImplementation).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['not json'],
     [JSON.stringify([])],

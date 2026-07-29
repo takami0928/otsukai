@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type {
+  HandwritingDiagnosticStage,
   HandwritingDiagnosticsStore,
   HandwritingDiagnosticsView,
 } from './diagnostics'
@@ -24,6 +25,35 @@ function dimensions(width?: number, height?: number): string {
 
 function valueOrDash(value?: string | number): string {
   return typeof value === 'undefined' || value === '' ? '—' : String(value)
+}
+
+const STAGE_LABELS: Record<HandwritingDiagnosticStage, string> = {
+  idle: '待機',
+  'file-selected': 'ファイル選択',
+  'source-validated': '元画像の検証完了',
+  'decode-started': '画像デコード開始',
+  'decode-completed': '画像デコード完了',
+  'resize-calculated': 'リサイズ寸法の計算完了',
+  'canvas-render-started': 'Canvas描画開始',
+  'canvas-render-completed': 'Canvas描画完了',
+  'encode-started': '画像エンコード開始',
+  'encode-completed': '画像エンコード完了',
+  'preprocessing-completed': '画像前処理完了',
+  'turnstile-load-started': 'Turnstile読み込み開始',
+  'turnstile-ready': 'Turnstile準備完了',
+  'turnstile-execute-started': 'Turnstileトークン取得開始',
+  'turnstile-token-received': 'Turnstileトークン取得完了',
+  'worker-request-started': 'Workerへの送信開始',
+  'worker-response-received': 'Worker応答受信',
+  'worker-response-validated': 'Worker応答検証完了',
+  'confirmation-render-started': '確認画面描画開始',
+  'confirmation-rendered': '確認画面描画完了',
+  failed: '失敗',
+  cancelled: 'キャンセル',
+}
+
+function stageLabel(stage?: HandwritingDiagnosticStage): string {
+  return stage ? STAGE_LABELS[stage] : '—'
 }
 
 export function HandwritingDiagnosticsPanel({
@@ -62,6 +92,10 @@ export function HandwritingDiagnosticsPanel({
         <div>
           <dt>現在のstage</dt>
           <dd>{current?.stage ?? 'idle'}</dd>
+        </div>
+        <div>
+          <dt>失敗直前</dt>
+          <dd>{stageLabel(current?.failedAfterStage)}</dd>
         </div>
         <div>
           <dt>最終更新</dt>

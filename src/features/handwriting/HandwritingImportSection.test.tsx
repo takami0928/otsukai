@@ -793,13 +793,14 @@ describe('HandwritingImportSection', () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull()
   })
 
-  it('shows a safe failure without changing ordinary input', async () => {
+  it('shows a safe failure boundary without changing ordinary input', async () => {
     await renderSection({
       provider: {
         analyze: vi.fn(async () => {
           throw new HandwritingImportError('service-unavailable')
         }),
       },
+      diagnosticsEnabled: true,
     })
     await chooseImage()
     await vi.waitFor(() =>
@@ -808,6 +809,20 @@ describe('HandwritingImportSection', () => {
       ),
     )
     expect(container.querySelector('input[type="file"]')).not.toBeNull()
+    expect(container.textContent).toContain('失敗直前ファイル選択')
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(
+          HANDWRITING_DIAGNOSTICS_STORAGE_KEY,
+        ) ?? '{}',
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        stage: 'failed',
+        failedAfterStage: 'file-selected',
+        errorCode: 'service-unavailable',
+      }),
+    )
   })
 
   it('does not render or initialize the feature when the flag is off', async () => {
