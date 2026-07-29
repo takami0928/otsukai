@@ -54,9 +54,9 @@ describe('CreateRequestPage handwriting import integration', () => {
     })
   }
 
-  async function chooseImage() {
+  async function chooseImage(start = true) {
     const input = container.querySelector<HTMLInputElement>(
-      'input[type="file"]',
+      'input[type="file"][aria-label="端末の写真を選ぶ"]',
     )
     if (!input) {
       throw new Error('Handwriting file input was not rendered')
@@ -73,6 +73,27 @@ describe('CreateRequestPage handwriting import integration', () => {
       input.dispatchEvent(new Event('change', { bubbles: true }))
       await Promise.resolve()
     })
+    const previewImage = container.querySelector<HTMLImageElement>(
+      'img[alt="選択した手書きメモのプレビュー"]',
+    )
+    if (!previewImage) {
+      throw new Error('Handwriting preview was not rendered')
+    }
+    Object.defineProperty(previewImage, 'naturalWidth', {
+      configurable: true,
+      value: 1200,
+    })
+    Object.defineProperty(previewImage, 'naturalHeight', {
+      configurable: true,
+      value: 1600,
+    })
+    await act(async () => {
+      previewImage.dispatchEvent(new Event('load'))
+      await Promise.resolve()
+    })
+    if (start) {
+      await click(button('読み取りを開始'))
+    }
   }
 
   function button(label: string): HTMLButtonElement {
@@ -129,6 +150,28 @@ describe('CreateRequestPage handwriting import integration', () => {
       JSON.parse(window.localStorage.getItem('otsukai:createDraft') ?? '{}')
         .milk.quantity,
     ).toBe(1)
+  })
+
+  it('keeps the draft unchanged when the local preview is cancelled', async () => {
+    const analyze = vi.fn(async () => ({
+      version: 1 as const,
+      items: [],
+    }))
+    await renderPage({ analyze })
+    await chooseImage(false)
+
+    expect(
+      JSON.parse(window.localStorage.getItem('otsukai:createDraft') ?? '{}')
+        .milk.quantity,
+    ).toBe(0)
+    expect(analyze).not.toHaveBeenCalled()
+
+    await click(button('キャンセル'))
+    expect(
+      JSON.parse(window.localStorage.getItem('otsukai:createDraft') ?? '{}')
+        .milk.quantity,
+    ).toBe(0)
+    expect(analyze).not.toHaveBeenCalled()
   })
 
   it('keeps ordinary product input usable after analysis failure', async () => {
