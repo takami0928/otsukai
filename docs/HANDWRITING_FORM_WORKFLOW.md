@@ -1,7 +1,9 @@
 # 定型手書き依頼票ワークフロー設計
 
-Status: Proposed  
-Tracking: #39
+- Status: Accepted
+- Tracking: #39
+- Phase 1 implementation: #41
+- Independent incident investigation: #42
 
 ## 1. 目的
 
@@ -394,7 +396,9 @@ quantityも利用者入力データなので、原則としてログへ出さな
 
 ### Phase 0: 現行service-unavailableの切り分け
 
-別PRで行う。新契約を入れて原因を隠さない。
+Issue #42の別PRで行う。新契約を入れて原因を隠さない。
+この調査はPhase 1（#41）の実装ブロッカーではなく、runtime、
+Worker、Turnstile、Gemini契約を変更しないPhase 1は独立して進めてよい。
 
 ### Phase 1: 印刷票と2入力導線
 
