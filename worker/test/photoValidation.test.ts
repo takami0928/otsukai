@@ -32,6 +32,38 @@ describe('photo JPEG inspection', () => {
     )
   })
 
+  it('rejects multiple SOF segments instead of trusting a later size', () => {
+    expect(() =>
+      inspectPhotoJpeg(
+        createJpegBytes(1_280, 960, {
+          secondSof: { width: 640, height: 480 },
+        }),
+      ),
+    ).toThrowError(
+      expect.objectContaining({ status: 415, code: 'PHOTO_INVALID' }),
+    )
+    expect(() =>
+      inspectPhotoJpeg(
+        createJpegBytes(1_281, 960, {
+          secondSof: { width: 640, height: 480 },
+        }),
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        status: 413,
+        code: 'PHOTO_DIMENSIONS_TOO_LARGE',
+      }),
+    )
+  })
+
+  it('rejects a SOF-only payload without a start-of-scan segment', () => {
+    expect(() =>
+      inspectPhotoJpeg(createJpegBytes(640, 480, { omitSos: true })),
+    ).toThrowError(
+      expect.objectContaining({ status: 415, code: 'PHOTO_INVALID' }),
+    )
+  })
+
   it('rejects APP1 EXIF or XMP metadata segments', () => {
     expect(() =>
       inspectPhotoJpeg(createJpegBytes(640, 480, { app1: true })),

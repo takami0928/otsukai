@@ -152,7 +152,10 @@ async function decodeImage(
   signal?: AbortSignal,
 ): Promise<DecodedImage> {
   const decoded = await decodeWithImageBitmap(file)
-  throwIfAborted(signal)
+  if (signal?.aborted) {
+    decoded?.dispose()
+    throw new DOMException('The operation was aborted.', 'AbortError')
+  }
   return decoded ?? decodeWithImageElement(file, signal)
 }
 

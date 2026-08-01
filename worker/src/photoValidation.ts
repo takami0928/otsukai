@@ -101,6 +101,7 @@ export function inspectPhotoJpeg(bytes: Uint8Array): {
 
   let offset = 2
   let dimensions: { width: number; height: number } | undefined
+  let sawStartOfScan = false
   while (offset < bytes.length - 2) {
     if (bytes[offset] !== 0xff) {
       throw new PhotoRequestValidationError(415, 'PHOTO_INVALID')
@@ -143,22 +144,26 @@ export function inspectPhotoJpeg(bytes: Uint8Array): {
       if (width < 1 || height < 1) {
         throw new PhotoRequestValidationError(415, 'PHOTO_INVALID')
       }
+      if (width > MAX_PHOTO_DIMENSION || height > MAX_PHOTO_DIMENSION) {
+        throw new PhotoRequestValidationError(
+          413,
+          'PHOTO_DIMENSIONS_TOO_LARGE',
+        )
+      }
+      if (dimensions) {
+        throw new PhotoRequestValidationError(415, 'PHOTO_INVALID')
+      }
       dimensions = { width, height }
     }
     offset += segmentLength
     if (marker === 0xda) {
+      sawStartOfScan = true
       break
     }
   }
 
-  if (!dimensions) {
+  if (!dimensions || !sawStartOfScan) {
     throw new PhotoRequestValidationError(415, 'PHOTO_INVALID')
-  }
-  if (
-    dimensions.width > MAX_PHOTO_DIMENSION ||
-    dimensions.height > MAX_PHOTO_DIMENSION
-  ) {
-    throw new PhotoRequestValidationError(413, 'PHOTO_DIMENSIONS_TOO_LARGE')
   }
   return dimensions
 }

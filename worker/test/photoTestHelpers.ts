@@ -13,7 +13,12 @@ function uint16(value: number): [number, number] {
 export function createJpegBytes(
   width = 640,
   height = 480,
-  options: { app1?: boolean; size?: number } = {},
+  options: {
+    app1?: boolean
+    size?: number
+    secondSof?: { width: number; height: number }
+    omitSos?: boolean
+  } = {},
 ): Uint8Array<ArrayBuffer> {
   const bytes: number[] = [0xff, 0xd8]
   bytes.push(0xff, 0xe0, 0x00, 0x04, 0x4a, 0x46)
@@ -50,22 +55,45 @@ export function createJpegBytes(
     0x11,
     0x00,
   )
-  bytes.push(
-    0xff,
-    0xda,
-    0x00,
-    0x0c,
-    0x03,
-    0x01,
-    0x00,
-    0x02,
-    0x00,
-    0x03,
-    0x00,
-    0x00,
-    0x3f,
-    0x00,
-  )
+  if (options.secondSof) {
+    bytes.push(
+      0xff,
+      0xc0,
+      0x00,
+      0x11,
+      0x08,
+      ...uint16(options.secondSof.height),
+      ...uint16(options.secondSof.width),
+      0x03,
+      0x01,
+      0x11,
+      0x00,
+      0x02,
+      0x11,
+      0x00,
+      0x03,
+      0x11,
+      0x00,
+    )
+  }
+  if (!options.omitSos) {
+    bytes.push(
+      0xff,
+      0xda,
+      0x00,
+      0x0c,
+      0x03,
+      0x01,
+      0x00,
+      0x02,
+      0x00,
+      0x03,
+      0x00,
+      0x00,
+      0x3f,
+      0x00,
+    )
+  }
 
   const targetSize = Math.max(options.size ?? bytes.length + 2, bytes.length + 2)
   const output = new Uint8Array(new ArrayBuffer(targetSize))

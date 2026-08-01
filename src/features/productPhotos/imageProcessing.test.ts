@@ -274,4 +274,28 @@ describe('processProductPhoto', () => {
     ).rejects.toMatchObject({ name: 'AbortError' })
     expect(pipeline.createBitmap).not.toHaveBeenCalled()
   })
+
+  it('closes an ImageBitmap when cancellation happens during decode', async () => {
+    const close = vi.fn()
+    let resolveBitmap: ((bitmap: ImageBitmap) => void) | undefined
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(
+        () =>
+          new Promise<ImageBitmap>((resolve) => {
+            resolveBitmap = resolve
+          }),
+      ),
+    )
+    const controller = new AbortController()
+    const processing = processProductPhoto(imageFile(), {
+      signal: controller.signal,
+    })
+
+    controller.abort()
+    resolveBitmap?.({ width: 640, height: 480, close } as ImageBitmap)
+
+    await expect(processing).rejects.toMatchObject({ name: 'AbortError' })
+    expect(close).toHaveBeenCalledTimes(1)
+  })
 })

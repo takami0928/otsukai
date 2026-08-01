@@ -26,6 +26,7 @@ function cursor<T extends Record<string, SqlStorageValue>>(
 class FakePhotoStorage {
   row: StoredRow | undefined
   alarmTime: number | undefined
+  deleteAllError: Error | undefined
   readonly setAlarm = vi.fn(async (time: number | Date) => {
     this.alarmTime = typeof time === 'number' ? time : time.getTime()
   })
@@ -33,7 +34,11 @@ class FakePhotoStorage {
     this.alarmTime = undefined
   })
   readonly deleteAll = vi.fn(async () => {
+    if (this.deleteAllError) {
+      throw this.deleteAllError
+    }
     this.row = undefined
+    this.alarmTime = undefined
   })
   readonly sql = {
     exec: <T extends Record<string, SqlStorageValue>>(
@@ -148,6 +153,19 @@ describe('PhotoObject', () => {
     await expect(object.getPhoto(expiresAt - 1)).resolves.toEqual({
       status: 'missing',
     })
+  })
+
+  it('retains the expiry alarm when atomic deletion fails', async () => {
+    const { object, storage } = createObject()
+    await object.savePhoto(saveInput())
+    storage.deleteAllError = new Error('synthetic atomic delete failure')
+
+    await expect(object.deletePhoto()).rejects.toThrow(
+      'synthetic atomic delete failure',
+    )
+    expect(storage.row).toBeDefined()
+    expect(storage.alarmTime).toBe(expiresAt)
+    expect(storage.deleteAlarm).not.toHaveBeenCalled()
   })
 
   it('rejects storage input without the fixed retention contract', async () => {

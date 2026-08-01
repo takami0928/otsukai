@@ -106,11 +106,8 @@ export class PhotoObject extends DurableObject<WorkerEnv> {
   }
 
   async deletePhoto(): Promise<void> {
-    try {
-      await this.ctx.storage.deleteAlarm()
-    } catch {
-      // deleteAll is the required cleanup; a queued alarm is harmless and idempotent.
-    }
+    // SQLite-backed deleteAll atomically removes data and alarms. Calling
+    // deleteAlarm first could strand a photo if the subsequent deletion fails.
     await this.ctx.storage.deleteAll()
   }
 
