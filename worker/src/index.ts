@@ -11,6 +11,11 @@ import {
   hasHandwritingConfiguration,
   type WorkerEnv,
 } from './config'
+import {
+  handlePhotoApiRequest,
+  isPhotoApiRoute,
+  type PhotoHandlerDependencies,
+} from './photoHandler'
 import { createWorkerRequestId } from './requestId'
 import { parseGeminiHandwritingResult } from './resultValidation'
 import { verifyTurnstileToken } from './turnstile'
@@ -28,8 +33,11 @@ export {
   hasHandwritingConfiguration,
   hasPhotoConfiguration,
   hasSharedRequestConfiguration,
+  isPhotoApiEnabled,
+  isSharedRequestApiEnabled,
 } from './config'
 export type { WorkerEnv } from './config'
+export { PhotoObject } from './photoObject'
 
 export type WorkerDependencies = {
   fetchImplementation?: typeof fetch
@@ -38,6 +46,7 @@ export type WorkerDependencies = {
   now?: () => number
   logImplementation?: (message: string) => void
   createRequestId?: () => string
+  photoDependencies?: PhotoHandlerDependencies
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000
@@ -301,7 +310,7 @@ function preflightResponse(
     headers: {
       'Cache-Control': 'no-store',
       'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
       'Access-Control-Max-Age': '86400',
       Vary: 'Origin',
@@ -328,6 +337,17 @@ export function routeRequest(
   }
 
   const pathname = new URL(request.url).pathname
+  if (isPhotoApiRoute(pathname)) {
+    return handlePhotoApiRequest(
+      request,
+      env,
+      dependencies.photoDependencies ?? {
+        fetchImplementation: dependencies.fetchImplementation,
+        timeoutMs: dependencies.timeoutMs,
+        now: dependencies.now,
+      },
+    )
+  }
   if (pathname === '/' || pathname === '/v1/handwriting/analyze') {
     return handleRequest(request, env, dependencies)
   }

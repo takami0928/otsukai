@@ -1,6 +1,6 @@
 const TURNSTILE_SITEVERIFY_URL =
   'https://challenges.cloudflare.com/turnstile/v0/siteverify'
-const TURNSTILE_ACTION = 'handwriting_import'
+const DEFAULT_TURNSTILE_ACTION = 'handwriting_import'
 
 type TurnstileSiteverifyResponse = {
   success: boolean
@@ -34,6 +34,7 @@ export async function verifyTurnstileToken(options: {
   remoteIp?: string
   fetchImplementation: typeof fetch
   signal: AbortSignal
+  expectedAction?: string
 }): Promise<boolean> {
   const expectedHostname = new URL(options.origin).hostname
   const body = new URLSearchParams({
@@ -70,7 +71,8 @@ export async function verifyTurnstileToken(options: {
   }
   return Boolean(
     parsed?.success &&
-      parsed.action === TURNSTILE_ACTION &&
+      parsed.action ===
+        (options.expectedAction ?? DEFAULT_TURNSTILE_ACTION) &&
       parsed.hostname === expectedHostname,
   )
 }

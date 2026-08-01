@@ -1,3 +1,5 @@
+import type { PhotoObject } from './photoObject'
+
 export type WorkerEnv = {
   GEMINI_API_KEY?: string
   TURNSTILE_SECRET_KEY?: string
@@ -5,10 +7,19 @@ export type WorkerEnv = {
   DIAGNOSTIC_MODE?: string
   PHOTO_API_ENABLED?: string
   SHARED_REQUEST_API_ENABLED?: string
+  PHOTO_OBJECTS?: DurableObjectNamespace<PhotoObject>
 }
 
 function isEnabled(value: string | undefined): boolean {
   return value?.trim().toLowerCase() === 'true'
+}
+
+export function isPhotoApiEnabled(env: WorkerEnv): boolean {
+  return isEnabled(env.PHOTO_API_ENABLED)
+}
+
+export function isSharedRequestApiEnabled(env: WorkerEnv): boolean {
+  return isEnabled(env.SHARED_REQUEST_API_ENABLED)
 }
 
 type HandwritingConfiguredEnv = WorkerEnv & {
@@ -27,17 +38,26 @@ export function hasHandwritingConfiguration(
   )
 }
 
-export function hasPhotoConfiguration(env: WorkerEnv): boolean {
+type PhotoConfiguredEnv = WorkerEnv & {
+  TURNSTILE_SECRET_KEY: string
+  ALLOWED_ORIGINS: string
+  PHOTO_OBJECTS: DurableObjectNamespace<PhotoObject>
+}
+
+export function hasPhotoConfiguration(
+  env: WorkerEnv,
+): env is PhotoConfiguredEnv {
   return Boolean(
-    isEnabled(env.PHOTO_API_ENABLED) &&
+    isPhotoApiEnabled(env) &&
       env.TURNSTILE_SECRET_KEY?.trim() &&
-      env.ALLOWED_ORIGINS?.trim(),
+      env.ALLOWED_ORIGINS?.trim() &&
+      env.PHOTO_OBJECTS,
   )
 }
 
 export function hasSharedRequestConfiguration(env: WorkerEnv): boolean {
   return Boolean(
-    isEnabled(env.SHARED_REQUEST_API_ENABLED) &&
+    isSharedRequestApiEnabled(env) &&
       env.TURNSTILE_SECRET_KEY?.trim() &&
       env.ALLOWED_ORIGINS?.trim(),
   )

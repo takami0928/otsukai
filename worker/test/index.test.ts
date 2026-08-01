@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GeminiAnalysisError } from '../src/gemini'
+import { PHOTO_TURNSTILE_ACTION } from '../src/photoHandler'
+import type { PhotoObject } from '../src/photoObject'
 import {
   HANDWRITING_REQUEST_ID_HEADER,
   hasHandwritingConfiguration,
@@ -14,6 +16,7 @@ import {
   MAX_IMAGE_BYTES,
   MAX_PRODUCT_CANDIDATES,
 } from '../src/validation'
+import { photoBatchRequest } from './photoTestHelpers'
 
 const allowedOrigin = 'https://takami0928.github.io'
 const env: WorkerEnv = {
@@ -157,7 +160,7 @@ describe('Worker routing and feature configuration', () => {
       allowedOrigin,
     )
     expect(response.headers.get('Access-Control-Allow-Methods')).toBe(
-      'POST, OPTIONS',
+      'GET, POST, OPTIONS',
     )
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect(analyzeImplementation).not.toHaveBeenCalled()
@@ -192,12 +195,51 @@ describe('Worker routing and feature configuration', () => {
     await expect(response.json()).resolves.toEqual({ code: 'NOT_FOUND' })
   })
 
+  it('routes an enabled photo upload without invoking Gemini', async () => {
+    const analyzeImplementation = vi.fn(async () => {
+      throw new Error('Gemini must not be called by photo routes')
+    })
+    const savePhoto = vi.fn(async () => ({ status: 'created' as const }))
+    const photoObjects = {
+      getByName: vi.fn(() => ({
+        savePhoto,
+        deletePhoto: vi.fn(),
+      })),
+    } as unknown as DurableObjectNamespace<PhotoObject>
+    const response = await routeRequest(
+      photoBatchRequest(),
+      {
+        TURNSTILE_SECRET_KEY: 'turnstile-secret-value',
+        ALLOWED_ORIGINS: allowedOrigin,
+        PHOTO_API_ENABLED: 'true',
+        PHOTO_OBJECTS: photoObjects,
+      },
+      {
+        analyzeImplementation,
+        photoDependencies: {
+          fetchImplementation: vi.fn(async () =>
+            Response.json({
+              success: true,
+              action: PHOTO_TURNSTILE_ACTION,
+              hostname: 'takami0928.github.io',
+            }),
+          ) as typeof fetch,
+        },
+      },
+    )
+
+    expect(response.status).toBe(200)
+    expect(savePhoto).toHaveBeenCalledTimes(1)
+    expect(analyzeImplementation).not.toHaveBeenCalled()
+  })
+
   it('keeps feature configuration independent from Gemini', () => {
     const withoutGemini = {
       ...env,
       GEMINI_API_KEY: undefined,
       PHOTO_API_ENABLED: 'true',
       SHARED_REQUEST_API_ENABLED: 'true',
+      PHOTO_OBJECTS: {} as NonNullable<WorkerEnv['PHOTO_OBJECTS']>,
     }
 
     expect(hasHandwritingConfiguration(withoutGemini)).toBe(false)
