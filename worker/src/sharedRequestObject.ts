@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers'
 import type { WorkerEnv } from './config'
 import {
+  MAX_SHARED_REQUEST_CUSTOM_ITEMS,
   MAX_SHARED_REQUEST_ITEMS,
   MAX_SHARED_REQUEST_UPDATES,
   SHARED_REQUEST_HASH_PATTERN,
@@ -143,6 +144,10 @@ function initialItems(
   }))
 }
 
+function isCustomItem(item: Pick<SharedRequestNewItem, 'productId'>): boolean {
+  return item.productId.startsWith('custom:')
+}
+
 function applyOperations(
   current: SharedRequestSnapshot,
   operations: readonly SharedRequestOperation[],
@@ -155,6 +160,11 @@ function applyOperations(
     if (operation.type === 'add') {
       if (
         byId.has(operation.item.itemId) ||
+        (isCustomItem(operation.item) &&
+          items.filter(
+            (item) =>
+              item.lifecycle === 'active' && isCustomItem(item),
+          ).length >= MAX_SHARED_REQUEST_CUSTOM_ITEMS) ||
         items.filter((item) => item.lifecycle === 'active').length >=
           MAX_SHARED_REQUEST_ITEMS ||
         items.length >=
@@ -242,7 +252,9 @@ export class SharedRequestObject extends DurableObject<WorkerEnv> {
       input.expiresAt - input.createdAt !==
         SHARED_REQUEST_RETENTION_MS ||
       input.items.length < 1 ||
-      input.items.length > MAX_SHARED_REQUEST_ITEMS
+      input.items.length > MAX_SHARED_REQUEST_ITEMS ||
+      input.items.filter(isCustomItem).length >
+        MAX_SHARED_REQUEST_CUSTOM_ITEMS
     ) {
       throw new Error('Invalid shared request storage input')
     }

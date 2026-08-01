@@ -172,6 +172,25 @@ describe('mounted App hash routing', () => {
     expect(container.textContent).toContain('家庭の洗剤😀')
   })
 
+  it('keeps direct v5 capability routes unavailable while the feature flag is off', async () => {
+    const requestToken = `r1_${'A'.repeat(32)}`
+    const editSecret = `e1_${'B'.repeat(43)}`
+    await renderApp()
+
+    await changeHash(`/r/${requestToken}`)
+    expect(container.querySelector('h1')?.textContent).toBe(
+      '更新可能な依頼は現在利用できません',
+    )
+
+    await changeHash(`/manage/${requestToken}/${editSecret}`)
+    expect(container.querySelector('h1')?.textContent).toBe(
+      '依頼の管理機能は現在利用できません',
+    )
+
+    await changeHash(`/l/${PUBLISHED_V3_REQUEST_FIXTURE}`)
+    expect(container.textContent).toContain('家庭の洗剤😀')
+  })
+
   it('renders browser history back and forward destinations after hashchange', async () => {
     await renderApp()
     await changeHash('/create')

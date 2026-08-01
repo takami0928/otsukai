@@ -12,6 +12,7 @@ export const SHARED_REQUEST_UPDATE_ACTION = 'shared_request_update'
 // 93 published products + 200 household products + 10 one-time items.
 export const MAX_SHARED_REQUEST_ITEMS = 303
 export const MAX_SHARED_REQUEST_UPDATES = 100
+export const MAX_SHARED_REQUEST_CUSTOM_ITEMS = 10
 export const MAX_SHARED_REQUEST_PHOTOS = 3
 // v5 uses descriptive JSON snapshots rather than v3's compact tuples. This
 // accommodates every item at the existing field limits without weakening the

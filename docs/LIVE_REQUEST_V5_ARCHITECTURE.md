@@ -1,8 +1,8 @@
 # 更新可能依頼 v5 Worker設計
 
-Status: accepted for implementation, production disabled
+Status: implemented behind flags, production disabled
 
-Issue #48のv5は、既存v1〜v4とは別のserver-backed共有方式です。通常の固定依頼を自動移行せず、利用者が明示的に更新可能依頼を選んだ場合だけ使用します。本PRではWorker APIと`SharedRequestObject`だけを実装し、`SHARED_REQUEST_API_ENABLED=false`のまま本番deploy・migration・UI公開は行いません。
+Issue #48のv5は、既存v1〜v4とは別のserver-backed共有方式です。通常の固定依頼を自動移行せず、利用者が明示的に更新可能依頼を選んだ場合だけ使用します。Worker API、`SharedRequestObject`、依頼者管理画面、購入者同期画面を実装していますが、`SHARED_REQUEST_API_ENABLED=false`と`VITE_LIVE_REQUESTS_ENABLED=false`のまま、本番deploy・migration・UI公開は行いません。
 
 ## 境界と依存関係
 
@@ -84,6 +84,7 @@ PATCH操作は`add`、`set-quantity`、`set-memo`、`cancel`だけです。全�
 
 - JSON body 512KiB以下
 - 最大303商品（既存v3と同じ、基準93＋家庭追加200＋自由追加10）
+- activeな自由追加商品は最大10件。取消済みtombstoneはこの10件に数えず、再追加時は新しい`itemId`を使う
 - 数量1〜20、条件30文字、有効商品の条件合計1,000文字
 - 1 PATCH最大50操作、1依頼最大100更新
 - ID、名称、単位、カテゴリ、icon、sort orderをWorkerで再検証
@@ -91,6 +92,25 @@ PATCH操作は`add`、`set-quantity`、`set-memo`、`cancel`だけです。全�
 - `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`
 - CORSは許可Origin完全一致で、認証の代わりにはしません。
 - 外部エラー本文、request body、Secret、capabilityを応答やログへ含めません。
+
+## フロントの作成・管理・同期
+
+依頼作成画面の既定値は「変更しない通常依頼」です。写真なしの通常依頼はv3、写真付き通常依頼はv4のままで、`VITE_LIVE_REQUESTS_ENABLED=true`かつEndpointとTurnstile Site Keyがそろった場合だけ「あとから追加・変更できる依頼」を表示します。明示選択後にだけ`POST /v1/requests`を呼び、購入者用リンクだけをWeb Share APIへ渡します。edit secretを含む管理リンクは別枠で表示し、購入者用共有文、作成画面のreturn state、last shared URL、診断JSON、ログへ混ぜません。
+
+管理画面は`#/manage/<requestToken>/<editSecret>`です。現在のrevisionを取得し、商品追加、数量変更、条件変更、取消を明示操作としてPATCHします。競合時は最新snapshotを再取得しますが、利用者が入力中の値を捨てません。取消前には、購入者がすでに購入中または購入済みかもしれない旨を確認します。管理側は購入者の進捗を受け取らないため、購入済みとは断定しません。
+
+購入画面は`#/r/<requestToken>`です。初回の正常snapshotとETagを`otsukai:liveRequest:v1:<requestToken>`へ保存し、次の契機で更新を確認します。
+
+- 画面がvisibleの間だけ45秒間隔
+- hiddenからvisibleへ戻った直後
+- window focus
+- 利用者の「更新を確認」
+
+同じETagは304で本文を再取得しません。追加、数量・条件変更、取消の差分は利用者が確認するまで端末内に保持します。追加は「追加されました」、数量・条件は変更前後を表示し、かご投入済み・購入確認済みでは警告を強めます。取消商品はtombstone履歴として残し、`pending`、`inCart`、`verified`、相談中、`notBuying`に応じた文言を表示します。
+
+依頼snapshotと購入進捗は別です。更新後も既存の`checkedState`、item issue、consultation、cart order、Undoを巻き戻しません。通信失敗または期限切れでも最後の正常snapshotがあれば商品と端末内進捗を表示し続けます。写真取得失敗は写真表示だけ、Gemini障害は手書き解析だけに閉じ、v5テキスト同期を止めません。
+
+localStorageのv5 cacheには購入者用request token、検証済みsnapshot、ETag、未確認差分、保存日時だけを保存します。edit secret、管理リンク、Turnstile token、API key、画像Blob、Gemini出力は保存しません。壊れたcache、別tokenのcache、未知property、無効なitem IDやrevisionは破棄し、依頼本文と購入進捗を混同しません。
 
 ## 手動Cloudflare設定（別途承認後のみ）
 
@@ -107,7 +127,7 @@ PATCH操作は`add`、`set-quantity`、`set-memo`、`cancel`だけです。全�
 
 最短停止は`VITE_LIVE_REQUESTS_ENABLED=false`のPages buildと、Workerの`SHARED_REQUEST_API_ENABLED=false`です。既存v1〜v4、写真取得、手書き解析は独立して継続します。migration適用後に古いWorker versionへ戻すだけではclass migrationを取り消せないため、namespaceや保存データを削除せずflagで停止し、Cloudflare公式のmigration/rollback手順を確認してから別承認を得ます。
 
-Free上限へ達した場合は有料planへ自動変更せず、v5作成・取得・更新を有限エラーにします。購入者UIは後続PRで最後の正常snapshotを保持し、取得失敗や期限切れでも購入進捗を端末内で継続できるようにします。
+Free上限へ達した場合は有料planへ自動変更せず、v5作成・取得・更新を有限エラーにします。購入者UIは最後の正常snapshotを保持し、取得失敗や期限切れでも購入進捗を端末内で継続します。運用者は新規作成を先に止め、OFF版Pagesをdeployし、既存固定依頼を継続できることを確認します。
 
 ## 本番deploy前チェックリスト
 
@@ -120,3 +140,5 @@ Free上限へ達した場合は有料planへ自動変更せず、v5作成・取�
 - [ ] iPhone 11、Android Chrome、LINE内ブラウザの実機試験完了
 - [ ] Free Usage監視と安全停止手順を運用者が確認
 - [ ] Worker migration/deployと公開flag ONの個別承認取得
+
+実機の操作順と判定項目は[`LIVE_REQUEST_V5_MANUAL_VERIFICATION.md`](LIVE_REQUEST_V5_MANUAL_VERIFICATION.md)に分離しています。コードmergeだけをiPhone、Android、LINE内ブラウザの成功扱いにはしません。

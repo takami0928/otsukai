@@ -7,6 +7,12 @@ import { AboutPage } from './pages/AboutPage'
 import { ProductCatalogPage } from './pages/ProductCatalogPage'
 import { CatalogRecoveryPage } from './pages/CatalogRecoveryPage'
 import type { RequestRouteCodec } from './utils/shoppingSession'
+import { LiveShoppingListPage } from './pages/LiveShoppingListPage'
+import { LiveRequestManagePage } from './pages/LiveRequestManagePage'
+import {
+  isLiveRequestEditSecret,
+  isLiveRequestToken,
+} from './features/liveRequests/validation'
 
 export type RouteState =
   | { page: 'home' }
@@ -15,6 +21,12 @@ export type RouteState =
   | { page: 'catalogRestore'; encoded: string }
   | { page: 'about' }
   | { page: 'list'; encoded: string; codec: RequestRouteCodec }
+  | { page: 'liveRequest'; requestToken: string }
+  | {
+      page: 'manageLiveRequest'
+      requestToken: string
+      editSecret: string
+    }
   | { page: 'error'; title: string; description: string }
 
 export function parseHashRoute(rawHash: string): RouteState {
@@ -79,6 +91,35 @@ export function parseHashRoute(rawHash: string): RouteState {
     return { page: 'list', encoded, codec: 'compact-path' }
   }
 
+  if (path.startsWith('/r/')) {
+    const requestToken = path.slice('/r/'.length)
+    if (!isLiveRequestToken(requestToken)) {
+      return {
+        page: 'error',
+        title: '更新可能な依頼リンクが正しくありません',
+        description: '購入者用リンクをもう一度確認してください。',
+      }
+    }
+    return { page: 'liveRequest', requestToken }
+  }
+
+  if (path.startsWith('/manage/')) {
+    const parts = path.slice('/manage/'.length).split('/')
+    const [requestToken = '', editSecret = ''] = parts
+    if (
+      parts.length !== 2 ||
+      !isLiveRequestToken(requestToken) ||
+      !isLiveRequestEditSecret(editSecret)
+    ) {
+      return {
+        page: 'error',
+        title: '依頼者用の管理リンクが正しくありません',
+        description: '作成時に表示された管理リンクを確認してください。',
+      }
+    }
+    return { page: 'manageLiveRequest', requestToken, editSecret }
+  }
+
   return {
     page: 'error',
     title: 'ページが見つかりません',
@@ -135,6 +176,29 @@ export default function App() {
             payloadCodec={route.codec}
             onBackHome={() => navigate('/')}
             onError={(title, description) => setRoute({ page: 'error', title, description })}
+          />
+        )
+      case 'liveRequest':
+        return (
+          <LiveShoppingListPage
+            key={route.requestToken}
+            requestToken={route.requestToken}
+            onBackHome={() => navigate('/')}
+            onError={(title, description) =>
+              setRoute({ page: 'error', title, description })
+            }
+          />
+        )
+      case 'manageLiveRequest':
+        return (
+          <LiveRequestManagePage
+            key={`${route.requestToken}:${route.editSecret}`}
+            requestToken={route.requestToken}
+            editSecret={route.editSecret}
+            onBackHome={() => navigate('/')}
+            onError={(title, description) =>
+              setRoute({ page: 'error', title, description })
+            }
           />
         )
       case 'error':

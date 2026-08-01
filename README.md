@@ -13,10 +13,10 @@
 - GitHub Pages
 - GitHub Actions
 - Cloudflare Worker / Turnstile（手書き商品取り込みまたは商品参考写真を有効化した場合）
-- SQLite-backed Durable Objects（商品参考写真を有効化した場合）
+- SQLite-backed Durable Objects（商品参考写真または更新可能依頼v5を有効化した場合）
 - Gemini 3.5 Flash-Lite（手書き商品取り込みを有効化した場合）
 
-通常の依頼・買い物状態を保存するアプリサーバー、外部DB、URL短縮サービス、ログイン機能は使用しません。共有データは圧縮してURLへ自己完結させます。任意の手書き商品取り込みは画像解析時にCloudflare Workerを経由します。別途承認後に有効化する商品参考写真だけは、同じWorkerとSQLite-backed Durable Objectへ作成時から14日間保存する設計です。現在の通常公開では写真機能をOFFにしています。
+通常の固定依頼と買い物状態にはアプリサーバー、外部DB、URL短縮サービス、ログイン機能を使用せず、共有データを圧縮してURLへ自己完結させます。任意の手書き商品取り込みは画像解析時にCloudflare Workerを経由します。別途承認後に有効化する商品参考写真と更新可能依頼v5だけは、同じWorkerと別々のSQLite-backed Durable Objectへ作成時から14日間保存する設計です。現在の通常公開では写真機能とv5をOFFにしています。
 
 ## 共有URL
 
@@ -41,7 +41,7 @@ https://takami0928.github.io/otsukai/#/l/<v2圧縮データ>
 
 参考写真が1枚以上ある固定依頼だけは、v3の商品tupleを変更せず、最大3件の`[itemIndex, photoToken]`を追加したv4を使用します。写真なし依頼はv3のままです。写真参照が壊れていても商品本文を復元し、写真の取得失敗や期限切れで購入進捗を止めません。詳細は[`docs/COMPACT_REQUEST_V4.md`](docs/COMPACT_REQUEST_V4.md)と[`docs/PRODUCT_PHOTO_ARCHITECTURE.md`](docs/PRODUCT_PHOTO_ARCHITECTURE.md)を参照してください。
 
-共有後に更新できるv5は既存固定依頼とは別の、期限付きserver-backed方式として実装を進めています。Worker APIとSQLite-backed `SharedRequestObject`は`SHARED_REQUEST_API_ENABLED=false`で非公開です。capability URL、revision/ETag、tombstone、固定14日期限、手動Cloudflare設定とrollbackは[`docs/LIVE_REQUEST_V5_ARCHITECTURE.md`](docs/LIVE_REQUEST_V5_ARCHITECTURE.md)を参照してください。
+共有後に更新できるv5は既存固定依頼とは別の、期限付きserver-backed方式です。依頼者が明示選択した場合だけ購入者用`#/r/`と依頼者用`#/manage/`を作成します。購入画面はvisible中の45秒poll、focus、手動操作でETagを確認し、通信失敗や期限切れでも最後の正常snapshotと端末内購入進捗を維持します。Worker API、SQLite-backed `SharedRequestObject`、フロントUIはいずれもflag OFFで非公開です。capability URL、revision/ETag、tombstone、固定14日期限、手動Cloudflare設定、rollback、実機試験は[`docs/LIVE_REQUEST_V5_ARCHITECTURE.md`](docs/LIVE_REQUEST_V5_ARCHITECTURE.md)と[`docs/LIVE_REQUEST_V5_MANUAL_VERIFICATION.md`](docs/LIVE_REQUEST_V5_MANUAL_VERIFICATION.md)を参照してください。
 
 ### v3ペイロード
 
@@ -224,6 +224,7 @@ LINE内ブラウザと外部ブラウザでは `localStorage` が共有されな
 - 家庭用商品リスト現在版: `otsukai:householdCatalog:v1`
 - 家庭用商品リストPrevious版: `otsukai:householdCatalogPrevious:v1`
 - 復旧データ保存確認: `otsukai:catalogBackupReceipt:v1`
+- v5最後の正常snapshot・ETag・未確認差分: `otsukai:liveRequest:v1:${requestToken}`
 
 相談データは読み込み時に正規化し、壊れた値や未知の値を安全に無視します。旧データの `checkedState[itemId] = consulting` と対応する `itemIssue` は、購入状態 `pending` と相談状態 `queued` へ移行し、理由と補足を新しい相談キーへ引き継ぎます。既存の `pending`、`inCart`、`verified`、`notBuying`、かご投入順、Undo用データは変更しません。
 

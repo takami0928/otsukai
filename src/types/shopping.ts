@@ -10,6 +10,8 @@ export type ShoppingRequestItemPayload = {
   iconSnapshot: string
   sortOrderSnapshot: number
   photoToken?: string
+  liveLifecycle?: 'active' | 'cancelled-by-requester'
+  liveUpdatedRevision?: number
 }
 
 export type ShoppingRequestPayload = {

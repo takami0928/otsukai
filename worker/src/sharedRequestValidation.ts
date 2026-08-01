@@ -1,5 +1,6 @@
 import {
   MAX_SHARED_REQUEST_BODY_BYTES,
+  MAX_SHARED_REQUEST_CUSTOM_ITEMS,
   MAX_SHARED_REQUEST_ITEMS,
   MAX_SHARED_REQUEST_PHOTOS,
   SHARED_REQUEST_EDIT_SECRET_PATTERN,
@@ -137,11 +138,18 @@ function validateItemCollection(items: SharedRequestNewItem[]): boolean {
   const itemIds = new Set<string>()
   const photoTokens = new Set<string>()
   let totalMemoCharacters = 0
+  let customItems = 0
   for (const item of items) {
     if (itemIds.has(item.itemId)) {
       return false
     }
     itemIds.add(item.itemId)
+    if (item.productId.startsWith('custom:')) {
+      customItems += 1
+      if (customItems > MAX_SHARED_REQUEST_CUSTOM_ITEMS) {
+        return false
+      }
+    }
     totalMemoCharacters += countTextCharacters(item.memo ?? '')
     if (item.photoToken) {
       if (

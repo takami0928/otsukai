@@ -116,6 +116,24 @@ import { usePendingProductPhotos } from '../features/productPhotos/usePendingPro
 import { ProductPhotoAttachment } from '../features/productPhotos/ProductPhotoAttachment'
 import { BrowserTurnstileTokenProvider } from '../features/handwriting/turnstile'
 import { buildCompactRequestV4UrlFromInput } from '../utils/compactRequestV4'
+import {
+  RequestSharingModeSection,
+  type RequestSharingMode,
+} from '../components/RequestSharingModeSection'
+import {
+  LIVE_REQUEST_CREATE_TURNSTILE_ACTION,
+  LiveRequestApiError,
+  WorkerLiveRequestApi,
+} from '../features/liveRequests/api'
+import {
+  getLiveRequestConfig,
+  type LiveRequestConfig,
+} from '../features/liveRequests/config'
+import {
+  buildLiveRequestItems,
+  buildLiveRequestUrls,
+} from '../features/liveRequests/createItems'
+import type { LiveRequestApi } from '../features/liveRequests/types'
 
 type CreateRequestPageProps = {
   onBackHome: () => void
@@ -133,6 +151,9 @@ type CreateRequestPageProps = {
   ) => Promise<ProcessedProductPhoto>
   createProductPhotoPreviewUrl?: (blob: Blob) => string
   revokeProductPhotoPreviewUrl?: (url: string) => void
+  liveRequestConfig?: LiveRequestConfig
+  liveRequestApi?: LiveRequestApi
+  createLiveRequestItemId?: () => string
 }
 
 type CreateMode = 'edit' | 'review'
@@ -183,11 +204,15 @@ export function CreateRequestPage({
   processProductPhoto,
   createProductPhotoPreviewUrl,
   revokeProductPhotoPreviewUrl,
+  liveRequestConfig,
+  liveRequestApi,
+  createLiveRequestItemId,
 }: CreateRequestPageProps) {
   const { effectiveProducts, visibleProducts } = useHouseholdCatalog()
   const handwritingConfig =
     handwritingImportConfig ?? getHandwritingImportConfig()
   const photoConfig = productPhotoConfig ?? getProductPhotoConfig()
+  const liveConfig = liveRequestConfig ?? getLiveRequestConfig()
   const [initialPageState] = useState(() =>
     createInitialPageState(effectiveProducts),
   )
@@ -239,10 +264,19 @@ export function CreateRequestPage({
   const [isSharingRequest, setIsSharingRequest] = useState(false)
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false)
   const [photoUploadFailed, setPhotoUploadFailed] = useState(false)
+  const [sharingMode, setSharingMode] =
+    useState<RequestSharingMode>('fixed')
+  const [liveManagementUrl, setLiveManagementUrl] = useState('')
+  const [liveManagementSnapshot, setLiveManagementSnapshot] = useState('')
+  const [liveRequestExpiresAt, setLiveRequestExpiresAt] = useState<number>()
+  const [managementCopyMessage, setManagementCopyMessage] = useState('')
   const [defaultPhotoUploader, setDefaultPhotoUploader] =
     useState<ProductPhotoUploadProvider>()
+  const [defaultLiveRequestApi, setDefaultLiveRequestApi] =
+    useState<LiveRequestApi>()
   const shareLockRef = useRef(createRequestShareLock())
   const photoTurnstileContainerRef = useRef<HTMLDivElement>(null)
+  const liveTurnstileContainerRef = useRef<HTMLDivElement>(null)
   const pendingPhotos = usePendingProductPhotos({
     processPhoto: processProductPhoto ?? defaultProcessProductPhoto,
     ...(createProductPhotoPreviewUrl
@@ -310,6 +344,32 @@ export function CreateRequestPage({
     photoConfig.endpoint,
     photoConfig.turnstileSiteKey,
     productPhotoUploadProvider,
+  ])
+
+  useEffect(() => {
+    if (
+      !liveConfig.enabled ||
+      liveRequestApi ||
+      !liveTurnstileContainerRef.current
+    ) {
+      return
+    }
+    const turnstile = new BrowserTurnstileTokenProvider(
+      liveTurnstileContainerRef.current,
+      liveConfig.turnstileSiteKey,
+      undefined,
+      undefined,
+      LIVE_REQUEST_CREATE_TURNSTILE_ACTION,
+    )
+    setDefaultLiveRequestApi(
+      new WorkerLiveRequestApi(liveConfig.endpoint, turnstile),
+    )
+    return () => turnstile.dispose()
+  }, [
+    liveConfig.enabled,
+    liveConfig.endpoint,
+    liveConfig.turnstileSiteKey,
+    liveRequestApi,
   ])
 
   const selectedItems = useMemo(
@@ -759,12 +819,169 @@ export function CreateRequestPage({
     }
   }
 
+  const uploadPhotosForShare = async (
+    photos: readonly (typeof activePhotos)[number][],
+  ): Promise<boolean> => {
+    if (photos.length === 0) {
+      return true
+    }
+    const uploader = productPhotoUploadProvider ?? defaultPhotoUploader
+    if (!uploader) {
+      setShareMessage(
+        '写真の保存機能を準備できませんでした。通常依頼は引き続き利用できます。',
+      )
+      setShareStatus('error')
+      setPhotoUploadFailed(true)
+      return false
+    }
+    const itemKeys = photos.map((photo) => photo.itemKey)
+    pendingPhotos.setPhotoStatus(itemKeys, 'uploading')
+    setIsUploadingPhotos(true)
+    try {
+      await uploader.upload(photos)
+      pendingPhotos.setPhotoStatus(itemKeys, 'uploaded')
+      return true
+    } catch (error) {
+      pendingPhotos.setPhotoStatus(itemKeys, 'failed')
+      setPhotoUploadFailed(true)
+      setShareStatus('error')
+      setShareMessage(
+        error instanceof ProductPhotoUploadError &&
+          error.code === 'limit-reached'
+          ? '写真保存の無料枠または容量上限に達した可能性があります。再試行するか、写真を外して共有してください。'
+          : '写真を保存できませんでした。再試行するか、写真を外して共有してください。',
+      )
+      return false
+    } finally {
+      setIsUploadingPhotos(false)
+    }
+  }
+
+  const prepareLiveRequestShare = (withoutPhotos = false) => {
+    const validation = validateDraftLimits(requestData, budgetContext, true)
+    if (!validation.valid) {
+      setShareMessage(getLimitMessage(validation.reason))
+      setShareStatus('error')
+      return undefined
+    }
+    const photos = withoutPhotos ? [] : activePhotos
+    const snapshot = createPhotoSnapshot(photos)
+    return {
+      photos,
+      snapshot,
+      reused:
+        sharedUrl.includes('#/r/') &&
+        sharedSnapshot === snapshot &&
+        liveManagementUrl.includes('#/manage/') &&
+        liveManagementSnapshot === snapshot &&
+        typeof liveRequestExpiresAt === 'number' &&
+        Date.now() < liveRequestExpiresAt,
+      url: sharedUrl,
+    }
+  }
+
+  const liveRequestFailureMessage = (error: unknown): string => {
+    if (error instanceof LiveRequestApiError) {
+      switch (error.code) {
+        case 'auth-failed':
+          return '認証確認に失敗しました。通常依頼は引き続き利用できます。'
+        case 'limit-reached':
+          return '更新可能な依頼の利用上限に達した可能性があります。通常依頼を利用してください。'
+        case 'timeout':
+        case 'service-unavailable':
+        case 'invalid-response':
+          return '更新可能な依頼を作成できませんでした。通常依頼は引き続き利用できます。'
+        case 'conflict':
+        case 'expired':
+        case 'invalid-request':
+          return '更新可能な依頼の内容を準備できませんでした。入力を確認してください。'
+      }
+    }
+    return '更新可能な依頼を作成できませんでした。通常依頼は引き続き利用できます。'
+  }
+
+  const handleLiveRequestShare = async (withoutPhotos = false) => {
+    const prepared = prepareLiveRequestShare(withoutPhotos)
+    if (!prepared) {
+      return
+    }
+    setPhotoUploadFailed(false)
+    setIsSharingRequest(true)
+
+    if (
+      prepared.photos.length > 0 &&
+      !prepared.reused &&
+      !(await uploadPhotosForShare(prepared.photos))
+    ) {
+      return
+    }
+
+    let purchaserUrl = prepared.url
+    if (!prepared.reused) {
+      const api = liveRequestApi ?? defaultLiveRequestApi
+      if (!api) {
+        setShareMessage(
+          '更新可能な依頼の認証機能を準備できませんでした。通常依頼は引き続き利用できます。',
+        )
+        setShareStatus('error')
+        return
+      }
+      try {
+        const items = buildLiveRequestItems(
+          selectedItems,
+          prepared.photos,
+          createLiveRequestItemId,
+        )
+        const created = await api.create(items)
+        const urls = buildLiveRequestUrls(
+          requestBaseUrl,
+          created.requestToken,
+          created.editSecret,
+        )
+        purchaserUrl = buildLineDeliveryRequestUrl(urls.purchaserUrl)
+        setLiveManagementUrl(urls.managementUrl)
+        setLiveManagementSnapshot(prepared.snapshot)
+        setLiveRequestExpiresAt(Date.parse(created.request.expiresAt))
+        setManagementCopyMessage('')
+        setSharedUrl(purchaserUrl)
+        setSharedSnapshot(prepared.snapshot)
+        setLastSharedUrl(purchaserUrl)
+        saveLastSharedUrl(purchaserUrl)
+      } catch (error) {
+        setShareMessage(liveRequestFailureMessage(error))
+        setShareStatus('error')
+        return
+      }
+    }
+
+    saveCreateDraft(draft)
+    saveCreateRequestReturnState({
+      customItems,
+      expandedProductIds: [...expandedProductIds],
+      sharedUrl: purchaserUrl,
+      sharedSnapshot: prepared.snapshot,
+    })
+    setShareMessage('共有画面を開いています…')
+    setShareStatus('cancelled')
+    const result = await shareText({
+      title: REQUEST_SHARE_TITLE,
+      text: buildRequestShareMessage(purchaserUrl),
+    })
+    const notice = getShareResultMessage(result)
+    setShareMessage(notice.message)
+    setShareStatus(notice.status)
+  }
+
   const handleShareRequest = async (withoutPhotos = false) => {
     if (!shareLockRef.current.tryAcquire()) {
       return
     }
 
     try {
+      if (sharingMode === 'live') {
+        await handleLiveRequestShare(withoutPhotos)
+        return
+      }
       let prepared: ReturnType<typeof prepareRequestShare>
       try {
         prepared = prepareRequestShare(withoutPhotos)
@@ -777,34 +994,12 @@ export function CreateRequestPage({
 
       setPhotoUploadFailed(false)
       setIsSharingRequest(true)
-      if (prepared.photos.length > 0 && !prepared.reused) {
-        const uploader = productPhotoUploadProvider ?? defaultPhotoUploader
-        if (!uploader) {
-          setShareMessage('写真の保存機能を準備できませんでした。通常依頼は引き続き利用できます。')
-          setShareStatus('error')
-          setPhotoUploadFailed(true)
-          return
-        }
-        const itemKeys = prepared.photos.map((photo) => photo.itemKey)
-        pendingPhotos.setPhotoStatus(itemKeys, 'uploading')
-        setIsUploadingPhotos(true)
-        try {
-          await uploader.upload(prepared.photos)
-          pendingPhotos.setPhotoStatus(itemKeys, 'uploaded')
-        } catch (error) {
-          pendingPhotos.setPhotoStatus(itemKeys, 'failed')
-          setPhotoUploadFailed(true)
-          setShareStatus('error')
-          setShareMessage(
-            error instanceof ProductPhotoUploadError &&
-              error.code === 'limit-reached'
-              ? '写真保存の無料枠または容量上限に達した可能性があります。再試行するか、写真を外して共有してください。'
-              : '写真を保存できませんでした。再試行するか、写真を外して共有してください。',
-          )
-          return
-        } finally {
-          setIsUploadingPhotos(false)
-        }
+      if (
+        prepared.photos.length > 0 &&
+        !prepared.reused &&
+        !(await uploadPhotosForShare(prepared.photos))
+      ) {
+        return
       }
 
       commitPreparedShare(prepared)
@@ -837,6 +1032,23 @@ export function CreateRequestPage({
     await handleShareRequest(true)
   }
 
+  const handleCopyManagementUrl = async () => {
+    if (!liveManagementUrl || !navigator.clipboard?.writeText) {
+      setManagementCopyMessage(
+        '管理リンクをコピーできませんでした。選択して安全な場所へ保存してください。',
+      )
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(liveManagementUrl)
+      setManagementCopyMessage('管理リンクをコピーしました。')
+    } catch {
+      setManagementCopyMessage(
+        '管理リンクをコピーできませんでした。選択して安全な場所へ保存してください。',
+      )
+    }
+  }
+
   const handleReturnToEdit = () => {
     setShareMessage('')
     setShareStatus('')
@@ -867,6 +1079,11 @@ export function CreateRequestPage({
     setRequestKey(createRequestKey())
     pendingPhotos.clearPhotos()
     setPhotoUploadFailed(false)
+    setSharingMode('fixed')
+    setLiveManagementUrl('')
+    setLiveManagementSnapshot('')
+    setLiveRequestExpiresAt(undefined)
+    setManagementCopyMessage('')
     closeCustomForm()
   }
 
@@ -909,6 +1126,17 @@ export function CreateRequestPage({
           商品はリストから数量で選びます。共有時は数量が1以上のものだけ送られます。
         </p>
       </section>
+
+      {liveConfig.enabled ? (
+        <RequestSharingModeSection
+          value={sharingMode}
+          onChange={(nextMode) => {
+            setSharingMode(nextMode)
+            setShareMessage('')
+            setShareStatus('')
+          }}
+        />
+      ) : null}
 
       {showRequestLimitNotice ? (
         <RequestLimitNotice
@@ -1046,6 +1274,16 @@ export function CreateRequestPage({
       isUploadingPhotos={isUploadingPhotos}
       photoUploadFailed={photoUploadFailed}
       onShareWithoutPhotos={handleShareWithoutPhotos}
+      sharingMode={sharingMode}
+      managementUrl={
+        sharingMode === 'live' &&
+        sharedUrl.includes('#/r/') &&
+        liveManagementSnapshot === createPhotoSnapshot(activePhotos)
+          ? liveManagementUrl
+          : undefined
+      }
+      managementCopyMessage={managementCopyMessage}
+      onCopyManagementUrl={handleCopyManagementUrl}
     />
   )
 
@@ -1058,6 +1296,13 @@ export function CreateRequestPage({
           ref={photoTurnstileContainerRef}
           className="product-photo-turnstile"
           aria-label="写真共有の認証確認"
+        />
+      ) : null}
+      {liveConfig.enabled ? (
+        <div
+          ref={liveTurnstileContainerRef}
+          className="live-request-turnstile"
+          aria-label="更新可能な依頼作成の認証確認"
         />
       ) : null}
     </main>

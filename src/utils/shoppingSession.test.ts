@@ -11,6 +11,7 @@ import { MAX_REQUEST_ENCODED_CHARS } from './requestPayloadDecoder'
 import {
   decodeShoppingSessionPayload,
   loadShoppingSession,
+  reconcileShoppingSession,
   restoreShoppingSession,
 } from './shoppingSession'
 
@@ -292,5 +293,44 @@ describe('shopping session loading', () => {
     })
     expect(second.shoppingState.checkedState).toEqual({})
     expect(second.payload.requestId).toBe('second-session')
+  })
+
+  it('reconciles a live revision without overwriting existing progress or conditions', () => {
+    const original = createPayload('v5-r1-live-session')
+    const updated: ShoppingRequestPayload = {
+      ...original,
+      items: [
+        { ...original.items[0], quantity: 3, memo: '低脂肪' },
+        original.items[1],
+        createItem('new-item', '追加商品', 4),
+      ],
+    }
+    const reconciled = reconcileShoppingSession(
+      updated,
+      {
+        checkedState: {
+          [original.items[0].id]: 'inCart',
+          [original.items[1].id]: 'verified',
+          [original.items[2].id]: 'notBuying',
+        },
+        itemIssues: {},
+        cartOrder: [original.items[0].id, original.items[1].id],
+      },
+      {},
+    )
+
+    expect(reconciled.payload.items[0]).toMatchObject({
+      quantity: 3,
+      memo: '低脂肪',
+    })
+    expect(reconciled.shoppingState.checkedState).toEqual({
+      [original.items[0].id]: 'inCart',
+      [original.items[1].id]: 'verified',
+    })
+    expect(reconciled.shoppingState.cartOrder).toEqual([
+      original.items[0].id,
+      original.items[1].id,
+    ])
+    expect(reconciled.shoppingState.checkedState['new-item']).toBeUndefined()
   })
 })

@@ -73,6 +73,7 @@ describe('home and about pages', () => {
 
     expect(container.querySelector('h1')?.textContent).toBe('このアプリについて')
     expect(container.textContent).toContain('依頼内容は共有URLに含まれています。')
+    expect(container.textContent).not.toContain('共有時から14日間だけ保存')
     expect(container.textContent).toContain(
       '買い物の進捗は、操作している端末とブラウザ内',
     )
@@ -87,6 +88,22 @@ describe('home and about pages', () => {
     const homeButton = container.querySelector('button')
     act(() => homeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(onBackHome).toHaveBeenCalledTimes(1)
+  })
+
+  it('explains fixed and live request storage only when live requests are enabled', () => {
+    act(() =>
+      root.render(
+        <AboutPage
+          onBackHome={() => undefined}
+          liveRequestsEnabled={true}
+        />,
+      ),
+    )
+
+    expect(container.textContent).toContain(
+      '通常の固定依頼は、依頼内容が共有URLに含まれています。',
+    )
+    expect(container.textContent).toContain('共有時から14日間だけ保存')
   })
 
   it('shows a subdued recovery-link reminder only for unbacked catalog changes', () => {

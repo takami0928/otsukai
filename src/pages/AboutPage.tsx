@@ -1,8 +1,14 @@
+import { getLiveRequestConfig } from '../features/liveRequests/config'
+
 type AboutPageProps = {
   onBackHome: () => void
+  liveRequestsEnabled?: boolean
 }
 
-export function AboutPage({ onBackHome }: AboutPageProps) {
+export function AboutPage({
+  onBackHome,
+  liveRequestsEnabled = getLiveRequestConfig().enabled,
+}: AboutPageProps) {
   return (
     <main className="page">
       <section className="top-bar">
@@ -17,7 +23,16 @@ export function AboutPage({ onBackHome }: AboutPageProps) {
 
       <section className="info-card about-card">
         <h2>依頼内容</h2>
-        <p>依頼内容は共有URLに含まれています。</p>
+        {liveRequestsEnabled ? (
+          <>
+            <p>通常の固定依頼は、依頼内容が共有URLに含まれています。</p>
+            <p>
+              更新可能な依頼は、依頼内容を共有時から14日間だけ保存し、期限を延長しません。
+            </p>
+          </>
+        ) : (
+          <p>依頼内容は共有URLに含まれています。</p>
+        )}
       </section>
 
       <section className="info-card about-card">
