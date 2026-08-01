@@ -161,4 +161,69 @@ describe('usePendingProductPhotos', () => {
     expect(controller?.photos).toHaveLength(3)
     expect(processPhoto).toHaveBeenCalledTimes(3)
   })
+
+  it.each(['clear', 'remove'] as const)(
+    'does not restore a late photo after %s cancels its in-flight processing',
+    async (action) => {
+      let controller: PendingProductPhotosController | undefined
+      let resolveProcessing: ((value: {
+        blob: Blob
+        width: number
+        height: number
+        bytes: number
+      }) => void) | undefined
+      const pending = new Promise<{
+        blob: Blob
+        width: number
+        height: number
+        bytes: number
+      }>((resolve) => {
+        resolveProcessing = resolve
+      })
+      const createPreviewUrl = vi.fn(() => 'blob:late-preview')
+      act(() => root.render(
+        <Harness
+          onChange={(value) => {
+            controller = value
+          }}
+          processPhoto={() => pending}
+          createPreviewUrl={createPreviewUrl}
+          revokePreviewUrl={vi.fn()}
+        />,
+      ))
+      const source = new File(['source'], 'private.jpg', {
+        type: 'image/jpeg',
+      })
+      let selection: Promise<void> | undefined
+      await act(async () => {
+        selection = controller?.selectPhoto('milk', source)
+        await Promise.resolve()
+      })
+      expect(controller?.processingItemKey).toBe('milk')
+
+      act(() => {
+        if (action === 'clear') {
+          controller?.clearPhotos()
+        } else {
+          controller?.removePhoto('milk')
+        }
+      })
+      expect(controller?.processingItemKey).toBeUndefined()
+
+      const blob = new Blob(['late-jpeg'], { type: 'image/jpeg' })
+      await act(async () => {
+        resolveProcessing?.({
+          blob,
+          width: 640,
+          height: 480,
+          bytes: blob.size,
+        })
+        await selection
+        await Promise.resolve()
+      })
+
+      expect(controller?.photos).toHaveLength(0)
+      expect(createPreviewUrl).not.toHaveBeenCalled()
+    },
+  )
 })

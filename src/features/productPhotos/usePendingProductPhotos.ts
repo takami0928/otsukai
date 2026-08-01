@@ -77,6 +77,7 @@ export function usePendingProductPhotos(
   const [processingItemKey, setProcessingItemKey] = useState<string>()
   const photosRef = useRef<PendingPhoto[]>([])
   const processingControllerRef = useRef<AbortController>()
+  const processingItemKeyRef = useRef<string>()
 
   const commitPhotos = useCallback((next: PendingPhoto[]) => {
     photosRef.current = next
@@ -92,9 +93,29 @@ export function usePendingProductPhotos(
     [revokePreviewUrl],
   )
 
+  const cancelProcessing = useCallback(
+    (itemKeys?: ReadonlySet<string>) => {
+      const controller = processingControllerRef.current
+      const itemKey = processingItemKeyRef.current
+      if (
+        !controller ||
+        !itemKey ||
+        (itemKeys && !itemKeys.has(itemKey))
+      ) {
+        return
+      }
+      controller.abort()
+      processingControllerRef.current = undefined
+      processingItemKeyRef.current = undefined
+      setProcessingItemKey(undefined)
+    },
+    [],
+  )
+
   const removePhotos = useCallback(
     (itemKeys: readonly string[]) => {
       const keys = new Set(itemKeys)
+      cancelProcessing(keys)
       const next: PendingPhoto[] = []
       for (const photo of photosRef.current) {
         if (keys.has(photo.itemKey)) {
@@ -110,7 +131,7 @@ export function usePendingProductPhotos(
         ),
       )
     },
-    [commitPhotos, revokePhoto],
+    [cancelProcessing, commitPhotos, revokePhoto],
   )
 
   const removePhoto = useCallback(
@@ -119,12 +140,13 @@ export function usePendingProductPhotos(
   )
 
   const clearPhotos = useCallback(() => {
+    cancelProcessing()
     for (const photo of photosRef.current) {
       revokePhoto(photo)
     }
     commitPhotos([])
     setErrors({})
-  }, [commitPhotos, revokePhoto])
+  }, [cancelProcessing, commitPhotos, revokePhoto])
 
   const selectPhoto = useCallback(
     async (itemKey: string, file: File) => {
@@ -138,6 +160,7 @@ export function usePendingProductPhotos(
 
       const controller = new AbortController()
       processingControllerRef.current = controller
+      processingItemKeyRef.current = itemKey
       setProcessingItemKey(itemKey)
       setErrors((current) => ({ ...current, [itemKey]: '' }))
       try {
@@ -182,6 +205,7 @@ export function usePendingProductPhotos(
       } finally {
         if (processingControllerRef.current === controller) {
           processingControllerRef.current = undefined
+          processingItemKeyRef.current = undefined
           setProcessingItemKey(undefined)
         }
       }
@@ -204,6 +228,8 @@ export function usePendingProductPhotos(
   useEffect(
     () => () => {
       processingControllerRef.current?.abort()
+      processingControllerRef.current = undefined
+      processingItemKeyRef.current = undefined
       for (const photo of photosRef.current) {
         revokePreviewUrl(photo.previewUrl)
       }
