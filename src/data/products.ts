@@ -35,8 +35,8 @@ export const products: Product[] = [
   { id: 'chikuwa', name: 'ちくわ', categoryId: 'fish', defaultQuantity: 1, unit: '袋', icon: '🐟', sortOrder: 305 },
   { id: 'satsuma-age', name: 'さつま揚げ', categoryId: 'fish', defaultQuantity: 1, unit: 'パック', icon: '🐟', sortOrder: 306 },
 
-  { id: 'pork-koma', name: '豚小間肉', categoryId: 'meat', defaultQuantity: 3, unit: 'パック', icon: '🥩', sortOrder: 401 },
-  { id: 'ground-chicken', name: 'とりひき肉', categoryId: 'meat', defaultQuantity: 1, unit: 'パック', icon: '🍗', sortOrder: 402 },
+  { id: 'pork-koma', name: '豚小間肉', categoryId: 'meat', defaultQuantity: 3, unit: 'パック', memo: '国産', icon: '🥩', sortOrder: 401 },
+  { id: 'ground-chicken', name: 'とりひき肉', categoryId: 'meat', defaultQuantity: 1, unit: 'パック', memo: '国産', icon: '🍗', sortOrder: 402 },
 
   { id: 'fried-chicken', name: '唐揚げ', categoryId: 'prepared', defaultQuantity: 1, unit: '個', icon: '🍗', sortOrder: 501 },
   { id: 'sukeroku', name: '助六', categoryId: 'prepared', defaultQuantity: 1, unit: '個', icon: '🍱', sortOrder: 502 },
