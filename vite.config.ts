@@ -1,4 +1,5 @@
 import react from '@vitejs/plugin-react'
+import { fileURLToPath } from 'node:url'
 import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 
@@ -7,6 +8,13 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: env.BASE_PATH || '/',
+    resolve: {
+      alias: {
+        'cloudflare:workers': fileURLToPath(
+          new URL('./worker/test/cloudflareWorkersMock.ts', import.meta.url),
+        ),
+      },
+    },
     plugins: [react()],
     test: {
       coverage: {

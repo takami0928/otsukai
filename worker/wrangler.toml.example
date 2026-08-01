@@ -7,3 +7,12 @@ ALLOWED_ORIGINS = "https://takami0928.github.io"
 DIAGNOSTIC_MODE = "false"
 PHOTO_API_ENABLED = "false"
 SHARED_REQUEST_API_ENABLED = "false"
+
+[[durable_objects.bindings]]
+name = "PHOTO_OBJECTS"
+class_name = "PhotoObject"
+
+# Do not apply this migration in production without explicit approval.
+[[migrations]]
+tag = "photo-v1"
+new_sqlite_classes = ["PhotoObject"]

@@ -25,9 +25,11 @@ Workerの公開Endpointは変更せず、次の互換ルートを持ちます。
 | --- | --- | --- |
 | `POST` | `/` | 既存の手書き解析ルート |
 | `POST` | `/v1/handwriting/analyze` | 同じ手書き解析handlerを呼ぶ明示ルート |
+| `POST` | `/v1/photos/batch` | 最大3枚のJPEGを保存する非公開写真ルート |
+| `GET` | `/v1/photos/:token` | capability tokenで写真を取得する非公開ルート |
 | `OPTIONS` | `/*` | 許可Originだけに応答するCORS preflight |
 
-写真APIと更新可能依頼APIは後続PRで追加します。`PHOTO_API_ENABLED`と`SHARED_REQUEST_API_ENABLED`は未設定または`true`以外ならOFFです。設定判定はサービスごとに分離され、`GEMINI_API_KEY`が必要なのは手書き解析だけです。写真・更新可能依頼のコードはGeminiや`@google/genai`へ依存させません。
+写真APIはコードとSQLite-backed Durable Object設定例だけを追加しており、本番へは未deployです。`PHOTO_API_ENABLED`と`SHARED_REQUEST_API_ENABLED`は未設定または`true`以外ならOFFです。設定判定はサービスごとに分離され、`GEMINI_API_KEY`が必要なのは手書き解析だけです。写真・更新可能依頼のコードはGeminiや`@google/genai`へ依存させません。写真の詳細は[`../docs/PRODUCT_PHOTO_ARCHITECTURE.md`](../docs/PRODUCT_PHOTO_ARCHITECTURE.md)を参照してください。
 
 フロントの`VITE_PRODUCT_PHOTOS_ENABLED`と`VITE_LIVE_REQUESTS_ENABLED`も同様に、明示的な`true`だけを有効とします。現在の通常公開では両方OFFで、導線は表示されません。
 
@@ -115,6 +117,8 @@ DIAGNOSTIC_MODE = "false"
 PHOTO_API_ENABLED = "false"
 SHARED_REQUEST_API_ENABLED = "false"
 ```
+
+写真保存の設定例には`PHOTO_OBJECTS` bindingとSQLite migrationも含まれます。上記の手順でgit管理外の`worker/wrangler.toml`へコピーまたは反映してから、`npx wrangler deploy --dry-run --config worker/wrangler.toml`でbundleだけを確認します。`wrangler.toml.example`を本番設定として直接使いません。migrationの本番適用は運用者の明示承認後に限ります。
 
 Originは完全一致でカンマ区切り指定します。パスや末尾スラッシュは含めません。CORSはブラウザ制御であり認証ではないため、許可Originに加えてTurnstileを毎回検証します。
 
