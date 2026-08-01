@@ -3,6 +3,8 @@ import type {
   ShoppingRequestPayload,
 } from '../types/shopping'
 import { decodeCompactRequestV2OrV3 } from './compactRequestV3'
+import { decodeCompactRequestV4Payload } from './compactRequestV4'
+import { decodeCompressedRequestJson } from './requestPayloadDecoder'
 import {
   migrateLegacyConsultingState,
   reconcileConsultations,
@@ -34,9 +36,17 @@ export function decodeShoppingSessionPayload(input: {
   encodedPayload: string
   codec: RequestRouteCodec
 }): ShoppingRequestPayload {
-  return input.codec === 'compact-path'
-    ? decodeCompactRequestV2OrV3(input.encodedPayload)
-    : decodeShoppingRequest(input.encodedPayload)
+  if (input.codec !== 'compact-path') {
+    return decodeShoppingRequest(input.encodedPayload)
+  }
+
+  const value = decodeCompressedRequestJson(
+    input.encodedPayload,
+    '共有URLの復元に失敗しました。',
+  )
+  return Array.isArray(value) && value[0] === 4
+    ? decodeCompactRequestV4Payload(value)
+    : decodeCompactRequestV2OrV3(input.encodedPayload)
 }
 
 export function restoreShoppingSession(

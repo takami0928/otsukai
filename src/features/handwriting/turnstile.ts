@@ -142,6 +142,7 @@ export class BrowserTurnstileTokenProvider
     private readonly apiLoader: () => Promise<TurnstileApi> =
       loadTurnstileApi,
     private readonly diagnostics?: HandwritingDiagnosticsReporter,
+    private readonly action = 'handwriting_import',
   ) {}
 
   private finishPending(error?: unknown, token?: string): void {
@@ -166,7 +167,7 @@ export class BrowserTurnstileTokenProvider
     try {
       this.widgetId = api.render(this.container, {
         sitekey: this.siteKey,
-        action: 'handwriting_import',
+        action: this.action,
         execution: 'execute',
         appearance: 'interaction-only',
         callback: (token) => this.finishPending(undefined, token),

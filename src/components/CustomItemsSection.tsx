@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import {
   MAX_CUSTOM_ITEMS,
   MAX_CUSTOM_ITEM_NAME_CHARS,
@@ -30,6 +31,7 @@ type CustomItemsSectionProps = {
   onSave: () => void
   onToggleDetails: () => void
   onUnitCommit: (value: string) => CommitTextResult
+  renderPhotoAttachment?: (item: CustomRequestDraftItem) => ReactNode
 }
 
 export function CustomItemsSection({
@@ -50,6 +52,7 @@ export function CustomItemsSection({
   onSave,
   onToggleDetails,
   onUnitCommit,
+  renderPhotoAttachment,
 }: CustomItemsSectionProps) {
   return (
     <section className="info-card custom-items-card">
@@ -86,6 +89,7 @@ export function CustomItemsSection({
                   削除
                 </button>
               </div>
+              {renderPhotoAttachment?.(item)}
             </li>
           ))}
         </ul>

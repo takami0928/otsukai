@@ -82,6 +82,7 @@ import { useCustomItemEditor } from '../hooks/useCustomItemEditor'
 import { useHouseholdCatalog } from '../hooks/useHouseholdCatalog'
 import type { EffectiveProduct } from '../types/householdCatalog'
 import { buildSelectedRequestItems } from '../utils/selectedRequestItems'
+import { toStableCustomProductId } from '../utils/selectedRequestItems'
 import { HandwritingImportSection } from '../features/handwriting/HandwritingImportSection'
 import {
   getHandwritingImportConfig,
@@ -97,6 +98,24 @@ import type {
 import type {
   ImagePreprocessOptions,
 } from '../features/handwriting/imagePreprocessing'
+import {
+  getProductPhotoConfig,
+  type ProductPhotoConfig,
+} from '../features/productPhotos/config'
+import {
+  PRODUCT_PHOTO_TURNSTILE_ACTION,
+  ProductPhotoUploadError,
+  WorkerProductPhotoUploadProvider,
+  type ProductPhotoUploadProvider,
+} from '../features/productPhotos/ProductPhotoUploadProvider'
+import {
+  processProductPhoto as defaultProcessProductPhoto,
+  type ProcessedProductPhoto,
+} from '../features/productPhotos/imageProcessing'
+import { usePendingProductPhotos } from '../features/productPhotos/usePendingProductPhotos'
+import { ProductPhotoAttachment } from '../features/productPhotos/ProductPhotoAttachment'
+import { BrowserTurnstileTokenProvider } from '../features/handwriting/turnstile'
+import { buildCompactRequestV4UrlFromInput } from '../utils/compactRequestV4'
 
 type CreateRequestPageProps = {
   onBackHome: () => void
@@ -106,6 +125,14 @@ type CreateRequestPageProps = {
     file: File,
     options?: ImagePreprocessOptions,
   ) => Promise<Blob>
+  productPhotoConfig?: ProductPhotoConfig
+  productPhotoUploadProvider?: ProductPhotoUploadProvider
+  processProductPhoto?: (
+    file: File,
+    options?: { signal?: AbortSignal },
+  ) => Promise<ProcessedProductPhoto>
+  createProductPhotoPreviewUrl?: (blob: Blob) => string
+  revokeProductPhotoPreviewUrl?: (url: string) => void
 }
 
 type CreateMode = 'edit' | 'review'
@@ -151,10 +178,16 @@ export function CreateRequestPage({
   handwritingImportConfig,
   handwritingImportProvider,
   preprocessHandwritingImage,
+  productPhotoConfig,
+  productPhotoUploadProvider,
+  processProductPhoto,
+  createProductPhotoPreviewUrl,
+  revokeProductPhotoPreviewUrl,
 }: CreateRequestPageProps) {
   const { effectiveProducts, visibleProducts } = useHouseholdCatalog()
   const handwritingConfig =
     handwritingImportConfig ?? getHandwritingImportConfig()
+  const photoConfig = productPhotoConfig ?? getProductPhotoConfig()
   const [initialPageState] = useState(() =>
     createInitialPageState(effectiveProducts),
   )
@@ -204,7 +237,21 @@ export function CreateRequestPage({
   } = useCustomItemEditor()
   const [requestKey, setRequestKey] = useState(createRequestKey)
   const [isSharingRequest, setIsSharingRequest] = useState(false)
+  const [isUploadingPhotos, setIsUploadingPhotos] = useState(false)
+  const [photoUploadFailed, setPhotoUploadFailed] = useState(false)
+  const [defaultPhotoUploader, setDefaultPhotoUploader] =
+    useState<ProductPhotoUploadProvider>()
   const shareLockRef = useRef(createRequestShareLock())
+  const photoTurnstileContainerRef = useRef<HTMLDivElement>(null)
+  const pendingPhotos = usePendingProductPhotos({
+    processPhoto: processProductPhoto ?? defaultProcessProductPhoto,
+    ...(createProductPhotoPreviewUrl
+      ? { createPreviewUrl: createProductPhotoPreviewUrl }
+      : {}),
+    ...(revokeProductPhotoPreviewUrl
+      ? { revokePreviewUrl: revokeProductPhotoPreviewUrl }
+      : {}),
+  })
 
   const requestBaseUrl = useMemo(
     () => `${window.location.origin}${window.location.pathname}`,
@@ -236,11 +283,51 @@ export function CreateRequestPage({
     return () => window.removeEventListener('pageshow', clearReturnState)
   }, [])
 
+  useEffect(() => {
+    if (
+      !photoConfig.enabled ||
+      productPhotoUploadProvider ||
+      !photoTurnstileContainerRef.current
+    ) {
+      return
+    }
+    const turnstile = new BrowserTurnstileTokenProvider(
+      photoTurnstileContainerRef.current,
+      photoConfig.turnstileSiteKey,
+      undefined,
+      undefined,
+      PRODUCT_PHOTO_TURNSTILE_ACTION,
+    )
+    setDefaultPhotoUploader(
+      new WorkerProductPhotoUploadProvider(
+        photoConfig.endpoint,
+        turnstile,
+      ),
+    )
+    return () => turnstile.dispose()
+  }, [
+    photoConfig.enabled,
+    photoConfig.endpoint,
+    photoConfig.turnstileSiteKey,
+    productPhotoUploadProvider,
+  ])
+
   const selectedItems = useMemo(
     () => buildSelectedRequestItems(effectiveProducts, draft, customItems),
     [customItems, draft, effectiveProducts],
   )
   const selectedCount = selectedItems.length
+  const selectedItemKeys = useMemo(
+    () => new Set(selectedItems.map((item) => item.productId)),
+    [selectedItems],
+  )
+  const activePhotos = useMemo(
+    () =>
+      pendingPhotos.photos.filter((photo) =>
+        selectedItemKeys.has(photo.itemKey),
+      ),
+    [pendingPhotos.photos, selectedItemKeys],
+  )
 
   const totalConditionCharacters = useMemo(
     () => countTotalConditionCharacters(requestData),
@@ -276,6 +363,7 @@ export function CreateRequestPage({
 
   const hasResettableInput = useMemo(
     () =>
+      pendingPhotos.photos.length > 0 ||
       hasAnyCreateRequestInput({
         title: FIXED_REQUEST_TITLE,
         defaultTitle: FIXED_REQUEST_TITLE,
@@ -305,6 +393,7 @@ export function CreateRequestPage({
       mode,
       shareMessage,
       sharedUrl,
+      pendingPhotos.photos.length,
     ],
   )
 
@@ -325,9 +414,17 @@ export function CreateRequestPage({
     () =>
       effectiveProducts.filter(
         (product) =>
-          product.hidden && (draft[product.id]?.quantity ?? 0) > 0,
+          product.hidden &&
+          ((draft[product.id]?.quantity ?? 0) > 0 ||
+            pendingPhotos.photosByItemKey.has(product.id)),
       ),
-    [draft, effectiveProducts],
+    [draft, effectiveProducts, pendingPhotos.photosByItemKey],
+  )
+
+  const hasHiddenPhotoAtQuantityZero = hiddenSelectedProducts.some(
+    (product) =>
+      (draft[product.id]?.quantity ?? 0) === 0 &&
+      pendingPhotos.photosByItemKey.has(product.id),
   )
 
   const groupedSelectedProducts = useMemo(
@@ -553,8 +650,13 @@ export function CreateRequestPage({
   }
 
   const handleDeleteCustomItem = (index: number) => {
-    applyChangeResult(applyCustomItemDelete(requestData, index))
-    handleCustomItemDeleted(index)
+    const item = customItems[index]
+    const result = applyCustomItemDelete(requestData, index)
+    applyChangeResult(result)
+    if (result.accepted && item) {
+      pendingPhotos.removePhoto(toStableCustomProductId(item.id))
+      handleCustomItemDeleted(index)
+    }
   }
 
   const handleApplyHandwritingSelections = (
@@ -578,68 +680,148 @@ export function CreateRequestPage({
     return result
   }
 
-  const resolveRequestUrlForShare = () => {
+  const createPhotoSnapshot = (
+    photos: readonly { itemKey: string; token: string }[],
+  ) =>
+    photos.length === 0
+      ? currentRequestSnapshot
+      : `${currentRequestSnapshot}\nphotos:${JSON.stringify(
+          photos
+            .map(({ itemKey, token }) => ({ itemKey, token }))
+            .sort((left, right) =>
+              left.itemKey.localeCompare(right.itemKey),
+            ),
+        )}`
+
+  const prepareRequestShare = (withoutPhotos = false) => {
     const validation = validateDraftLimits(requestData, budgetContext, true)
     if (!validation.valid) {
       setShareMessage(getLimitMessage(validation.reason))
       setShareStatus('error')
-      return ''
+      return undefined
     }
+
+    const photos = withoutPhotos ? [] : activePhotos
+    const snapshot = createPhotoSnapshot(photos)
 
     const reusableSharedUrl = sharedUrl.includes('#/l/')
       ? buildLineDeliveryRequestUrl(sharedUrl)
       : ''
     const resolved = resolveSharedRequestUrl(
-      currentRequestSnapshot,
+      snapshot,
       sharedSnapshot,
       reusableSharedUrl,
-      () => validation.url,
+      () => {
+        if (photos.length === 0) {
+          return validation.url
+        }
+        const itemIndexes = new Map(
+          selectedItems.map((item, index) => [item.productId, index]),
+        )
+        const photoRefs = photos.map((photo) => {
+          const itemIndex = itemIndexes.get(photo.itemKey)
+          if (typeof itemIndex !== 'number') {
+            throw new Error('写真の商品参照が見つかりません。')
+          }
+          return [itemIndex, photo.token] as [number, string]
+        })
+        return buildLineDeliveryRequestUrl(
+          buildCompactRequestV4UrlFromInput(requestBaseUrl, {
+            requestKey,
+            title: FIXED_REQUEST_TITLE,
+            items: selectedItems,
+            photoRefs,
+          }),
+        )
+      },
     )
-
-    if (!resolved.reused || resolved.url !== sharedUrl) {
-      setSharedUrl(resolved.url)
-      setSharedSnapshot(resolved.snapshot)
-      setLastSharedUrl(resolved.url)
-      saveLastSharedUrl(resolved.url)
+    if (!isRequestUrlWithinShareLimit(resolved.url)) {
+      setShareMessage(getLimitMessage('url-limit'))
+      setShareStatus('error')
+      return undefined
     }
-
-    if (!resolved.reused) {
-      setRequestKey(createRequestKey())
-    }
-
-    return resolved.url
+    return { ...resolved, photos }
   }
 
-  const handleShareRequest = async () => {
+  const commitPreparedShare = (prepared: {
+    url: string
+    snapshot: string
+    reused: boolean
+  }) => {
+    if (!prepared.reused || prepared.url !== sharedUrl) {
+      setSharedUrl(prepared.url)
+      setSharedSnapshot(prepared.snapshot)
+      setLastSharedUrl(prepared.url)
+      saveLastSharedUrl(prepared.url)
+    }
+    if (!prepared.reused) {
+      setRequestKey(createRequestKey())
+    }
+  }
+
+  const handleShareRequest = async (withoutPhotos = false) => {
     if (!shareLockRef.current.tryAcquire()) {
       return
     }
 
     try {
-      const requestUrl = resolveRequestUrlForShare()
-      if (!requestUrl) {
-        return
-      }
-      if (!isRequestUrlWithinShareLimit(requestUrl)) {
-        setShareMessage(getLimitMessage('url-limit'))
+      let prepared: ReturnType<typeof prepareRequestShare>
+      try {
+        prepared = prepareRequestShare(withoutPhotos)
+      } catch {
+        setShareMessage('写真付き依頼を準備できませんでした。写真を確認してください。')
         setShareStatus('error')
         return
       }
+      if (!prepared) return
+
+      setPhotoUploadFailed(false)
+      setIsSharingRequest(true)
+      if (prepared.photos.length > 0 && !prepared.reused) {
+        const uploader = productPhotoUploadProvider ?? defaultPhotoUploader
+        if (!uploader) {
+          setShareMessage('写真の保存機能を準備できませんでした。通常依頼は引き続き利用できます。')
+          setShareStatus('error')
+          setPhotoUploadFailed(true)
+          return
+        }
+        const itemKeys = prepared.photos.map((photo) => photo.itemKey)
+        pendingPhotos.setPhotoStatus(itemKeys, 'uploading')
+        setIsUploadingPhotos(true)
+        try {
+          await uploader.upload(prepared.photos)
+          pendingPhotos.setPhotoStatus(itemKeys, 'uploaded')
+        } catch (error) {
+          pendingPhotos.setPhotoStatus(itemKeys, 'failed')
+          setPhotoUploadFailed(true)
+          setShareStatus('error')
+          setShareMessage(
+            error instanceof ProductPhotoUploadError &&
+              error.code === 'limit-reached'
+              ? '写真保存の無料枠または容量上限に達した可能性があります。再試行するか、写真を外して共有してください。'
+              : '写真を保存できませんでした。再試行するか、写真を外して共有してください。',
+          )
+          return
+        } finally {
+          setIsUploadingPhotos(false)
+        }
+      }
+
+      commitPreparedShare(prepared)
 
       saveCreateDraft(draft)
       saveCreateRequestReturnState({
         customItems,
         expandedProductIds: [...expandedProductIds],
-        sharedUrl: requestUrl,
-        sharedSnapshot: currentRequestSnapshot,
+        sharedUrl: prepared.url,
+        sharedSnapshot: prepared.snapshot,
       })
 
-      setIsSharingRequest(true)
       setShareMessage('共有画面を開いています…')
       setShareStatus('cancelled')
       const result = await shareText({
         title: REQUEST_SHARE_TITLE,
-        text: buildRequestShareMessage(requestUrl),
+        text: buildRequestShareMessage(prepared.url),
       })
       const notice = getShareResultMessage(result)
       setShareMessage(notice.message)
@@ -648,6 +830,11 @@ export function CreateRequestPage({
       shareLockRef.current.release()
       setIsSharingRequest(false)
     }
+  }
+
+  const handleShareWithoutPhotos = async () => {
+    pendingPhotos.clearPhotos()
+    await handleShareRequest(true)
   }
 
   const handleReturnToEdit = () => {
@@ -678,8 +865,32 @@ export function CreateRequestPage({
     setLimitMessage('')
     setCustomItems([])
     setRequestKey(createRequestKey())
+    pendingPhotos.clearPhotos()
+    setPhotoUploadFailed(false)
     closeCustomForm()
   }
+
+  const renderPhotoAttachment = (
+    itemKey: string,
+    name: string,
+    selected: boolean,
+  ) =>
+    photoConfig.enabled ? (
+      <ProductPhotoAttachment
+        itemName={name}
+        selected={selected}
+        photo={pendingPhotos.photosByItemKey.get(itemKey)}
+        photoCount={pendingPhotos.photos.length}
+        processing={pendingPhotos.processingItemKey === itemKey}
+        disabled={Boolean(
+          pendingPhotos.processingItemKey &&
+            pendingPhotos.processingItemKey !== itemKey,
+        )}
+        errorMessage={pendingPhotos.errorsByItemKey.get(itemKey)}
+        onSelect={(file) => void pendingPhotos.selectPhoto(itemKey, file)}
+        onRemove={() => pendingPhotos.removePhoto(itemKey)}
+      />
+    ) : null
 
   const renderEdit = () => (
     <>
@@ -758,6 +969,13 @@ export function CreateRequestPage({
             'custom-unit-limit',
           )
         }
+        renderPhotoAttachment={(item) =>
+          renderPhotoAttachment(
+            toStableCustomProductId(item.id),
+            item.name,
+            item.quantity > 0,
+          )
+        }
       />
 
       <ProductSelectionSections
@@ -770,6 +988,13 @@ export function CreateRequestPage({
         onToggleDetails={(productId) =>
           setExpandedProductIds((current) =>
             toggleExpandedProductId(current, productId),
+          )
+        }
+        renderPhotoAttachment={(product) =>
+          renderPhotoAttachment(
+            product.id,
+            product.name,
+            (draft[product.id]?.quantity ?? 0) > 0,
           )
         }
       />
@@ -786,12 +1011,22 @@ export function CreateRequestPage({
             toggleExpandedProductId(current, productId),
           )
         }
+        renderPhotoAttachment={(product) =>
+          renderPhotoAttachment(
+            product.id,
+            product.name,
+            (draft[product.id]?.quantity ?? 0) > 0,
+          )
+        }
+        hasRetainedPhotoAtQuantityZero={hasHiddenPhotoAtQuantityZero}
       />
 
       <CreateRequestBottomActions
         selectedCount={selectedCount}
         onReset={handleReset}
         onReview={() => setMode('review')}
+        reviewDisabled={Boolean(pendingPhotos.processingItemKey)}
+        reviewDisabledMessage="写真の圧縮が終わるまでお待ちください。"
       />
     </>
   )
@@ -807,6 +1042,10 @@ export function CreateRequestPage({
       selectedCount={selectedCount}
       shareMessage={shareMessage}
       shareStatus={shareStatus}
+      photos={activePhotos}
+      isUploadingPhotos={isUploadingPhotos}
+      photoUploadFailed={photoUploadFailed}
+      onShareWithoutPhotos={handleShareWithoutPhotos}
     />
   )
 
@@ -814,6 +1053,13 @@ export function CreateRequestPage({
     <main className={`page ${mode === 'edit' ? 'page-with-bottom-bar' : ''}`}>
       {mode === 'edit' ? renderEdit() : null}
       {mode === 'review' ? renderReview() : null}
+      {photoConfig.enabled ? (
+        <div
+          ref={photoTurnstileContainerRef}
+          className="product-photo-turnstile"
+          aria-label="写真共有の認証確認"
+        />
+      ) : null}
     </main>
   )
 }

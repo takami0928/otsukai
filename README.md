@@ -12,10 +12,11 @@
 - `lz-string`
 - GitHub Pages
 - GitHub Actions
-- Cloudflare Worker / Turnstile（手書き商品取り込みを有効化した場合）
+- Cloudflare Worker / Turnstile（手書き商品取り込みまたは商品参考写真を有効化した場合）
+- SQLite-backed Durable Objects（商品参考写真を有効化した場合）
 - Gemini 3.5 Flash-Lite（手書き商品取り込みを有効化した場合）
 
-依頼・買い物状態を保存するアプリサーバー、外部DB、URL短縮サービス、ログイン機能は使用しません。共有データは圧縮してURLへ自己完結させます。任意の手書き商品取り込みだけは、画像解析時にCloudflare Workerを経由します。
+通常の依頼・買い物状態を保存するアプリサーバー、外部DB、URL短縮サービス、ログイン機能は使用しません。共有データは圧縮してURLへ自己完結させます。任意の手書き商品取り込みは画像解析時にCloudflare Workerを経由します。別途承認後に有効化する商品参考写真だけは、同じWorkerとSQLite-backed Durable Objectへ作成時から14日間保存する設計です。現在の通常公開では写真機能をOFFにしています。
 
 ## 共有URL
 
@@ -34,7 +35,11 @@ https://takami0928.github.io/otsukai/#/list?data=<v1圧縮データ>
 https://takami0928.github.io/otsukai/#/l/<v2圧縮データ>
 ```
 
-`#/l/<encoded>` はv2・v3共通で、展開後の先頭バージョンから判定します。v1・v2のエンコーダー、デコーダー、固定fixture、URL形式は変更しません。いずれも復号後は既存の `ShoppingRequestPayload` にそろえて購入画面へ渡します。不正データ、空データ、未知バージョンは白画面にせずエラー画面を表示します。
+`#/l/<encoded>` はv2・v3・v4共通で、展開後の先頭バージョンから判定します。v1・v2・v3のエンコーダー、デコーダー、固定fixture、URL形式は変更しません。いずれも復号後は既存の `ShoppingRequestPayload` にそろえて購入画面へ渡します。不正データ、空データ、未知バージョンは白画面にせずエラー画面を表示します。
+
+### v4写真参照ペイロード（通常公開OFF）
+
+参考写真が1枚以上ある固定依頼だけは、v3の商品tupleを変更せず、最大3件の`[itemIndex, photoToken]`を追加したv4を使用します。写真なし依頼はv3のままです。写真参照が壊れていても商品本文を復元し、写真の取得失敗や期限切れで購入進捗を止めません。詳細は[`docs/COMPACT_REQUEST_V4.md`](docs/COMPACT_REQUEST_V4.md)と[`docs/PRODUCT_PHOTO_ARCHITECTURE.md`](docs/PRODUCT_PHOTO_ARCHITECTURE.md)を参照してください。
 
 ### v3ペイロード
 
