@@ -12,7 +12,16 @@ SHARED_REQUEST_API_ENABLED = "false"
 name = "PHOTO_OBJECTS"
 class_name = "PhotoObject"
 
+[[durable_objects.bindings]]
+name = "SHARED_REQUEST_OBJECTS"
+class_name = "SharedRequestObject"
+
 # Do not apply this migration in production without explicit approval.
 [[migrations]]
 tag = "photo-v1"
 new_sqlite_classes = ["PhotoObject"]
+
+# Keep prior migration entries when applying this later migration manually.
+[[migrations]]
+tag = "shared-request-v1"
+new_sqlite_classes = ["SharedRequestObject"]

@@ -18,6 +18,11 @@ import {
 } from './photoHandler'
 import { createWorkerRequestId } from './requestId'
 import { parseGeminiHandwritingResult } from './resultValidation'
+import {
+  handleSharedRequestApiRequest,
+  isSharedRequestApiRoute,
+  type SharedRequestHandlerDependencies,
+} from './sharedRequestHandler'
 import { verifyTurnstileToken } from './turnstile'
 import type { HandwritingImportResult } from './types'
 import {
@@ -38,6 +43,7 @@ export {
 } from './config'
 export type { WorkerEnv } from './config'
 export { PhotoObject } from './photoObject'
+export { SharedRequestObject } from './sharedRequestObject'
 
 export type WorkerDependencies = {
   fetchImplementation?: typeof fetch
@@ -47,6 +53,7 @@ export type WorkerDependencies = {
   logImplementation?: (message: string) => void
   createRequestId?: () => string
   photoDependencies?: PhotoHandlerDependencies
+  sharedRequestDependencies?: SharedRequestHandlerDependencies
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000
@@ -310,8 +317,9 @@ function preflightResponse(
     headers: {
       'Cache-Control': 'no-store',
       'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
+      'Access-Control-Allow-Headers':
+        'Content-Type, If-Match, If-None-Match',
       'Access-Control-Max-Age': '86400',
       Vary: 'Origin',
     },
@@ -342,6 +350,17 @@ export function routeRequest(
       request,
       env,
       dependencies.photoDependencies ?? {
+        fetchImplementation: dependencies.fetchImplementation,
+        timeoutMs: dependencies.timeoutMs,
+        now: dependencies.now,
+      },
+    )
+  }
+  if (isSharedRequestApiRoute(pathname)) {
+    return handleSharedRequestApiRequest(
+      request,
+      env,
+      dependencies.sharedRequestDependencies ?? {
         fetchImplementation: dependencies.fetchImplementation,
         timeoutMs: dependencies.timeoutMs,
         now: dependencies.now,
