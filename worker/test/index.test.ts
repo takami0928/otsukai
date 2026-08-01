@@ -2,6 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GeminiAnalysisError } from '../src/gemini'
 import { PHOTO_TURNSTILE_ACTION } from '../src/photoHandler'
 import type { PhotoObject } from '../src/photoObject'
+import { SHARED_REQUEST_CREATE_ACTION } from '../src/sharedRequestConstants'
+import type {
+  CreateSharedRequestInput,
+  SharedRequestObject,
+} from '../src/sharedRequestObject'
 import {
   HANDWRITING_REQUEST_ID_HEADER,
   hasHandwritingConfiguration,
@@ -160,7 +165,10 @@ describe('Worker routing and feature configuration', () => {
       allowedOrigin,
     )
     expect(response.headers.get('Access-Control-Allow-Methods')).toBe(
-      'GET, POST, OPTIONS',
+      'GET, POST, PATCH, OPTIONS',
+    )
+    expect(response.headers.get('Access-Control-Allow-Headers')).toBe(
+      'Content-Type, If-Match, If-None-Match',
     )
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect(analyzeImplementation).not.toHaveBeenCalled()
@@ -233,6 +241,79 @@ describe('Worker routing and feature configuration', () => {
     expect(analyzeImplementation).not.toHaveBeenCalled()
   })
 
+  it('routes an enabled shared request create without Gemini or photo bindings', async () => {
+    const analyzeImplementation = vi.fn(async () => {
+      throw new Error('Gemini must not be called by shared request routes')
+    })
+    const createRequest = vi.fn(async (input: CreateSharedRequestInput) => ({
+      status: 'created' as const,
+      request: {
+        schemaVersion: 1 as const,
+        requestId: input.requestId,
+        revision: 1,
+        createdAt: new Date(input.createdAt).toISOString(),
+        expiresAt: new Date(input.expiresAt).toISOString(),
+        updatesCount: 0,
+        items: input.items.map((item) => ({
+          ...item,
+          lifecycle: 'active' as const,
+          createdRevision: 1,
+          updatedRevision: 1,
+        })),
+      },
+    }))
+    const sharedObjects = {
+      getByName: vi.fn(() => ({ createRequest })),
+    } as unknown as DurableObjectNamespace<SharedRequestObject>
+    const response = await routeRequest(
+      new Request('https://import.example.workers.dev/v1/requests', {
+        method: 'POST',
+        headers: {
+          Origin: allowedOrigin,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          turnstileToken: 'single-use-token',
+          items: [
+            {
+              itemId: 'item-milk',
+              productId: 'milk',
+              productNameSnapshot: '牛乳',
+              categoryIdSnapshot: 'dairy',
+              categoryNameSnapshot: '乳製品',
+              quantity: 1,
+              unit: '本',
+              iconSnapshot: '🥛',
+              sortOrderSnapshot: 1,
+            },
+          ],
+        }),
+      }),
+      {
+        TURNSTILE_SECRET_KEY: 'turnstile-secret-value',
+        ALLOWED_ORIGINS: allowedOrigin,
+        SHARED_REQUEST_API_ENABLED: 'true',
+        SHARED_REQUEST_OBJECTS: sharedObjects,
+      },
+      {
+        analyzeImplementation,
+        sharedRequestDependencies: {
+          fetchImplementation: vi.fn(async () =>
+            Response.json({
+              success: true,
+              action: SHARED_REQUEST_CREATE_ACTION,
+              hostname: 'takami0928.github.io',
+            }),
+          ) as typeof fetch,
+        },
+      },
+    )
+
+    expect(response.status).toBe(201)
+    expect(createRequest).toHaveBeenCalledTimes(1)
+    expect(analyzeImplementation).not.toHaveBeenCalled()
+  })
+
   it('keeps feature configuration independent from Gemini', () => {
     const withoutGemini = {
       ...env,
@@ -240,6 +321,8 @@ describe('Worker routing and feature configuration', () => {
       PHOTO_API_ENABLED: 'true',
       SHARED_REQUEST_API_ENABLED: 'true',
       PHOTO_OBJECTS: {} as NonNullable<WorkerEnv['PHOTO_OBJECTS']>,
+      SHARED_REQUEST_OBJECTS:
+        {} as NonNullable<WorkerEnv['SHARED_REQUEST_OBJECTS']>,
     }
 
     expect(hasHandwritingConfiguration(withoutGemini)).toBe(false)
@@ -274,6 +357,8 @@ describe('Worker routing and feature configuration', () => {
         ...env,
         SHARED_REQUEST_API_ENABLED: 'true',
         ALLOWED_ORIGINS: '',
+        SHARED_REQUEST_OBJECTS:
+          {} as NonNullable<WorkerEnv['SHARED_REQUEST_OBJECTS']>,
       }),
     ).toBe(false)
   })

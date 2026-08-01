@@ -41,6 +41,8 @@ https://takami0928.github.io/otsukai/#/l/<v2圧縮データ>
 
 参考写真が1枚以上ある固定依頼だけは、v3の商品tupleを変更せず、最大3件の`[itemIndex, photoToken]`を追加したv4を使用します。写真なし依頼はv3のままです。写真参照が壊れていても商品本文を復元し、写真の取得失敗や期限切れで購入進捗を止めません。詳細は[`docs/COMPACT_REQUEST_V4.md`](docs/COMPACT_REQUEST_V4.md)と[`docs/PRODUCT_PHOTO_ARCHITECTURE.md`](docs/PRODUCT_PHOTO_ARCHITECTURE.md)を参照してください。
 
+共有後に更新できるv5は既存固定依頼とは別の、期限付きserver-backed方式として実装を進めています。Worker APIとSQLite-backed `SharedRequestObject`は`SHARED_REQUEST_API_ENABLED=false`で非公開です。capability URL、revision/ETag、tombstone、固定14日期限、手動Cloudflare設定とrollbackは[`docs/LIVE_REQUEST_V5_ARCHITECTURE.md`](docs/LIVE_REQUEST_V5_ARCHITECTURE.md)を参照してください。
+
 ### v3ペイロード
 
 v3は短いJSON配列を `lz-string` で圧縮します。

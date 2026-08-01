@@ -27,9 +27,14 @@ Workerの公開Endpointは変更せず、次の互換ルートを持ちます。
 | `POST` | `/v1/handwriting/analyze` | 同じ手書き解析handlerを呼ぶ明示ルート |
 | `POST` | `/v1/photos/batch` | 最大3枚のJPEGを保存する非公開写真ルート |
 | `GET` | `/v1/photos/:token` | capability tokenで写真を取得する非公開ルート |
+| `POST` | `/v1/requests` | 更新可能依頼を作成する非公開ルート |
+| `GET` | `/v1/requests/:requestToken` | revision/ETag付き依頼snapshotを取得する非公開ルート |
+| `PATCH` | `/v1/requests/:requestToken` | `If-Match`とedit secretで依頼を更新する非公開ルート |
 | `OPTIONS` | `/*` | 許可Originだけに応答するCORS preflight |
 
 写真APIはコードとSQLite-backed Durable Object設定例だけを追加しており、本番へは未deployです。`PHOTO_API_ENABLED`と`SHARED_REQUEST_API_ENABLED`は未設定または`true`以外ならOFFです。設定判定はサービスごとに分離され、`GEMINI_API_KEY`が必要なのは手書き解析だけです。写真・更新可能依頼のコードはGeminiや`@google/genai`へ依存させません。写真の詳細は[`../docs/PRODUCT_PHOTO_ARCHITECTURE.md`](../docs/PRODUCT_PHOTO_ARCHITECTURE.md)を参照してください。
+
+更新可能依頼v5のWorker API、`SharedRequestObject`、capability、固定14日期限、ETag、Cloudflare手動設定とrollbackは[`../docs/LIVE_REQUEST_V5_ARCHITECTURE.md`](../docs/LIVE_REQUEST_V5_ARCHITECTURE.md)を参照してください。本番binding・migration・deploy・flag ONは別途明示承認があるまで行いません。
 
 フロントの`VITE_PRODUCT_PHOTOS_ENABLED`と`VITE_LIVE_REQUESTS_ENABLED`も同様に、明示的な`true`だけを有効とします。現在の通常公開では両方OFFで、導線は表示されません。
 

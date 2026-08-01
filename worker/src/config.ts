@@ -1,4 +1,5 @@
 import type { PhotoObject } from './photoObject'
+import type { SharedRequestObject } from './sharedRequestObject'
 
 export type WorkerEnv = {
   GEMINI_API_KEY?: string
@@ -8,6 +9,7 @@ export type WorkerEnv = {
   PHOTO_API_ENABLED?: string
   SHARED_REQUEST_API_ENABLED?: string
   PHOTO_OBJECTS?: DurableObjectNamespace<PhotoObject>
+  SHARED_REQUEST_OBJECTS?: DurableObjectNamespace<SharedRequestObject>
 }
 
 function isEnabled(value: string | undefined): boolean {
@@ -55,10 +57,19 @@ export function hasPhotoConfiguration(
   )
 }
 
-export function hasSharedRequestConfiguration(env: WorkerEnv): boolean {
+type SharedRequestConfiguredEnv = WorkerEnv & {
+  TURNSTILE_SECRET_KEY: string
+  ALLOWED_ORIGINS: string
+  SHARED_REQUEST_OBJECTS: DurableObjectNamespace<SharedRequestObject>
+}
+
+export function hasSharedRequestConfiguration(
+  env: WorkerEnv,
+): env is SharedRequestConfiguredEnv {
   return Boolean(
     isSharedRequestApiEnabled(env) &&
       env.TURNSTILE_SECRET_KEY?.trim() &&
-      env.ALLOWED_ORIGINS?.trim(),
+      env.ALLOWED_ORIGINS?.trim() &&
+      env.SHARED_REQUEST_OBJECTS,
   )
 }
