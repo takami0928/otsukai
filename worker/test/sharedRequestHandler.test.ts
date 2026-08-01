@@ -27,6 +27,19 @@ const allowedOrigin = 'https://takami0928.github.io'
 const requestToken = `r1_${'R'.repeat(32)}`
 const editSecret = `e1_${'E'.repeat(43)}`
 const now = Date.UTC(2026, 7, 1)
+const manualValidationToken = `mv1_${'M'.repeat(32)}`
+
+async function sha256(value: string): Promise<string> {
+  const digest = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)),
+  )
+  return [...digest]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+const realDigest = (data: ArrayBuffer) =>
+  crypto.subtle.digest('SHA-256', data)
 
 function newItem(index = 0): SharedRequestNewItem {
   return {
@@ -458,6 +471,58 @@ describe('shared request API handler', () => {
       TURNSTILE_SECRET_KEY: 'turnstile-secret-value',
     })
     expect(incomplete.status).toBe(503)
+  })
+
+  it('gates create and PATCH writes by the validation session while allowing capability GET', async () => {
+    const { env, namespace } = sharedEnv()
+    Object.assign(env, {
+      SHARED_REQUEST_API_ENABLED: 'false',
+      MANUAL_VALIDATION_ENABLED: 'true',
+      MANUAL_VALIDATION_SESSION_SHA256: await sha256(
+        manualValidationToken,
+      ),
+      MANUAL_VALIDATION_EXPIRES_AT: new Date(now + 60_000).toISOString(),
+    })
+    const fetchImplementation = successfulTurnstile(
+      SHARED_REQUEST_CREATE_ACTION,
+    )
+    const dependencies: SharedRequestHandlerDependencies = {
+      fetchImplementation,
+      now: () => now,
+      randomValues: deterministicRandom,
+      digestImplementation: realDigest,
+    }
+
+    const rejected = await handleSharedRequestApiRequest(
+      request(),
+      env,
+      dependencies,
+    )
+    expect(rejected.status).toBe(403)
+    expect(fetchImplementation).not.toHaveBeenCalled()
+    expect(namespace.getByName).not.toHaveBeenCalled()
+
+    const created = await handleSharedRequestApiRequest(
+      request({
+        headers: {
+          'X-Otsukai-Validation-Session': manualValidationToken,
+        },
+      }),
+      env,
+      dependencies,
+    )
+    expect(created.status).toBe(201)
+    const createdBody = (await created.json()) as { requestToken: string }
+
+    const read = await handleSharedRequestApiRequest(
+      request({
+        method: 'GET',
+        pathname: `/v1/requests/${createdBody.requestToken}`,
+      }),
+      env,
+      { now: () => now },
+    )
+    expect(read.status).toBe(200)
   })
 
   it('never logs request data, capabilities, or secrets', async () => {

@@ -79,9 +79,19 @@ export function LiveRequestManagePage({
     () =>
       liveRequestApi ??
       (config.enabled
-        ? new WorkerLiveRequestApi(config.endpoint)
+        ? new WorkerLiveRequestApi(
+            config.endpoint,
+            undefined,
+            fetch,
+            config.validationSessionToken,
+          )
         : undefined),
-    [config.enabled, config.endpoint, liveRequestApi],
+    [
+      config.enabled,
+      config.endpoint,
+      config.validationSessionToken,
+      liveRequestApi,
+    ],
   )
   const updateApi = liveRequestApi ?? defaultUpdateApi
   const [snapshot, setSnapshot] = useState<LiveRequestSnapshot>()
@@ -194,10 +204,21 @@ export function LiveRequestManagePage({
       LIVE_REQUEST_UPDATE_TURNSTILE_ACTION,
     )
     setDefaultUpdateApi(
-      new WorkerLiveRequestApi(config.endpoint, turnstile),
+      new WorkerLiveRequestApi(
+        config.endpoint,
+        turnstile,
+        fetch,
+        config.validationSessionToken,
+      ),
     )
     return () => turnstile.dispose()
-  }, [config.enabled, config.endpoint, config.turnstileSiteKey, liveRequestApi])
+  }, [
+    config.enabled,
+    config.endpoint,
+    config.turnstileSiteKey,
+    config.validationSessionToken,
+    liveRequestApi,
+  ])
 
   const submitOperations = async (
     operations: readonly LiveRequestOperation[],

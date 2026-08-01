@@ -155,6 +155,22 @@ describe('compact request v4', () => {
     expect(url.length).toBeLessThanOrEqual(MAX_SHARE_URL_LENGTH)
   })
 
+  it('preserves the validation session query in a gated v4 URL', () => {
+    const validationToken = `mv1_${'V'.repeat(32)}`
+    const url = buildCompactRequestV4UrlFromInput(
+      `https://takami0928.github.io/otsukai/?manualValidationSessionId=${validationToken}`,
+      {
+        requestKey: 'm1234567-abcd',
+        title: 'request',
+        items: [selected('milk')],
+        photoRefs: [[0, token]],
+      },
+    )
+    expect(url).toContain(
+      `manualValidationSessionId=${validationToken}#/l/`,
+    )
+  })
+
   it('does not change published v1, v2, or v3 fixtures', () => {
     expect(decodeShoppingRequest(PUBLISHED_V1_REQUEST_FIXTURE).items.length).toBeGreaterThan(0)
     expect(decodeCompactRequest(PUBLISHED_V2_REQUEST_FIXTURE).items.length).toBeGreaterThan(0)

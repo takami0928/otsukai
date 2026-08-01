@@ -168,7 +168,7 @@ describe('Worker routing and feature configuration', () => {
       'GET, POST, PATCH, OPTIONS',
     )
     expect(response.headers.get('Access-Control-Allow-Headers')).toBe(
-      'Content-Type, If-Match, If-None-Match',
+      'Content-Type, If-Match, If-None-Match, X-Otsukai-Validation-Session',
     )
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect(analyzeImplementation).not.toHaveBeenCalled()

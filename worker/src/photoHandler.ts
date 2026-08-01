@@ -15,6 +15,11 @@ import {
 } from './photoValidation'
 import { verifyTurnstileToken } from './turnstile'
 import { parseAllowedOrigins } from './validation'
+import {
+  getManualValidationModeStatus,
+  manualValidationErrorResponse,
+  validateManualValidationSession,
+} from './manualValidation'
 
 export const PHOTO_BATCH_PATH = '/v1/photos/batch'
 export { PHOTO_RETENTION_MS, PHOTO_TURNSTILE_ACTION } from './photoConstants'
@@ -224,10 +229,16 @@ export async function handlePhotoApiRequest(
   env: WorkerEnv,
   dependencies: PhotoHandlerDependencies = {},
 ): Promise<Response> {
-  if (!isPhotoApiEnabled(env)) {
-    return jsonResponse({ code: 'NOT_FOUND' }, 404)
+  const publiclyEnabled = isPhotoApiEnabled(env)
+  const modeStatus = publiclyEnabled
+    ? 'disabled'
+    : getManualValidationModeStatus(
+        env,
+        (dependencies.now ?? Date.now)(),
+      )
+  if (!publiclyEnabled && modeStatus === 'disabled') {
+    return manualValidationErrorResponse('disabled')
   }
-
   const allowedOrigins = parseAllowedOrigins(env.ALLOWED_ORIGINS ?? '')
   const requestOrigin = request.headers.get('Origin') ?? ''
   const origin = allowedOrigins.has(requestOrigin)
@@ -236,11 +247,26 @@ export async function handlePhotoApiRequest(
   if (!origin) {
     return jsonResponse({ code: 'ORIGIN_NOT_ALLOWED' }, 403)
   }
+  const pathname = new URL(request.url).pathname
+  if (!publiclyEnabled) {
+    if (modeStatus === 'expired') {
+      return manualValidationErrorResponse('expired', origin)
+    }
+    if (pathname === PHOTO_BATCH_PATH) {
+      const validationStatus = await validateManualValidationSession(
+        request,
+        env,
+        dependencies,
+      )
+      if (validationStatus !== 'valid') {
+        return manualValidationErrorResponse(validationStatus, origin)
+      }
+    }
+  }
   if (!hasPhotoConfiguration(env)) {
     return jsonResponse({ code: 'SERVICE_UNAVAILABLE' }, 503, origin)
   }
 
-  const pathname = new URL(request.url).pathname
   if (pathname === PHOTO_BATCH_PATH) {
     return handlePhotoBatch(request, env, origin, dependencies)
   }

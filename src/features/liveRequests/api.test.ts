@@ -48,6 +48,49 @@ function tokenProvider() {
 }
 
 describe('WorkerLiveRequestApi', () => {
+  it('adds a verified validation session to create, read, and update requests', async () => {
+    const validationSessionToken = `mv1_${'A'.repeat(32)}`
+    const fetchImplementation = vi
+      .fn(async (_url, init) => {
+        expect(new Headers(init?.headers).get(
+          'X-Otsukai-Validation-Session',
+        )).toBe(validationSessionToken)
+        if (init?.method === 'POST') {
+          return json(
+            { requestToken, editSecret, request: snapshot() },
+            201,
+          )
+        }
+        if (init?.method === 'PATCH') {
+          return json(snapshot(2), 200, 2)
+        }
+        return json(snapshot(), 200)
+      }) as typeof fetch
+    const api = new WorkerLiveRequestApi(
+      'https://worker.example/',
+      tokenProvider(),
+      fetchImplementation,
+      validationSessionToken,
+    )
+    const item = {
+      itemId: 'item-1',
+      productId: 'milk',
+      productNameSnapshot: 'milk',
+      categoryIdSnapshot: 'drinks',
+      categoryNameSnapshot: 'drinks',
+      quantity: 1,
+      unit: 'item',
+      iconSnapshot: 'icon',
+      sortOrderSnapshot: 1,
+    }
+    await api.create([item])
+    await api.get(requestToken)
+    await api.patch(requestToken, editSecret, 1, [
+      { type: 'set-quantity', itemId: 'item-1', quantity: 2 },
+    ])
+    expect(fetchImplementation).toHaveBeenCalledTimes(3)
+  })
+
   it('creates a v5 request with a fresh token and strict response', async () => {
     const turnstile = tokenProvider()
     const fetchImplementation = vi.fn(async (_url, init) => {

@@ -134,6 +134,7 @@ import {
   buildLiveRequestUrls,
 } from '../features/liveRequests/createItems'
 import type { LiveRequestApi } from '../features/liveRequests/types'
+import { addManualValidationSessionToBaseUrl } from '../features/manualValidation/session'
 
 type CreateRequestPageProps = {
   onBackHome: () => void
@@ -213,6 +214,8 @@ export function CreateRequestPage({
     handwritingImportConfig ?? getHandwritingImportConfig()
   const photoConfig = productPhotoConfig ?? getProductPhotoConfig()
   const liveConfig = liveRequestConfig ?? getLiveRequestConfig()
+  const manualValidationSessionToken =
+    photoConfig.validationSessionToken ?? liveConfig.validationSessionToken
   const [initialPageState] = useState(() =>
     createInitialPageState(effectiveProducts),
   )
@@ -291,6 +294,14 @@ export function CreateRequestPage({
     () => `${window.location.origin}${window.location.pathname}`,
     [],
   )
+  const validationRequestBaseUrl = useMemo(
+    () =>
+      addManualValidationSessionToBaseUrl(
+        requestBaseUrl,
+        manualValidationSessionToken,
+      ),
+    [manualValidationSessionToken, requestBaseUrl],
+  )
   const budgetContext = useMemo<RequestBudgetContext>(
     () => ({ baseUrl: requestBaseUrl, requestKey }),
     [requestBaseUrl, requestKey],
@@ -336,6 +347,8 @@ export function CreateRequestPage({
       new WorkerProductPhotoUploadProvider(
         photoConfig.endpoint,
         turnstile,
+        fetch,
+        photoConfig.validationSessionToken,
       ),
     )
     return () => turnstile.dispose()
@@ -343,6 +356,7 @@ export function CreateRequestPage({
     photoConfig.enabled,
     photoConfig.endpoint,
     photoConfig.turnstileSiteKey,
+    photoConfig.validationSessionToken,
     productPhotoUploadProvider,
   ])
 
@@ -362,13 +376,19 @@ export function CreateRequestPage({
       LIVE_REQUEST_CREATE_TURNSTILE_ACTION,
     )
     setDefaultLiveRequestApi(
-      new WorkerLiveRequestApi(liveConfig.endpoint, turnstile),
+      new WorkerLiveRequestApi(
+        liveConfig.endpoint,
+        turnstile,
+        fetch,
+        liveConfig.validationSessionToken,
+      ),
     )
     return () => turnstile.dispose()
   }, [
     liveConfig.enabled,
     liveConfig.endpoint,
     liveConfig.turnstileSiteKey,
+    liveConfig.validationSessionToken,
     liveRequestApi,
   ])
 
@@ -786,7 +806,7 @@ export function CreateRequestPage({
           return [itemIndex, photo.token] as [number, string]
         })
         return buildLineDeliveryRequestUrl(
-          buildCompactRequestV4UrlFromInput(requestBaseUrl, {
+          buildCompactRequestV4UrlFromInput(validationRequestBaseUrl, {
             requestKey,
             title: FIXED_REQUEST_TITLE,
             items: selectedItems,
@@ -812,7 +832,7 @@ export function CreateRequestPage({
       setSharedUrl(prepared.url)
       setSharedSnapshot(prepared.snapshot)
       setLastSharedUrl(prepared.url)
-      saveLastSharedUrl(prepared.url)
+      saveLastSharedUrl(manualValidationSessionToken ? '' : prepared.url)
     }
     if (!prepared.reused) {
       setRequestKey(createRequestKey())
@@ -934,7 +954,7 @@ export function CreateRequestPage({
         )
         const created = await api.create(items)
         const urls = buildLiveRequestUrls(
-          requestBaseUrl,
+          validationRequestBaseUrl,
           created.requestToken,
           created.editSecret,
         )
@@ -946,7 +966,7 @@ export function CreateRequestPage({
         setSharedUrl(purchaserUrl)
         setSharedSnapshot(prepared.snapshot)
         setLastSharedUrl(purchaserUrl)
-        saveLastSharedUrl(purchaserUrl)
+        saveLastSharedUrl(manualValidationSessionToken ? '' : purchaserUrl)
       } catch (error) {
         setShareMessage(liveRequestFailureMessage(error))
         setShareStatus('error')
@@ -958,8 +978,10 @@ export function CreateRequestPage({
     saveCreateRequestReturnState({
       customItems,
       expandedProductIds: [...expandedProductIds],
-      sharedUrl: purchaserUrl,
-      sharedSnapshot: prepared.snapshot,
+      sharedUrl: manualValidationSessionToken ? '' : purchaserUrl,
+      sharedSnapshot: manualValidationSessionToken
+        ? ''
+        : prepared.snapshot,
     })
     setShareMessage('共有画面を開いています…')
     setShareStatus('cancelled')
@@ -1008,8 +1030,10 @@ export function CreateRequestPage({
       saveCreateRequestReturnState({
         customItems,
         expandedProductIds: [...expandedProductIds],
-        sharedUrl: prepared.url,
-        sharedSnapshot: prepared.snapshot,
+        sharedUrl: manualValidationSessionToken ? '' : prepared.url,
+        sharedSnapshot: manualValidationSessionToken
+          ? ''
+          : prepared.snapshot,
       })
 
       setShareMessage('共有画面を開いています…')

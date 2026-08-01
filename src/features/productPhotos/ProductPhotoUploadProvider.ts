@@ -117,6 +117,7 @@ export class WorkerProductPhotoUploadProvider
     private readonly endpoint: string,
     private readonly turnstile: TurnstileTokenProvider,
     private readonly fetchImplementation: typeof fetch = fetch,
+    private readonly validationSessionToken?: string,
   ) {}
 
   async upload(
@@ -143,6 +144,14 @@ export class WorkerProductPhotoUploadProvider
 
       const response = await this.fetchImplementation(uploadUrl(this.endpoint), {
         method: 'POST',
+        ...(this.validationSessionToken
+          ? {
+              headers: {
+                'X-Otsukai-Validation-Session':
+                  this.validationSessionToken,
+              },
+            }
+          : {}),
         body,
         signal: options.signal,
       })

@@ -136,6 +136,9 @@ describe('deployment manifest', () => {
       VITE_HANDWRITING_IMPORT_ENDPOINT:
         'https://worker.example.invalid/',
       VITE_TURNSTILE_SITE_KEY: 'public-site-key',
+      VITE_PRODUCT_PHOTOS_ENABLED: 'true',
+      VITE_LIVE_REQUESTS_ENABLED: 'true',
+      VITE_MANUAL_VALIDATION_ENABLED: 'true',
       ...overrides,
     }
   }
@@ -151,6 +154,9 @@ describe('deployment manifest', () => {
       manualTestSessionId: 'session-123',
       handwritingImportEnabled: true,
       diagnosticsEnabled: true,
+      productPhotosEnabled: true,
+      liveRequestsEnabled: true,
+      manualValidationEnabled: true,
       endpointConfigured: true,
       turnstileSiteKeyConfigured: true,
       builtAt: '2026-07-28T00:00:00.000Z',
@@ -184,6 +190,9 @@ describe('deployment manifest', () => {
       manualTestSessionId: '',
       handwritingImportEnabled: false,
       diagnosticsEnabled: false,
+      productPhotosEnabled: false,
+      liveRequestsEnabled: false,
+      manualValidationEnabled: false,
       endpointConfigured: true,
       turnstileSiteKeyConfigured: true,
       builtAt: '2026-07-28T00:00:00.000Z',

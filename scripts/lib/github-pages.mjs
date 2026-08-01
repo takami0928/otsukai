@@ -333,6 +333,9 @@ export function validateDeploymentManifest(manifest, expected) {
     'manualTestSessionId',
     'handwritingImportEnabled',
     'diagnosticsEnabled',
+    'productPhotosEnabled',
+    'liveRequestsEnabled',
+    'manualValidationEnabled',
     'endpointConfigured',
     'turnstileSiteKeyConfigured',
     'builtAt',
@@ -355,6 +358,9 @@ export function validateDeploymentManifest(manifest, expected) {
     manifest.manualTestSessionId !== expected.sessionId ||
     manifest.handwritingImportEnabled !== expected.importEnabled ||
     manifest.diagnosticsEnabled !== expected.diagnosticsEnabled ||
+    manifest.productPhotosEnabled !== false ||
+    manifest.liveRequestsEnabled !== false ||
+    manifest.manualValidationEnabled !== false ||
     manifest.endpointConfigured !== true ||
     manifest.turnstileSiteKeyConfigured !== true ||
     typeof manifest.builtAt !== 'string' ||

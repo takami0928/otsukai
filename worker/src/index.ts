@@ -17,6 +17,11 @@ import {
   type PhotoHandlerDependencies,
 } from './photoHandler'
 import { createWorkerRequestId } from './requestId'
+import {
+  handleManualValidationSessionRequest,
+  MANUAL_VALIDATION_SESSION_HEADER,
+  MANUAL_VALIDATION_SESSION_PATH,
+} from './manualValidation'
 import { parseGeminiHandwritingResult } from './resultValidation'
 import {
   handleSharedRequestApiRequest,
@@ -319,7 +324,7 @@ function preflightResponse(
       'Access-Control-Allow-Origin': origin,
       'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
       'Access-Control-Allow-Headers':
-        'Content-Type, If-Match, If-None-Match',
+        `Content-Type, If-Match, If-None-Match, ${MANUAL_VALIDATION_SESSION_HEADER}`,
       'Access-Control-Max-Age': '86400',
       Vary: 'Origin',
     },
@@ -345,6 +350,11 @@ export function routeRequest(
   }
 
   const pathname = new URL(request.url).pathname
+  if (pathname === MANUAL_VALIDATION_SESSION_PATH) {
+    return handleManualValidationSessionRequest(request, env, {
+      now: dependencies.now,
+    })
+  }
   if (isPhotoApiRoute(pathname)) {
     return handlePhotoApiRequest(
       request,

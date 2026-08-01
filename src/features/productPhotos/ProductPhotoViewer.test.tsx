@@ -70,6 +70,33 @@ describe('ProductPhotoViewer', () => {
     root = createRoot(container)
   })
 
+  it('uses the validation session header for gated capability reads', async () => {
+    const validationSessionToken = `mv1_${'A'.repeat(32)}`
+    const fetchImplementation = vi.fn(async (_input, init) => {
+      expect(new Headers(init?.headers).get(
+        'X-Otsukai-Validation-Session',
+      )).toBe(validationSessionToken)
+      return new Response(jpegBlob(), {
+        headers: { 'Content-Type': 'image/jpeg' },
+      })
+    }) as typeof fetch
+    await act(async () => {
+      root.render(
+        <ProductPhotoViewer
+          endpoint="https://worker.example/"
+          token={token}
+          itemName="test"
+          validationSessionToken={validationSessionToken}
+          fetchImplementation={fetchImplementation}
+          createPreviewUrl={() => 'blob:gated-photo'}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(fetchImplementation).toHaveBeenCalledTimes(1)
+  })
+
   it.each([
     [404, 'expired', '保存期限'],
     [410, 'expired', '保存期限'],

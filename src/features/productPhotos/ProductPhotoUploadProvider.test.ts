@@ -59,6 +59,23 @@ describe('WorkerProductPhotoUploadProvider', () => {
     expect(challenge.reset).toHaveBeenCalledTimes(1)
   })
 
+  it('adds a verified validation session only as the dedicated request header', async () => {
+    const validationSessionToken = `mv1_${'A'.repeat(32)}`
+    const fetchImplementation = vi.fn(async (_input, init) => {
+      expect(init?.headers).toEqual({
+        'X-Otsukai-Validation-Session': validationSessionToken,
+      })
+      return Response.json({ photos: [{ token, itemKey: 'milk' }] })
+    }) as typeof fetch
+    const provider = new WorkerProductPhotoUploadProvider(
+      'https://worker.example/',
+      turnstile(),
+      fetchImplementation,
+      validationSessionToken,
+    )
+    await expect(provider.upload([photo()])).resolves.toBeUndefined()
+  })
+
   it('rejects invalid photos before Turnstile or fetch', async () => {
     const challenge = turnstile()
     const fetchImplementation = vi.fn()
