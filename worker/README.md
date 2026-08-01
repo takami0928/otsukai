@@ -34,7 +34,7 @@ Workerの公開Endpointは変更せず、次の互換ルートを持ちます。
 
 写真APIはコードとSQLite-backed Durable Object設定例だけを追加しており、本番へは未deployです。`PHOTO_API_ENABLED`と`SHARED_REQUEST_API_ENABLED`は未設定または`true`以外ならOFFです。設定判定はサービスごとに分離され、`GEMINI_API_KEY`が必要なのは手書き解析だけです。写真・更新可能依頼のコードはGeminiや`@google/genai`へ依存させません。写真の詳細は[`../docs/PRODUCT_PHOTO_ARCHITECTURE.md`](../docs/PRODUCT_PHOTO_ARCHITECTURE.md)を参照してください。
 
-更新可能依頼v5のWorker API、`SharedRequestObject`、capability、固定14日期限、ETag、Cloudflare手動設定とrollbackは[`../docs/LIVE_REQUEST_V5_ARCHITECTURE.md`](../docs/LIVE_REQUEST_V5_ARCHITECTURE.md)を参照してください。本番binding・migration・deploy・flag ONは別途明示承認があるまで行いません。
+更新可能依頼v5のWorker API、`SharedRequestObject`、capability、固定14日期限、ETag、依頼者管理・購入者同期UI、Cloudflare手動設定とrollbackは[`../docs/LIVE_REQUEST_V5_ARCHITECTURE.md`](../docs/LIVE_REQUEST_V5_ARCHITECTURE.md)を参照してください。iPhone 11、Android Chrome、LINE内ブラウザの確認手順は[`../docs/LIVE_REQUEST_V5_MANUAL_VERIFICATION.md`](../docs/LIVE_REQUEST_V5_MANUAL_VERIFICATION.md)です。本番binding・migration・deploy・flag ONは別途明示承認があるまで行いません。
 
 フロントの`VITE_PRODUCT_PHOTOS_ENABLED`と`VITE_LIVE_REQUESTS_ENABLED`も同様に、明示的な`true`だけを有効とします。現在の通常公開では両方OFFで、導線は表示されません。
 
@@ -88,7 +88,7 @@ Cloudflare Dashboardで既存Widgetを再利用できるか確認します。新
 - Site Key: 公開値としてフロントへ設定
 - Secret Key: Worker Secretへ設定
 
-フロントは明示レンダリングと`execution: "execute"`を使い、actionを`handwriting_import`に固定します。WorkerはSiteverifyの`success`、action、Origin由来hostnameを照合します。トークンは毎リクエスト新規取得し、成功、失敗、キャンセル後にWidgetをリセットします。
+フロントは明示レンダリングと`execution: "execute"`を使い、用途ごとに`handwriting_import`、`product_photo_upload`、`shared_request_create`、`shared_request_update`を固定します。WorkerはSiteverifyの`success`、要求されたaction、Origin由来hostnameを照合します。トークンは毎リクエスト新規取得し、成功、失敗、キャンセル後にWidgetをリセットします。
 
 ## Worker設定
 

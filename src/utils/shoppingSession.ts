@@ -52,21 +52,37 @@ export function decodeShoppingSessionPayload(input: {
 export function restoreShoppingSession(
   payload: ShoppingRequestPayload,
 ): LoadedShoppingSession {
+  return reconcileShoppingSession(
+    payload,
+    {
+      checkedState: loadCheckedState(payload.requestId),
+      itemIssues: loadItemIssues(payload.requestId),
+      cartOrder: loadCartOrder(payload.requestId),
+    },
+    loadConsultations(payload.requestId),
+  )
+}
+
+export function reconcileShoppingSession(
+  payload: ShoppingRequestPayload,
+  currentState: ShoppingStateSnapshot,
+  currentConsultations: ConsultationMap,
+): LoadedShoppingSession {
   const requestItemIds = new Set(payload.items.map((item) => item.id))
   const storedCheckedState = Object.fromEntries(
-    Object.entries(loadCheckedState(payload.requestId)).filter(([itemId]) =>
+    Object.entries(currentState.checkedState).filter(([itemId]) =>
       requestItemIds.has(itemId),
     ),
   )
   const storedItemIssues = Object.fromEntries(
-    Object.entries(loadItemIssues(payload.requestId)).filter(([itemId]) =>
+    Object.entries(currentState.itemIssues).filter(([itemId]) =>
       requestItemIds.has(itemId),
     ),
   )
   const migration = migrateLegacyConsultingState(
     storedCheckedState,
     storedItemIssues,
-    loadConsultations(payload.requestId),
+    currentConsultations,
   )
   const checkedState = reconcileCheckedStateWithIssues(
     migration.checkedState,
@@ -80,7 +96,7 @@ export function restoreShoppingSession(
     migration.consultations,
     [...requestItemIds],
   )
-  const cartOrder = loadCartOrder(payload.requestId).filter(
+  const cartOrder = currentState.cartOrder.filter(
     (itemId) =>
       requestItemIds.has(itemId) &&
       isCartStatus(getItemStatus(checkedState, itemId)),

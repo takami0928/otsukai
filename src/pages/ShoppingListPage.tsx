@@ -44,6 +44,8 @@ import {
 } from '../utils/shoppingState'
 import {
   loadShoppingSession,
+  reconcileShoppingSession,
+  restoreShoppingSession,
   type RequestRouteCodec,
 } from '../utils/shoppingSession'
 import {
@@ -56,6 +58,13 @@ import {
   type ProductPhotoConfig,
 } from '../features/productPhotos/config'
 import { ProductPhotoViewer } from '../features/productPhotos/ProductPhotoViewer'
+import type { LiveRequestApi } from '../features/liveRequests/types'
+import { useLiveRequestSync } from '../features/liveRequests/useLiveRequestSync'
+import {
+  cancelledItemMessage,
+  describeLiveRequestChange,
+  liveRequestToShoppingPayload,
+} from '../features/liveRequests/shopping'
 
 type ShoppingListPageProps = {
   encodedPayload: string
@@ -63,6 +72,8 @@ type ShoppingListPageProps = {
   onBackHome: () => void
   onError: (title: string, description: string) => void
   productPhotoConfig?: ProductPhotoConfig
+  liveRequestToken?: string
+  liveRequestApi?: LiveRequestApi
 }
 
 type CartConfirmationState = {
@@ -133,6 +144,8 @@ export function ShoppingListPage({
   onBackHome,
   onError,
   productPhotoConfig,
+  liveRequestToken,
+  liveRequestApi,
 }: ShoppingListPageProps) {
   const photoConfig = productPhotoConfig ?? getProductPhotoConfig()
   const [payload, setPayload] = useState<ShoppingRequestPayload | null>(null)
@@ -165,10 +178,16 @@ export function ShoppingListPage({
   const shouldPublishResultNoticeRef = useRef(false)
   const checkoutReviewRef = useRef<HTMLElement | null>(null)
   const completionHeadingRef = useRef<HTMLHeadingElement | null>(null)
+  const loadedLiveRequestIdRef = useRef<string>()
+  const liveSync = useLiveRequestSync({
+    enabled: Boolean(liveRequestToken && liveRequestApi),
+    requestToken: liveRequestToken ?? '',
+    api: liveRequestApi,
+  })
   const nativeShareAvailable = isNativeShareAvailable()
   const externalBrowserUrl = useMemo(
     () => addLineExternalBrowserHint(window.location.href),
-    [encodedPayload, payloadCodec],
+    [encodedPayload, liveRequestToken, payloadCodec],
   )
   const consultationShareLock = useMemo<ConsultationShareLock>(
     () => ({
@@ -197,6 +216,33 @@ export function ShoppingListPage({
     [],
   )
 
+  const activeItems = useMemo(
+    () =>
+      (payload?.items ?? []).filter(
+        (item) => item.liveLifecycle !== 'cancelled-by-requester',
+      ),
+    [payload],
+  )
+  const cancelledItems = useMemo(
+    () =>
+      (payload?.items ?? []).filter(
+        (item) => item.liveLifecycle === 'cancelled-by-requester',
+      ),
+    [payload],
+  )
+  const liveChangesByItem = useMemo(() => {
+    const changes = new Map<
+      string,
+      (typeof liveSync.pendingChanges)[number][]
+    >()
+    for (const change of liveSync.pendingChanges) {
+      const current = changes.get(change.itemId) ?? []
+      current.push(change)
+      changes.set(change.itemId, current)
+    }
+    return changes
+  }, [liveSync.pendingChanges])
+
   const {
     sortedItems,
     cartItems,
@@ -208,13 +254,13 @@ export function ShoppingListPage({
   } = useMemo(
     () =>
       selectShoppingPageView({
-        items: payload?.items ?? [],
+        items: activeItems,
         checkedState,
         consultations,
         cartOrder,
         filterMode,
       }),
-    [cartOrder, checkedState, consultations, filterMode, payload],
+    [activeItems, cartOrder, checkedState, consultations, filterMode],
   )
   const pendingItems = useMemo(
     () =>
@@ -244,7 +290,9 @@ export function ShoppingListPage({
     removeConsultation: handleRemoveConsultation,
     resolveConsultation: handleResolveConsultation,
   } = useConsultationWorkflow({
-    sessionKey: `${payloadCodec}:${encodedPayload}`,
+    sessionKey: liveRequestToken
+      ? `live:${liveRequestToken}`
+      : `${payloadCodec}:${encodedPayload}`,
     items: sortedItems,
     updateConsultations,
     getCurrentConsultations,
@@ -255,6 +303,10 @@ export function ShoppingListPage({
   })
 
   useEffect(() => {
+    if (liveRequestToken) {
+      return
+    }
+    loadedLiveRequestIdRef.current = undefined
     resultShareGenerationRef.current += 1
     shouldPublishResultNoticeRef.current = false
     activeShareRef.current = false
@@ -290,6 +342,68 @@ export function ShoppingListPage({
     encodedPayload,
     onError,
     payloadCodec,
+    replaceSession,
+    liveRequestToken,
+  ])
+
+  useEffect(() => {
+    if (!liveRequestToken || !liveSync.snapshot) {
+      if (liveRequestToken && liveSync.status === 'missing') {
+        onError(
+          '更新可能な依頼を開けませんでした',
+          '依頼が見つからないか、最新状態を取得できませんでした。',
+        )
+      }
+      return
+    }
+
+    const nextPayload = liveRequestToShoppingPayload(liveSync.snapshot)
+    const isExistingSession =
+      loadedLiveRequestIdRef.current === nextPayload.requestId
+    const loadedSession = isExistingSession
+      ? reconcileShoppingSession(
+          nextPayload,
+          getCurrentShoppingState(),
+          getCurrentConsultations(),
+        )
+      : restoreShoppingSession(nextPayload)
+
+    setPayload(nextPayload)
+    replaceSession({
+      requestId: nextPayload.requestId,
+      shoppingState: loadedSession.shoppingState,
+      consultations: loadedSession.consultations,
+    })
+    loadedLiveRequestIdRef.current = nextPayload.requestId
+    setCartConfirmation((current) =>
+      current &&
+      nextPayload.items.some(
+        (item) =>
+          item.id === current.itemId &&
+          item.liveLifecycle !== 'cancelled-by-requester',
+      )
+        ? current
+        : null,
+    )
+    if (!isExistingSession) {
+      setFilterMode('all')
+      setIsCheckoutReviewOpen(false)
+      setIsCompletionView(false)
+      setIsSharingResult(false)
+      setShareNotice(null)
+      clearUndoNotice()
+    } else if (liveSync.pendingChanges.length > 0) {
+      setIsCompletionView(false)
+    }
+  }, [
+    clearUndoNotice,
+    getCurrentConsultations,
+    getCurrentShoppingState,
+    liveRequestToken,
+    liveSync.pendingChanges.length,
+    liveSync.snapshot,
+    liveSync.status,
+    onError,
     replaceSession,
   ])
 
@@ -485,7 +599,22 @@ export function ShoppingListPage({
   }
 
   if (!payload) {
-    return null
+    return liveRequestToken ? (
+      <main className="page">
+        <section className="top-bar">
+          <button type="button" className="ghost-button" onClick={onBackHome}>
+            ホーム
+          </button>
+          <div>
+            <p className="eyebrow">お使いリスト</p>
+            <h1>依頼を確認中</h1>
+          </div>
+        </section>
+        <section className="info-card" aria-live="polite">
+          <p>最新の依頼内容を確認しています。</p>
+        </section>
+      </main>
+    ) : null
   }
 
   if (isCompletionView) {
@@ -532,6 +661,52 @@ export function ShoppingListPage({
 
       {!nativeShareAvailable ? (
         <NativeShareUnavailableNotice externalBrowserUrl={externalBrowserUrl} />
+      ) : null}
+
+      {liveRequestToken ? (
+        <section className="info-card live-request-sync-card" aria-live="polite">
+          <div className="section-heading">
+            <h2>依頼の更新</h2>
+            <span>revision {liveSync.snapshot?.revision ?? '-'}</span>
+          </div>
+          {liveSync.status === 'stale' ? (
+            <p className="share-notice error">
+              最新状態を確認できません。最後に取得できた商品リストで買い物を続けられます。
+            </p>
+          ) : null}
+          {liveSync.status === 'expired' ? (
+            <p className="share-notice error">
+              共有期限が切れました。最後に取得できた商品リストと端末内の購入進捗は引き続き利用できます。
+            </p>
+          ) : null}
+          {liveSync.cachePersistenceFailed ? (
+            <p className="share-notice error">
+              最新の依頼内容をこの端末へ保存できませんでした。
+            </p>
+          ) : null}
+          <div className="inline-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => void liveSync.refresh()}
+              disabled={
+                liveSync.status === 'checking' ||
+                liveSync.status === 'loading'
+              }
+            >
+              {liveSync.status === 'checking' ? '確認中…' : '更新を確認'}
+            </button>
+            {liveSync.pendingChanges.length > 0 ? (
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={liveSync.acknowledgeChanges}
+              >
+                変更を確認しました
+              </button>
+            ) : null}
+          </div>
+        </section>
       ) : null}
 
       <section className="hero-card compact-hero">
@@ -609,6 +784,18 @@ export function ShoppingListPage({
           >
             {group.items.map((item) => {
               const status = getItemStatus(checkedState, item.id)
+              const itemChanges = liveChangesByItem.get(item.id) ?? []
+              const changeNotice = itemChanges.length > 0 ? (
+                <span
+                  className={`live-request-change ${
+                    status === 'inCart' || status === 'verified'
+                      ? 'is-strong'
+                      : ''
+                  }`}
+                >
+                  {itemChanges.map(describeLiveRequestChange).join(' / ')}
+                </span>
+              ) : undefined
 
               return (
                 <ShoppingItemCard
@@ -629,6 +816,7 @@ export function ShoppingListPage({
                   onReset={() =>
                     commitShoppingChange(item.id, 'pending')
                   }
+                  changeNotice={changeNotice}
                   photoContent={
                     photoConfig.enabled && item.photoToken ? (
                       <ProductPhotoViewer
@@ -648,6 +836,30 @@ export function ShoppingListPage({
           <p>表示できる商品がありません。</p>
         </section>
       )}
+
+      {cancelledItems.length > 0 ? (
+        <details
+          className="info-card live-request-cancelled"
+          open={liveSync.pendingChanges.some(
+            (change) => change.kind === 'cancelled',
+          )}
+        >
+          <summary>依頼者が取り消した商品（{cancelledItems.length}件）</summary>
+          <ul className="live-request-cancelled-list">
+            {cancelledItems.map((item) => (
+              <li key={item.id}>
+                <strong>{item.productNameSnapshot}</strong>
+                <span>
+                  {cancelledItemMessage(
+                    getItemStatus(checkedState, item.id),
+                    Boolean(consultations[item.id]),
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       {showCheckoutReview ? (
         <CheckoutReviewSection

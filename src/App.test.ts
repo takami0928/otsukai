@@ -47,6 +47,31 @@ describe('hash routing', () => {
     })
   })
 
+  it('recognizes v5 purchaser and capability management routes', () => {
+    const requestToken = `r1_${'A'.repeat(32)}`
+    const editSecret = `e1_${'B'.repeat(43)}`
+
+    expect(parseHashRoute(`#/r/${requestToken}`)).toEqual({
+      page: 'liveRequest',
+      requestToken,
+    })
+    expect(
+      parseHashRoute(`#/manage/${requestToken}/${editSecret}`),
+    ).toEqual({
+      page: 'manageLiveRequest',
+      requestToken,
+      editSecret,
+    })
+  })
+
+  it.each([
+    '#/r/unsafe',
+    `#/manage/r1_${'A'.repeat(32)}/unsafe`,
+    `#/manage/r1_${'A'.repeat(32)}/e1_${'B'.repeat(43)}/extra`,
+  ])('rejects invalid v5 capability routes without exposing partial data: %s', (hash) => {
+    expect(parseHashRoute(hash).page).toBe('error')
+  })
+
   it('can be called again with a changed hash, matching hashchange behavior', () => {
     expect(parseHashRoute('#/').page).toBe('home')
     expect(parseHashRoute('#/l/new-data')).toEqual({
