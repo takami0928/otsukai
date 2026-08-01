@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ProductPhotoViewer } from './ProductPhotoViewer'
 
 const token = 'p1_AAECAwQFBgcICQoLDA0ODxAREhMUFRYX'
+const secondToken = 'p1_AQECAwQFBgcICQoLDA0ODxAREhMUFRYX'
 
 function jpegBlob(): Blob {
   return new Blob(
@@ -160,5 +161,59 @@ describe('ProductPhotoViewer', () => {
     container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)
+  })
+
+  it('does not let a late response for an old token overwrite the current photo', async () => {
+    let resolveOldResponse: ((response: Response) => void) | undefined
+    const oldResponse = new Promise<Response>((resolve) => {
+      resolveOldResponse = resolve
+    })
+    const fetchImplementation = vi
+      .fn<(input: RequestInfo | URL) => Promise<Response>>()
+      .mockImplementationOnce(() => oldResponse)
+      .mockResolvedValueOnce(
+        new Response(jpegBlob(), {
+          headers: { 'Content-Type': 'image/jpeg' },
+        }),
+      ) as typeof fetch
+    const createPreviewUrl = vi.fn(() => 'blob:current-photo')
+
+    await act(async () => {
+      root.render(
+        <ProductPhotoViewer
+          endpoint="https://worker.example/"
+          token={token}
+          itemName="牛乳"
+          fetchImplementation={fetchImplementation}
+          createPreviewUrl={createPreviewUrl}
+          revokePreviewUrl={vi.fn()}
+        />,
+      )
+    })
+    await act(async () => {
+      root.render(
+        <ProductPhotoViewer
+          endpoint="https://worker.example/"
+          token={secondToken}
+          itemName="牛乳"
+          fetchImplementation={fetchImplementation}
+          createPreviewUrl={createPreviewUrl}
+          revokePreviewUrl={vi.fn()}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.querySelector('[data-photo-state="loaded"]')).not.toBeNull()
+
+    await act(async () => {
+      resolveOldResponse?.(Response.json({ code: 'PHOTO_NOT_FOUND' }, { status: 404 }))
+      await oldResponse
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-photo-state="loaded"]')).not.toBeNull()
+    expect(container.textContent).not.toContain('保存期限')
+    expect(createPreviewUrl).toHaveBeenCalledTimes(1)
   })
 })

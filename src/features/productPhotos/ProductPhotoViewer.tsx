@@ -75,6 +75,9 @@ export function ProductPhotoViewer({
           signal: controller.signal,
           cache: 'no-store',
         })
+        if (!active) {
+          return
+        }
         if (response.status === 404 || response.status === 410) {
           setState('expired')
           return
