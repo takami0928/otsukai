@@ -142,7 +142,7 @@ export function decodeCompactRequestV4Payload(
 ): ShoppingRequestPayload {
   if (
     !Array.isArray(value) ||
-    value.length !== 5 ||
+    (value.length !== 4 && value.length !== 5) ||
     value[0] !== 4
   ) {
     throw new Error('v4共有URLの形式が正しくありません。')

@@ -226,4 +226,50 @@ describe('usePendingProductPhotos', () => {
       expect(createPreviewUrl).not.toHaveBeenCalled()
     },
   )
+
+  it.each(['clear', 'remove'] as const)(
+    'does not restore a late processing error after %s cancels it',
+    async (action) => {
+      let controller: PendingProductPhotosController | undefined
+      let rejectProcessing: ((reason: Error) => void) | undefined
+      const pending = new Promise<never>((_resolve, reject) => {
+        rejectProcessing = reject
+      })
+      act(() => root.render(
+        <Harness
+          onChange={(value) => {
+            controller = value
+          }}
+          processPhoto={() => pending}
+          createPreviewUrl={vi.fn()}
+          revokePreviewUrl={vi.fn()}
+        />,
+      ))
+      const source = new File(['source'], 'private.jpg', {
+        type: 'image/jpeg',
+      })
+      let selection: Promise<void> | undefined
+      await act(async () => {
+        selection = controller?.selectPhoto('milk', source)
+        await Promise.resolve()
+      })
+
+      act(() => {
+        if (action === 'clear') {
+          controller?.clearPhotos()
+        } else {
+          controller?.removePhoto('milk')
+        }
+      })
+      await act(async () => {
+        rejectProcessing?.(new Error('late processing failure'))
+        await selection
+        await Promise.resolve()
+      })
+
+      expect(controller?.photos).toHaveLength(0)
+      expect(controller?.errorsByItemKey.has('milk')).toBe(false)
+      expect(controller?.processingItemKey).toBeUndefined()
+    },
+  )
 })

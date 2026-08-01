@@ -198,6 +198,9 @@ export function usePendingProductPhotos(
           nextPhoto,
         ])
       } catch (error) {
+        if (controller.signal.aborted) {
+          return
+        }
         const message = processingErrorMessage(error)
         if (message) {
           setErrors((current) => ({ ...current, [itemKey]: message }))

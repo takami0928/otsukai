@@ -112,6 +112,15 @@ describe('compact request v4', () => {
       expect(decoded.items).toHaveLength(2)
       expect(decoded.items.every((item) => !item.photoToken)).toBe(true)
     }
+
+    const missingRefs = decodeCompactRequestV4Payload([
+      core[0],
+      core[1],
+      core[2],
+      core[3],
+    ])
+    expect(missingRefs.items).toHaveLength(2)
+    expect(missingRefs.items.every((item) => !item.photoToken)).toBe(true)
   })
 
   it('keeps valid refs while ignoring an unrelated invalid tuple', () => {
