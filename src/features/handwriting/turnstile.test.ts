@@ -72,6 +72,24 @@ describe('BrowserTurnstileTokenProvider', () => {
     expect(api.reset).toHaveBeenCalledWith('widget-id')
   })
 
+  it('supports an isolated action for another Worker route', async () => {
+    const api = createApi((options) => options.callback('photo-token'))
+    const container = document.createElement('div')
+    const provider = new BrowserTurnstileTokenProvider(
+      container,
+      'site-key',
+      async () => api,
+      undefined,
+      'product_photo_upload',
+    )
+
+    await expect(provider.getToken()).resolves.toBe('photo-token')
+    expect(api.render).toHaveBeenCalledWith(
+      container,
+      expect.objectContaining({ action: 'product_photo_upload' }),
+    )
+  })
+
   it('rejects an aborted challenge and allows a reset for the next request', async () => {
     const api = createApi(() => undefined)
     const provider = new BrowserTurnstileTokenProvider(

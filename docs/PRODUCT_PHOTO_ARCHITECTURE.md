@@ -122,6 +122,6 @@ Durable Object class migrationは`wrangler deploy`でのみ適用されます。
 
 ## rollbackとFree上限到達時の安全停止
 
-新規uploadを止める最短手順は、承認された運用操作としてWorkerの`PHOTO_API_ENABLED=false`をdeployすることです。続いてフロント`VITE_PRODUCT_PHOTOS_ENABLED=false`でPagesを再deployします。既存v1〜v3依頼、写真なしv3共有、手書き機能のOFF状態は影響を受けません。v4の写真が取得できなくても商品本文と購入進捗を継続できるUIを後続PRで保証します。
+新規uploadを止める最短手順は、承認された運用操作としてWorkerの`PHOTO_API_ENABLED=false`をdeployすることです。続いてフロント`VITE_PRODUCT_PHOTOS_ENABLED=false`でPagesを再deployします。既存v1〜v3依頼、写真なしv3共有、手書き機能のOFF状態は影響を受けません。v4の写真が取得できなくても商品本文と購入進捗を継続できるUIです。v4 codecは[`COMPACT_REQUEST_V4.md`](COMPACT_REQUEST_V4.md)、実機判定は[`PRODUCT_PHOTO_MANUAL_VERIFICATION.md`](PRODUCT_PHOTO_MANUAL_VERIFICATION.md)を参照してください。
 
 migration適用後に過去versionへ単純rollbackできるとは限りません。namespaceや保存データを削除する操作は行わず、まずflagsで停止し、Cloudflare公式のrollback/migration制約を確認してから別途承認を得ます。Alarmは既存写真を作成時から14日で削除し続けます。

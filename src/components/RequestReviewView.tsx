@@ -1,6 +1,8 @@
 import type { Category, Product } from '../types/product'
 import type { CreateDraftState } from '../types/shopping'
 import type { CustomRequestDraftItem } from '../utils/requestBudget'
+import type { PendingPhoto } from '../features/productPhotos/types'
+import { toStableCustomProductId } from '../utils/selectedRequestItems'
 
 type ShareMessageStatus = 'success' | 'error' | 'cancelled' | ''
 
@@ -19,6 +21,10 @@ type RequestReviewViewProps = {
   selectedCount: number
   shareMessage: string
   shareStatus: ShareMessageStatus
+  photos?: readonly PendingPhoto[]
+  isUploadingPhotos?: boolean
+  photoUploadFailed?: boolean
+  onShareWithoutPhotos?: () => void | Promise<void>
 }
 
 const OTHER_CATEGORY_NAME = 'その他'
@@ -33,7 +39,25 @@ export function RequestReviewView({
   selectedCount,
   shareMessage,
   shareStatus,
+  photos = [],
+  isUploadingPhotos = false,
+  photoUploadFailed = false,
+  onShareWithoutPhotos,
 }: RequestReviewViewProps) {
+  const photosByItemKey = new Map(
+    photos.map((photo) => [photo.itemKey, photo]),
+  )
+  const photoPreview = (itemKey: string, name: string) => {
+    const photo = photosByItemKey.get(itemKey)
+    return photo ? (
+      <img
+        className="review-photo-thumbnail"
+        src={photo.previewUrl}
+        alt={`${name}の参考写真`}
+      />
+    ) : null
+  }
+
   return (
     <>
       <section className="top-bar">
@@ -55,6 +79,7 @@ export function RequestReviewView({
               const item = draft[product.id]
               return (
                 <li key={product.id}>
+                  {photoPreview(product.id, product.name)}
                   <strong>{product.name}</strong> {item.quantity}
                   {product.unit}
                   {item.memo.trim() ? (
@@ -73,6 +98,7 @@ export function RequestReviewView({
           <ul className="review-list">
             {customItems.map((item) => (
               <li key={item.id}>
+                {photoPreview(toStableCustomProductId(item.id), item.name)}
                 <strong>{item.name}</strong> {item.quantity}
                 {item.unit}
                 {item.memo ? (
@@ -91,7 +117,13 @@ export function RequestReviewView({
           onClick={() => void onShareRequest()}
           disabled={isSharingRequest}
         >
-          {isSharingRequest ? '共有画面を開いています…' : 'LINEで送る'}
+          {isUploadingPhotos
+            ? '写真を保存中…'
+            : isSharingRequest
+              ? '共有画面を開いています…'
+              : photoUploadFailed
+                ? '写真付き共有を再試行'
+                : 'LINEで送る'}
         </button>
         <p className="helper-text">共有画面でLINEを選択してください。</p>
         {shareMessage ? (
@@ -102,6 +134,16 @@ export function RequestReviewView({
           >
             {shareMessage}
           </p>
+        ) : null}
+        {photoUploadFailed && onShareWithoutPhotos ? (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => void onShareWithoutPhotos()}
+            disabled={isSharingRequest}
+          >
+            写真を外してv3で共有
+          </button>
         ) : null}
         <button
           type="button"

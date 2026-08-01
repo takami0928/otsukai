@@ -10,14 +10,41 @@ describe('product photo configuration', () => {
     ).toBe(false)
   })
 
-  it('is enabled only by an explicit true value', () => {
+  it('is enabled only by explicit true with the shared Worker endpoint and Site Key', () => {
     expect(
-      resolveProductPhotoConfig({ VITE_PRODUCT_PHOTOS_ENABLED: ' TRUE ' })
-        .enabled,
+      resolveProductPhotoConfig({
+        VITE_PRODUCT_PHOTOS_ENABLED: ' TRUE ',
+        VITE_HANDWRITING_IMPORT_ENDPOINT: 'https://worker.example/',
+        VITE_TURNSTILE_SITE_KEY: 'public-site-key',
+      }).enabled,
     ).toBe(true)
     expect(
       resolveProductPhotoConfig({ VITE_PRODUCT_PHOTOS_ENABLED: '1' })
         .enabled,
     ).toBe(false)
+  })
+
+  it('stays disabled when transport configuration is missing or unsafe', () => {
+    expect(
+      resolveProductPhotoConfig({ VITE_PRODUCT_PHOTOS_ENABLED: 'true' })
+        .enabled,
+    ).toBe(false)
+    expect(
+      resolveProductPhotoConfig({
+        VITE_PRODUCT_PHOTOS_ENABLED: 'true',
+        VITE_HANDWRITING_IMPORT_ENDPOINT: 'http://attacker.example/',
+        VITE_TURNSTILE_SITE_KEY: 'public-site-key',
+      }).enabled,
+    ).toBe(false)
+  })
+
+  it('does not depend on the handwriting feature flag or Gemini settings', () => {
+    expect(
+      resolveProductPhotoConfig({
+        VITE_PRODUCT_PHOTOS_ENABLED: 'true',
+        VITE_HANDWRITING_IMPORT_ENDPOINT: 'https://worker.example/',
+        VITE_TURNSTILE_SITE_KEY: 'public-site-key',
+      }).enabled,
+    ).toBe(true)
   })
 })

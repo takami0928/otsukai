@@ -4,18 +4,25 @@ type CreateRequestBottomActionsProps = {
   onReset: () => void
   onReview: () => void
   selectedCount: number
+  reviewDisabled?: boolean
+  reviewDisabledMessage?: string
 }
 
 export function CreateRequestBottomActions({
   onReset,
   onReview,
   selectedCount,
+  reviewDisabled = false,
+  reviewDisabledMessage,
 }: CreateRequestBottomActionsProps) {
   return (
     <BottomBar>
       <div>
         <strong>{selectedCount}件選択中</strong>
         <p>数量が1以上の商品だけ確認画面に表示します</p>
+        {reviewDisabled && reviewDisabledMessage ? (
+          <p role="status">{reviewDisabledMessage}</p>
+        ) : null}
       </div>
       <div className="inline-actions bottom-bar-actions">
         <button
@@ -29,7 +36,7 @@ export function CreateRequestBottomActions({
           type="button"
           className="primary-button"
           onClick={onReview}
-          disabled={!selectedCount}
+          disabled={!selectedCount || reviewDisabled}
         >
           確認へ
         </button>

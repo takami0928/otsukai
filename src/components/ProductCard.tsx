@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { Product } from '../types/product'
 import type { CreateDraftItemState } from '../types/shopping'
 import {
@@ -18,6 +19,7 @@ type ProductCardProps = {
   onDecrease: () => void
   onToggleDetails: () => void
   onMemoCommit: (value: string) => CommitTextResult
+  photoAttachment?: ReactNode
 }
 
 export function ProductCard({
@@ -28,6 +30,7 @@ export function ProductCard({
   onDecrease,
   onToggleDetails,
   onMemoCommit,
+  photoAttachment,
 }: ProductCardProps) {
   const isSelected = draft.quantity > 0
   const hasCondition = draft.memo.trim().length > 0
@@ -112,6 +115,7 @@ export function ProductCard({
           {countUserCharacters(draft.memo) >= MAX_ITEM_CONDITION_CHARS ? (
             <p className="limit-inline-message">条件は30文字までです。</p>
           ) : null}
+          {photoAttachment}
         </div>
       ) : null}
     </article>

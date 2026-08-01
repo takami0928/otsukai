@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { Category, Product } from '../types/product'
 import type { CreateDraftState } from '../types/shopping'
 import type { CommitTextResult } from './ImeAwareTextInput'
@@ -16,6 +17,7 @@ type ProductSelectionSectionsProps = {
   onDecrease: (productId: string) => void
   onIncrease: (productId: string) => void
   onToggleDetails: (productId: string) => void
+  renderPhotoAttachment?: (product: Product) => ReactNode
 }
 
 export function ProductSelectionSections({
@@ -26,6 +28,7 @@ export function ProductSelectionSections({
   onDecrease,
   onIncrease,
   onToggleDetails,
+  renderPhotoAttachment,
 }: ProductSelectionSectionsProps) {
   return groups.map(({ category, items }) => (
     <section key={category.id} className="category-block">
@@ -44,6 +47,7 @@ export function ProductSelectionSections({
             onDecrease={() => onDecrease(product.id)}
             onToggleDetails={() => onToggleDetails(product.id)}
             onMemoCommit={(value) => onConditionCommit(product.id, value)}
+            photoAttachment={renderPhotoAttachment?.(product)}
           />
         ))}
       </div>

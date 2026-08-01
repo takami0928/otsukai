@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type {
   CheckedItemStatus,
   ConsultationEntry,
@@ -21,6 +22,7 @@ type ShoppingItemCardProps = {
   onOpenConditionConfirmation: () => void
   onOpenConsultation: () => void
   onReset: () => void
+  photoContent?: ReactNode
 }
 
 function getStatusLabel(status: CheckedItemStatus): string {
@@ -52,6 +54,7 @@ export function ShoppingItemCard({
   onOpenConditionConfirmation,
   onOpenConsultation,
   onReset,
+  photoContent,
 }: ShoppingItemCardProps) {
   const conditionItem = hasCondition(item)
   const effectiveStatus = status === 'consulting' ? 'pending' : status
@@ -75,6 +78,7 @@ export function ShoppingItemCard({
             </span>
           ) : null}
         </span>
+        {photoContent}
         {item.memo ? <span className="shopping-condition">条件: {item.memo}</span> : null}
         {effectiveStatus === 'notBuying' ? (
           <span className="shopping-issue">

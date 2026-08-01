@@ -51,12 +51,18 @@ import {
   shareText,
   type NativeShareResult,
 } from '../utils/shareText'
+import {
+  getProductPhotoConfig,
+  type ProductPhotoConfig,
+} from '../features/productPhotos/config'
+import { ProductPhotoViewer } from '../features/productPhotos/ProductPhotoViewer'
 
 type ShoppingListPageProps = {
   encodedPayload: string
   payloadCodec: RequestRouteCodec
   onBackHome: () => void
   onError: (title: string, description: string) => void
+  productPhotoConfig?: ProductPhotoConfig
 }
 
 type CartConfirmationState = {
@@ -126,7 +132,9 @@ export function ShoppingListPage({
   payloadCodec,
   onBackHome,
   onError,
+  productPhotoConfig,
 }: ShoppingListPageProps) {
+  const photoConfig = productPhotoConfig ?? getProductPhotoConfig()
   const [payload, setPayload] = useState<ShoppingRequestPayload | null>(null)
   const {
     shoppingState,
@@ -620,6 +628,15 @@ export function ShoppingListPage({
                   }
                   onReset={() =>
                     commitShoppingChange(item.id, 'pending')
+                  }
+                  photoContent={
+                    photoConfig.enabled && item.photoToken ? (
+                      <ProductPhotoViewer
+                        endpoint={photoConfig.endpoint}
+                        token={item.photoToken}
+                        itemName={item.productNameSnapshot}
+                      />
+                    ) : undefined
                   }
                 />
               )

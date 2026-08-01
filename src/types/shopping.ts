@@ -9,6 +9,7 @@ export type ShoppingRequestItemPayload = {
   memo?: string
   iconSnapshot: string
   sortOrderSnapshot: number
+  photoToken?: string
 }
 
 export type ShoppingRequestPayload = {
