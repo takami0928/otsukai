@@ -7,6 +7,13 @@ import { ProductPhotoViewer } from './ProductPhotoViewer'
 
 const token = 'p1_AAECAwQFBgcICQoLDA0ODxAREhMUFRYX'
 
+function jpegBlob(): Blob {
+  return new Blob(
+    [new Uint8Array([0xff, 0xd8, 0xff, 0xdb, 0xff, 0xd9])],
+    { type: 'image/jpeg' },
+  )
+}
+
 describe('ProductPhotoViewer', () => {
   let container: HTMLDivElement
   let root: Root
@@ -42,7 +49,7 @@ describe('ProductPhotoViewer', () => {
 
   it('loads JPEG independently and supports an accessible enlarged view', async () => {
     const { fetchImplementation, revoke } = await renderResponse(
-      new Response(new Blob(['jpeg'], { type: 'image/jpeg' }), {
+      new Response(jpegBlob(), {
         headers: { 'Content-Type': 'image/jpeg' },
       }),
     )
@@ -91,6 +98,13 @@ describe('ProductPhotoViewer', () => {
       new Response('<html>', { headers: { 'Content-Type': 'text/html' } }),
     )
     expect(container.querySelector('[data-photo-state="invalid"]')).not.toBeNull()
+
+    await renderResponse(
+      new Response(new Blob(['not-jpeg'], { type: 'image/jpeg' }), {
+        headers: { 'Content-Type': 'image/jpeg' },
+      }),
+    )
+    expect(container.querySelector('[data-photo-state="invalid"]')).not.toBeNull()
   })
 
   it('keeps a network failure inside the photo area', async () => {
@@ -132,7 +146,7 @@ describe('ProductPhotoViewer', () => {
     act(() => root.unmount())
     await act(async () => {
       resolveResponse?.(
-        new Response(new Blob(['jpeg'], { type: 'image/jpeg' }), {
+        new Response(jpegBlob(), {
           headers: { 'Content-Type': 'image/jpeg' },
         }),
       )

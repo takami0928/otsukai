@@ -31,6 +31,17 @@ function defaultRevokePreviewUrl(url: string): void {
   URL.revokeObjectURL(url)
 }
 
+async function hasJpegSignature(blob: Blob): Promise<boolean> {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  return (
+    bytes.length >= 4 &&
+    bytes[0] === 0xff &&
+    bytes[1] === 0xd8 &&
+    bytes[bytes.length - 2] === 0xff &&
+    bytes[bytes.length - 1] === 0xd9
+  )
+}
+
 export function ProductPhotoViewer({
   endpoint,
   token,
@@ -85,10 +96,15 @@ export function ProductPhotoViewer({
         if (!active) {
           return
         }
+        const validSignature = await hasJpegSignature(blob)
+        if (!active) {
+          return
+        }
         if (
           blob.type !== 'image/jpeg' ||
           blob.size < 1 ||
-          blob.size > MAX_PRODUCT_PHOTO_BYTES
+          blob.size > MAX_PRODUCT_PHOTO_BYTES ||
+          !validSignature
         ) {
           setState('invalid')
           return
