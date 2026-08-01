@@ -7,6 +7,10 @@ import {
   isWorkerDiagnosticsEnabled,
   type WorkerDiagnosticErrorClass,
 } from './diagnostics'
+import {
+  hasHandwritingConfiguration,
+  type WorkerEnv,
+} from './config'
 import { createWorkerRequestId } from './requestId'
 import { parseGeminiHandwritingResult } from './resultValidation'
 import { verifyTurnstileToken } from './turnstile'
@@ -20,12 +24,12 @@ import {
 
 export const HANDWRITING_REQUEST_ID_HEADER = 'X-Otsukai-Request-Id'
 
-export type WorkerEnv = {
-  GEMINI_API_KEY: string
-  TURNSTILE_SECRET_KEY: string
-  ALLOWED_ORIGINS: string
-  DIAGNOSTIC_MODE?: string
-}
+export {
+  hasHandwritingConfiguration,
+  hasPhotoConfiguration,
+  hasSharedRequestConfiguration,
+} from './config'
+export type { WorkerEnv } from './config'
 
 export type WorkerDependencies = {
   fetchImplementation?: typeof fetch
@@ -67,14 +71,6 @@ function jsonResponse(
     status,
     headers: corsHeaders(origin, requestId),
   })
-}
-
-function hasRequiredConfiguration(env: WorkerEnv): boolean {
-  return Boolean(
-    env.GEMINI_API_KEY?.trim() &&
-      env.TURNSTILE_SECRET_KEY?.trim() &&
-      env.ALLOWED_ORIGINS?.trim(),
-  )
 }
 
 type ErrorResponse = {
@@ -162,7 +158,7 @@ export async function handleRequest(
     })
     return respond({ code: 'ORIGIN_NOT_ALLOWED' }, 403)
   }
-  if (!hasRequiredConfiguration(env)) {
+  if (!hasHandwritingConfiguration(env)) {
     diagnostics.record('request-rejected', {
       httpStatus: 503,
       errorClass: 'configuration',
@@ -292,8 +288,63 @@ export async function handleRequest(
   }
 }
 
+function preflightResponse(
+  origin: string | undefined,
+  requestId: string,
+): Response {
+  if (!origin) {
+    return jsonResponse({ code: 'ORIGIN_NOT_ALLOWED' }, 403, requestId)
+  }
+
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Max-Age': '86400',
+      Vary: 'Origin',
+    },
+  })
+}
+
+export function routeRequest(
+  request: Request,
+  env: WorkerEnv,
+  dependencies: WorkerDependencies = {},
+): Promise<Response> | Response {
+  const allowedOrigins = parseAllowedOrigins(env.ALLOWED_ORIGINS ?? '')
+  const requestOrigin = request.headers.get('Origin') ?? ''
+  const responseOrigin = allowedOrigins.has(requestOrigin)
+    ? requestOrigin
+    : undefined
+
+  if (request.method === 'OPTIONS') {
+    const requestId = (
+      dependencies.createRequestId ?? createWorkerRequestId
+    )()
+    return preflightResponse(responseOrigin, requestId)
+  }
+
+  const pathname = new URL(request.url).pathname
+  if (pathname === '/' || pathname === '/v1/handwriting/analyze') {
+    return handleRequest(request, env, dependencies)
+  }
+
+  const requestId = (
+    dependencies.createRequestId ?? createWorkerRequestId
+  )()
+  return jsonResponse(
+    { code: 'NOT_FOUND' },
+    404,
+    requestId,
+    responseOrigin,
+  )
+}
+
 export default {
   fetch(request: Request, env: WorkerEnv): Promise<Response> {
-    return handleRequest(request, env)
+    return Promise.resolve(routeRequest(request, env))
   },
 }

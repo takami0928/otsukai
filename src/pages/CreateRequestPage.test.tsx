@@ -491,7 +491,7 @@ describe('CreateRequestPage simplified request form', () => {
         memo: '水出し用',
       },
       {
-        productId: 'custom:0',
+        productId: expect.stringMatching(/^custom:custom-/),
         productNameSnapshot: '一回だけの電池',
         unit: '個',
         categoryIdSnapshot: 'other',

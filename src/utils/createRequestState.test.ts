@@ -263,7 +263,15 @@ describe('shared request URL reuse', () => {
         milk: { quantity: 0, memo: '' },
       },
       productList,
-      customItems: [{ name: '洗濯ネット', quantity: 1, unit: '個', memo: '大きめ' }],
+      customItems: [
+        {
+          id: 'custom-default',
+          name: '洗濯ネット',
+          quantity: 1,
+          unit: '個',
+          memo: '大きめ',
+        },
+      ],
       ...overrides,
     })
 
@@ -271,7 +279,7 @@ describe('shared request URL reuse', () => {
     expect(createSnapshot()).toBe(createSnapshot())
   })
 
-  it('ignores random custom item IDs when the visible content is unchanged', () => {
+  it('changes when a custom item identity changes even if visible content is unchanged', () => {
     const firstCustomItems = [
       { id: 'custom-random-a', name: '洗濯ネット', quantity: 1, unit: '個', memo: '大きめ' },
     ]
@@ -279,7 +287,7 @@ describe('shared request URL reuse', () => {
       { id: 'custom-random-b', name: '洗濯ネット', quantity: 1, unit: '個', memo: '大きめ' },
     ]
 
-    expect(createSnapshot({ customItems: firstCustomItems })).toBe(
+    expect(createSnapshot({ customItems: firstCustomItems })).not.toBe(
       createSnapshot({ customItems: secondCustomItems }),
     )
   })
@@ -307,7 +315,15 @@ describe('shared request URL reuse', () => {
     [
       'custom item',
       {
-        customItems: [{ name: '洗濯ネット', quantity: 2, unit: '個', memo: '大きめ' }],
+        customItems: [
+          {
+            id: 'custom-default',
+            name: '洗濯ネット',
+            quantity: 2,
+            unit: '個',
+            memo: '大きめ',
+          },
+        ],
       },
     ],
   ])('changes the snapshot after a %s change', (_, overrides) => {

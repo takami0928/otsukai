@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GeminiAnalysisError } from '../src/gemini'
 import {
   HANDWRITING_REQUEST_ID_HEADER,
+  hasHandwritingConfiguration,
+  hasPhotoConfiguration,
+  hasSharedRequestConfiguration,
   handleRequest,
+  routeRequest,
   type WorkerDependencies,
   type WorkerEnv,
 } from '../src/index'
@@ -47,6 +51,7 @@ function importRequest(
     requestId?: string
     omitRequestId?: boolean
     extraField?: [string, string]
+    pathname?: string
   } = {},
 ): Request {
   const formData = new FormData()
@@ -65,13 +70,16 @@ function importRequest(
   if (options.extraField) {
     formData.append(...options.extraField)
   }
-  return new Request('https://import.example.workers.dev/', {
-    method: options.method ?? 'POST',
-    headers: {
-      Origin: options.origin ?? allowedOrigin,
+  return new Request(
+    `https://import.example.workers.dev${options.pathname ?? '/'}`,
+    {
+      method: options.method ?? 'POST',
+      headers: {
+        Origin: options.origin ?? allowedOrigin,
+      },
+      ...(options.method === 'GET' ? {} : { body: formData }),
     },
-    ...(options.method === 'GET' ? {} : { body: formData }),
-  })
+  )
 }
 
 function successfulTurnstileFetch() {
@@ -108,6 +116,125 @@ function successfulOutput(): string {
 
 afterEach(() => {
   vi.restoreAllMocks()
+})
+
+describe('Worker routing and feature configuration', () => {
+  it.each(['/', '/v1/handwriting/analyze'])(
+    'routes POST %s through the same handwriting handler',
+    async (pathname) => {
+      const analyzeImplementation = vi.fn(async () => successfulOutput())
+      const response = await routeRequest(
+        importRequest({ pathname }),
+        env,
+        {
+          fetchImplementation: successfulTurnstileFetch(),
+          analyzeImplementation,
+        },
+      )
+
+      expect(response.status).toBe(200)
+      expect(analyzeImplementation).toHaveBeenCalledTimes(1)
+      await expect(response.json()).resolves.toEqual(
+        JSON.parse(successfulOutput()),
+      )
+    },
+  )
+
+  it('answers an allowed CORS preflight without invoking handwriting services', async () => {
+    const analyzeImplementation = vi.fn(async () => successfulOutput())
+    const fetchImplementation = vi.fn() as typeof fetch
+    const response = await routeRequest(
+      new Request('https://import.example.workers.dev/v1/future-route', {
+        method: 'OPTIONS',
+        headers: { Origin: allowedOrigin },
+      }),
+      env,
+      { analyzeImplementation, fetchImplementation },
+    )
+
+    expect(response.status).toBe(204)
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
+      allowedOrigin,
+    )
+    expect(response.headers.get('Access-Control-Allow-Methods')).toBe(
+      'POST, OPTIONS',
+    )
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+    expect(analyzeImplementation).not.toHaveBeenCalled()
+    expect(fetchImplementation).not.toHaveBeenCalled()
+  })
+
+  it('rejects a preflight from an unlisted origin', async () => {
+    const response = await routeRequest(
+      new Request('https://import.example.workers.dev/', {
+        method: 'OPTIONS',
+        headers: { Origin: 'https://attacker.example' },
+      }),
+      env,
+      { createRequestId: () => 'worker-preflight-id' },
+    )
+
+    expect(response.status).toBe(403)
+    expect(response.headers.has('Access-Control-Allow-Origin')).toBe(false)
+    await expect(response.json()).resolves.toEqual({
+      code: 'ORIGIN_NOT_ALLOWED',
+    })
+  })
+
+  it('returns a safe 404 for routes that are not published', async () => {
+    const response = await routeRequest(
+      importRequest({ pathname: '/v1/photos/batch' }),
+      env,
+      { createRequestId: () => 'worker-not-found-id' },
+    )
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({ code: 'NOT_FOUND' })
+  })
+
+  it('keeps feature configuration independent from Gemini', () => {
+    const withoutGemini = {
+      ...env,
+      GEMINI_API_KEY: undefined,
+      PHOTO_API_ENABLED: 'true',
+      SHARED_REQUEST_API_ENABLED: 'true',
+    }
+
+    expect(hasHandwritingConfiguration(withoutGemini)).toBe(false)
+    expect(hasPhotoConfiguration(withoutGemini)).toBe(true)
+    expect(hasSharedRequestConfiguration(withoutGemini)).toBe(true)
+  })
+
+  it('treats missing or non-true feature flags as off', () => {
+    expect(hasPhotoConfiguration(env)).toBe(false)
+    expect(hasSharedRequestConfiguration(env)).toBe(false)
+    expect(
+      hasPhotoConfiguration({ ...env, PHOTO_API_ENABLED: '1' }),
+    ).toBe(false)
+    expect(
+      hasSharedRequestConfiguration({
+        ...env,
+        SHARED_REQUEST_API_ENABLED: 'false',
+      }),
+    ).toBe(false)
+  })
+
+  it('requires only shared API prerequisites for each disabled service boundary', () => {
+    expect(
+      hasPhotoConfiguration({
+        ...env,
+        PHOTO_API_ENABLED: 'true',
+        TURNSTILE_SECRET_KEY: '',
+      }),
+    ).toBe(false)
+    expect(
+      hasSharedRequestConfiguration({
+        ...env,
+        SHARED_REQUEST_API_ENABLED: 'true',
+        ALLOWED_ORIGINS: '',
+      }),
+    ).toBe(false)
+  })
 })
 
 describe('Cloudflare handwriting import Worker', () => {

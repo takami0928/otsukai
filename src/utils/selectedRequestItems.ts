@@ -14,10 +14,31 @@ export type SelectedRequestItem = {
 }
 
 export type SelectedCustomRequestItem = {
+  id: string
   name: string
   quantity: number
   unit: string
   memo: string
+}
+
+const MAX_PRODUCT_ID_LENGTH = 128
+const CUSTOM_ITEM_ID_PATTERN = /^[A-Za-z0-9:_-]+$/
+
+export function toStableCustomProductId(customItemId: string): string {
+  const normalizedId = customItemId.trim()
+  const productId = normalizedId.startsWith('custom:')
+    ? normalizedId
+    : `custom:${normalizedId}`
+
+  if (
+    !normalizedId ||
+    productId.length > MAX_PRODUCT_ID_LENGTH ||
+    !CUSTOM_ITEM_ID_PATTERN.test(normalizedId)
+  ) {
+    throw new Error('Invalid custom item ID')
+  }
+
+  return productId
 }
 
 export function buildSelectedRequestItems(
@@ -47,7 +68,7 @@ export function buildSelectedRequestItems(
   return [
     ...selectedProducts,
     ...customItems.map((item, index) => ({
-      productId: `custom:${index}`,
+      productId: toStableCustomProductId(item.id),
       name: item.name.trim(),
       unit: item.unit.trim() || '個',
       categoryId: 'other',

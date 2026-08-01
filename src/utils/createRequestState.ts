@@ -2,6 +2,7 @@ import type { Product } from '../types/product'
 import type { CreateDraftState } from '../types/shopping'
 import { MAX_ITEM_CONDITION_CHARS } from '../constants/requestLimits'
 import { normalizeRegularQuantity } from './draftLimits'
+import { toStableCustomProductId } from './selectedRequestItems'
 import { truncateUserCharacters } from './textLength'
 
 type InitialCreateRequestState = {
@@ -28,6 +29,7 @@ type CreateRequestInputState = {
 }
 
 type CreateRequestSnapshotCustomItem = {
+  id: string
   name: string
   quantity: number
   unit: string
@@ -195,6 +197,7 @@ export function createRequestContentSnapshot({
     }))
 
   const normalizedCustomItems = customItems.map((item) => ({
+    productId: toStableCustomProductId(item.id),
     name: item.name.trim(),
     quantity: normalizeQuantity(item.quantity),
     unit: item.unit.trim() || '個',

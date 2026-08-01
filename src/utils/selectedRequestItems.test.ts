@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { EffectiveProduct } from '../types/householdCatalog'
-import { buildSelectedRequestItems } from './selectedRequestItems'
+import {
+  buildSelectedRequestItems,
+  toStableCustomProductId,
+} from './selectedRequestItems'
 
 const products: EffectiveProduct[] = [
   {
@@ -84,11 +87,19 @@ describe('selected request item projection', () => {
       buildSelectedRequestItems(
         [],
         {},
-        [{ name: ' 一回商品 ', quantity: 3, unit: '', memo: ' 条件 ' }],
+        [
+          {
+            id: 'custom-item-123',
+            name: ' 一回商品 ',
+            quantity: 3,
+            unit: '',
+            memo: ' 条件 ',
+          },
+        ],
       ),
     ).toEqual([
       {
-        productId: 'custom:0',
+        productId: 'custom:custom-item-123',
         name: '一回商品',
         unit: '個',
         categoryId: 'other',
@@ -99,5 +110,51 @@ describe('selected request item projection', () => {
         hidden: false,
       },
     ])
+  })
+
+  it('keeps custom product IDs stable across edits and array reordering', () => {
+    const first = {
+      id: 'first-id',
+      name: '電池',
+      quantity: 1,
+      unit: '個',
+      memo: '',
+    }
+    const second = {
+      id: 'second-id',
+      name: 'ラップ',
+      quantity: 1,
+      unit: '個',
+      memo: '',
+    }
+
+    const initial = buildSelectedRequestItems([], {}, [first, second])
+    const reordered = buildSelectedRequestItems([], {}, [
+      { ...second, name: '食品用ラップ' },
+      first,
+    ])
+    const afterDeletion = buildSelectedRequestItems([], {}, [second])
+
+    expect(initial.map((item) => item.productId)).toEqual([
+      'custom:first-id',
+      'custom:second-id',
+    ])
+    expect(reordered.map((item) => item.productId)).toEqual([
+      'custom:second-id',
+      'custom:first-id',
+    ])
+    expect(afterDeletion[0].productId).toBe('custom:second-id')
+  })
+
+  it('does not duplicate the custom namespace and rejects unsafe IDs', () => {
+    expect(toStableCustomProductId('custom:existing-id')).toBe(
+      'custom:existing-id',
+    )
+    expect(() => toStableCustomProductId('')).toThrow(
+      'Invalid custom item ID',
+    )
+    expect(() => toStableCustomProductId('contains whitespace')).toThrow(
+      'Invalid custom item ID',
+    )
   })
 })
