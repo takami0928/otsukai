@@ -197,7 +197,10 @@ function applyOperations(
   }
 
   const memoCharacters = items.reduce(
-    (total, item) => total + countTextCharacters(item.memo ?? ''),
+    (total, item) =>
+      item.lifecycle === 'active'
+        ? total + countTextCharacters(item.memo ?? '')
+        : total,
     0,
   )
   if (memoCharacters > 1_000) {

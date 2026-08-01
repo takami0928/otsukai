@@ -82,9 +82,9 @@ PATCH操作は`add`、`set-quantity`、`set-memo`、`cancel`だけです。全�
 
 ## 入力上限と応答
 
-- JSON body 100KiB以下
-- 最大200商品
-- 数量1〜20、条件30文字、条件合計1,000文字
+- JSON body 512KiB以下
+- 最大303商品（既存v3と同じ、基準93＋家庭追加200＋自由追加10）
+- 数量1〜20、条件30文字、有効商品の条件合計1,000文字
 - 1 PATCH最大50操作、1依頼最大100更新
 - ID、名称、単位、カテゴリ、icon、sort orderをWorkerで再検証
 - 予期しないproperty、重複item ID、重複photo token、4件以上の写真を拒否

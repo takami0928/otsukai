@@ -1,4 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import {
+  MAX_CUSTOM_ITEMS,
+  MAX_HOUSEHOLD_PRODUCTS,
+} from '../../src/constants/requestLimits'
+import { SHARE_PRODUCT_IDS_V2 } from '../../src/data/shareProductIdsV2'
+import {
+  MAX_SHARED_REQUEST_BODY_BYTES,
+  MAX_SHARED_REQUEST_ITEMS,
+} from '../src/sharedRequestConstants'
 import type { SharedRequestNewItem } from '../src/sharedRequestTypes'
 import {
   SharedRequestValidationError,
@@ -41,6 +50,56 @@ async function expectInvalid(promise: Promise<unknown>) {
 }
 
 describe('shared request validation', () => {
+  it('matches the complete existing v3 draft ceiling', async () => {
+    expect(MAX_SHARED_REQUEST_ITEMS).toBe(
+      SHARE_PRODUCT_IDS_V2.length +
+        MAX_HOUSEHOLD_PRODUCTS +
+        MAX_CUSTOM_ITEMS,
+    )
+
+    const items = Array.from(
+      { length: MAX_SHARED_REQUEST_ITEMS },
+      (_, index) =>
+        item(index, {
+          itemId: `item-${index}-${'i'.repeat(118 - String(index).length)}`,
+          productId: `product-${index}-${'p'.repeat(115 - String(index).length)}`,
+          productNameSnapshot: '商'.repeat(30),
+          categoryIdSnapshot: `category-${index}-${'c'.repeat(114 - String(index).length)}`,
+          categoryNameSnapshot: '類'.repeat(30),
+          unit: '個'.repeat(10),
+          memo:
+            index < 33
+              ? '条'.repeat(30)
+              : index === 33
+                ? '条'.repeat(10)
+                : undefined,
+          iconSnapshot: '🛒'.repeat(16),
+        }),
+    )
+    const requestBody = JSON.stringify({
+      turnstileToken: 'single-use-token',
+      items,
+    })
+
+    const requestBodyBytes = new TextEncoder().encode(requestBody).byteLength
+    expect(requestBodyBytes).toBeGreaterThan(100 * 1024)
+    expect(requestBodyBytes).toBeLessThanOrEqual(
+      MAX_SHARED_REQUEST_BODY_BYTES,
+    )
+    await expect(
+      validateSharedRequestCreateRequest(jsonRequest(JSON.parse(requestBody))),
+    ).resolves.toMatchObject({ items: { length: MAX_SHARED_REQUEST_ITEMS } })
+
+    await expectInvalid(
+      validateSharedRequestCreateRequest(
+        jsonRequest({
+          turnstileToken: 'single-use-token',
+          items: [...items, item(MAX_SHARED_REQUEST_ITEMS)],
+        }),
+      ),
+    )
+  })
+
   it('normalizes a valid create request with up to three photo refs', async () => {
     const photoTokens = [0, 1, 2].map(
       (index) => `p1_${String(index).repeat(32)}`,
@@ -173,7 +232,13 @@ describe('shared request validation', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             turnstileToken: 'single-use-token',
-            items: [item(0, { productNameSnapshot: 'x'.repeat(110_000) })],
+            items: [
+              item(0, {
+                productNameSnapshot: 'x'.repeat(
+                  MAX_SHARED_REQUEST_BODY_BYTES + 1,
+                ),
+              }),
+            ],
           }),
         }),
       ),

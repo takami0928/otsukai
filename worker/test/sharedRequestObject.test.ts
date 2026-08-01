@@ -302,6 +302,34 @@ describe('SharedRequestObject', () => {
     })
   })
 
+  it('does not count cancelled tombstone memos against the active limit', async () => {
+    const { object } = createObject()
+    const items = Array.from({ length: 34 }, (_, index) =>
+      newItem(index, {
+        memo: '条'.repeat(index < 33 ? 30 : 10),
+      }),
+    )
+    await object.createRequest(createInput({ items }))
+
+    await expect(
+      object.updateRequest({
+        now: createdAt + 1,
+        expectedRevision: 1,
+        editSecretHash,
+        operations: [
+          { type: 'cancel', itemId: 'item-0' },
+          {
+            type: 'add',
+            item: newItem(34, { memo: '新'.repeat(30) }),
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({
+      status: 'updated',
+      request: { revision: 2 },
+    })
+  })
+
   it('deletes all request data idempotently when its alarm runs', async () => {
     const { object, storage } = createObject()
     await object.createRequest(createInput())
