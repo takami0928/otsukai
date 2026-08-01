@@ -270,6 +270,29 @@ describe('LiveRequestManagePage', () => {
     expect(container.textContent).toContain('最新内容を再取得しました')
   })
 
+  it('does not claim a successful conflict refresh when the refetch fails', async () => {
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({
+        status: 'found',
+        request: snapshot(),
+        etag: '"revision-1"',
+      })
+      .mockRejectedValueOnce(new Error('offline'))
+    vi.mocked(api.patch).mockRejectedValueOnce(
+      new LiveRequestApiError('conflict', 412),
+    )
+    await renderPage()
+    const quantity = container.querySelector<HTMLInputElement>(
+      'input[aria-label="牛乳の新しい数量"]',
+    )!
+    await changeInput(quantity, '7')
+    await click(button('数量を変更'))
+
+    expect(quantity.value).toBe('7')
+    expect(container.textContent).toContain('更新サービスへ接続できません')
+    expect(container.textContent).not.toContain('最新内容を再取得しました')
+  })
+
   it('keeps the management route unavailable while the public flag is off', async () => {
     await renderPage(false)
     expect(api.get).not.toHaveBeenCalled()

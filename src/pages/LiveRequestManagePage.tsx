@@ -132,7 +132,7 @@ export function LiveRequestManagePage({
   const refresh = useCallback(
     async (preserveInputs = true, signal?: AbortSignal) => {
       if (!readApi) {
-        return
+        return false
       }
       setIsLoading(true)
       try {
@@ -140,6 +140,7 @@ export function LiveRequestManagePage({
         if (result.status === 'found') {
           applySnapshot(result.request, preserveInputs)
           setMessage('')
+          return true
         } else if (result.status === 'expired') {
           setIsExpired(true)
           setMessage('共有期限が切れたため更新できません。')
@@ -158,6 +159,7 @@ export function LiveRequestManagePage({
           setIsLoading(false)
         }
       }
+      return false
     },
     [applySnapshot, onError, readApi, requestToken],
   )
@@ -216,8 +218,9 @@ export function LiveRequestManagePage({
     } catch (error) {
       setMessage(finiteMessage(error))
       if (error instanceof LiveRequestApiError && error.code === 'conflict') {
-        await refresh(true)
-        setMessage(finiteMessage(error))
+        if (await refresh(true)) {
+          setMessage(finiteMessage(error))
+        }
       } else if (
         error instanceof LiveRequestApiError &&
         error.code === 'expired'
