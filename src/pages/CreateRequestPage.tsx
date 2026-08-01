@@ -268,6 +268,7 @@ export function CreateRequestPage({
     useState<RequestSharingMode>('fixed')
   const [liveManagementUrl, setLiveManagementUrl] = useState('')
   const [liveManagementSnapshot, setLiveManagementSnapshot] = useState('')
+  const [liveRequestExpiresAt, setLiveRequestExpiresAt] = useState<number>()
   const [managementCopyMessage, setManagementCopyMessage] = useState('')
   const [defaultPhotoUploader, setDefaultPhotoUploader] =
     useState<ProductPhotoUploadProvider>()
@@ -871,7 +872,10 @@ export function CreateRequestPage({
       reused:
         sharedUrl.includes('#/r/') &&
         sharedSnapshot === snapshot &&
-        Boolean(sharedUrl),
+        liveManagementUrl.includes('#/manage/') &&
+        liveManagementSnapshot === snapshot &&
+        typeof liveRequestExpiresAt === 'number' &&
+        Date.now() < liveRequestExpiresAt,
       url: sharedUrl,
     }
   }
@@ -937,6 +941,7 @@ export function CreateRequestPage({
         purchaserUrl = buildLineDeliveryRequestUrl(urls.purchaserUrl)
         setLiveManagementUrl(urls.managementUrl)
         setLiveManagementSnapshot(prepared.snapshot)
+        setLiveRequestExpiresAt(Date.parse(created.request.expiresAt))
         setManagementCopyMessage('')
         setSharedUrl(purchaserUrl)
         setSharedSnapshot(prepared.snapshot)
@@ -1077,6 +1082,7 @@ export function CreateRequestPage({
     setSharingMode('fixed')
     setLiveManagementUrl('')
     setLiveManagementSnapshot('')
+    setLiveRequestExpiresAt(undefined)
     setManagementCopyMessage('')
     closeCustomForm()
   }

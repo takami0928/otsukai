@@ -1,3 +1,4 @@
+import { MAX_CUSTOM_ITEMS } from '../../constants/requestLimits'
 import { countUserCharacters } from '../../utils/textLength'
 import { isProductPhotoToken } from '../productPhotos/photoToken'
 import type {
@@ -15,6 +16,10 @@ const IDENTIFIER_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/u
 const CONTROL_CHARACTER_PATTERN =
   /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u
 const MAX_STORED_ITEMS = 403
+const MAX_ACTIVE_ITEMS = 303
+const MAX_UPDATES = 100
+const MAX_ACTIVE_MEMO_CHARACTERS = 1_000
+const LIVE_REQUEST_RETENTION_MS = 14 * 24 * 60 * 60 * 1_000
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -112,7 +117,7 @@ function parseItem(value: unknown): LiveRequestItem | undefined {
     (value.lifecycle === 'active' && owns(value, 'cancelledRevision')) ||
     (value.lifecycle === 'cancelled-by-requester' &&
       (!isPositiveInteger(cancelledRevision) ||
-        cancelledRevision < value.updatedRevision))
+        cancelledRevision !== value.updatedRevision))
   ) {
     return undefined
   }
@@ -192,9 +197,12 @@ export function parseLiveRequestSnapshot(
     Number.isNaN(Date.parse(value.createdAt)) ||
     typeof value.expiresAt !== 'string' ||
     Number.isNaN(Date.parse(value.expiresAt)) ||
-    Date.parse(value.expiresAt) <= Date.parse(value.createdAt) ||
+    Date.parse(value.expiresAt) - Date.parse(value.createdAt) !==
+      LIVE_REQUEST_RETENTION_MS ||
     !Number.isSafeInteger(value.updatesCount) ||
     (value.updatesCount as number) < 0 ||
+    (value.updatesCount as number) > MAX_UPDATES ||
+    value.updatesCount !== value.revision - 1 ||
     !Array.isArray(value.items) ||
     value.items.length < 1 ||
     value.items.length > MAX_STORED_ITEMS
@@ -211,6 +219,9 @@ export function parseLiveRequestSnapshot(
   )
   const itemIds = new Set<string>()
   const photoTokens = new Set<string>()
+  let activeItems = 0
+  let activeCustomItems = 0
+  let activeMemoCharacters = 0
   for (const item of normalizedItems) {
     if (
       item.createdRevision > value.revision ||
@@ -222,11 +233,25 @@ export function parseLiveRequestSnapshot(
       return undefined
     }
     itemIds.add(item.itemId)
+    if (item.lifecycle === 'active') {
+      activeItems += 1
+      activeMemoCharacters += countUserCharacters(item.memo ?? '')
+      if (item.productId.startsWith('custom:')) {
+        activeCustomItems += 1
+      }
+    }
     if (item.photoToken) {
       photoTokens.add(item.photoToken)
     }
   }
   if (photoTokens.size > 3) {
+    return undefined
+  }
+  if (
+    activeItems > MAX_ACTIVE_ITEMS ||
+    activeCustomItems > MAX_CUSTOM_ITEMS ||
+    activeMemoCharacters > MAX_ACTIVE_MEMO_CHARACTERS
+  ) {
     return undefined
   }
 

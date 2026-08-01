@@ -11,7 +11,8 @@ import type {
 import { useLiveRequestSync } from './useLiveRequestSync'
 
 const token = `r1_${'A'.repeat(32)}`
-const fixedNow = () => Date.parse('2026-08-01T00:02:00.000Z')
+let currentTime = Date.parse('2026-08-01T00:02:00.000Z')
+const fixedNow = () => currentTime
 
 function snapshot(
   revision: number,
@@ -67,6 +68,7 @@ describe('useLiveRequestSync', () => {
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
       true
     window.localStorage.clear()
+    currentTime = Date.parse('2026-08-01T00:02:00.000Z')
     requestToken = token
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
@@ -169,6 +171,28 @@ describe('useLiveRequestSync', () => {
     await mount()
     vi.mocked(api.get).mockResolvedValueOnce({ status: 'expired' })
     await act(async () => sync.refresh())
+    expect(sync.status).toBe('expired')
+    expect(sync.snapshot?.revision).toBe(1)
+  })
+
+  it('reports an expired cached snapshot when an alarm-deleted request returns missing', async () => {
+    await mount()
+    currentTime = Date.parse('2026-08-15T00:00:00.000Z')
+    vi.mocked(api.get).mockResolvedValueOnce({ status: 'missing' })
+
+    await act(async () => sync.refresh())
+
+    expect(sync.status).toBe('expired')
+    expect(sync.snapshot?.revision).toBe(1)
+  })
+
+  it('reports an expired cached snapshot when transport fails after expiry', async () => {
+    await mount()
+    currentTime = Date.parse('2026-08-15T00:00:00.000Z')
+    vi.mocked(api.get).mockRejectedValueOnce(new Error('offline'))
+
+    await act(async () => sync.refresh())
+
     expect(sync.status).toBe('expired')
     expect(sync.snapshot?.revision).toBe(1)
   })

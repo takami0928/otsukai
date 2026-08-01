@@ -57,6 +57,55 @@ describe('live request cache', () => {
     expect(values.has(liveRequestCacheKey(token))).toBe(true)
   })
 
+  it('round-trips the maximum 403 one-change-per-item entries', () => {
+    const values = new Map<string, string>()
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    }
+    const base = cachedState()
+    const items = Array.from({ length: 403 }, (_, index) =>
+      index < 100
+        ? {
+            ...base.snapshot.items[0],
+            itemId: `item-${index}`,
+            lifecycle: 'cancelled-by-requester' as const,
+            updatedRevision: index + 2,
+            cancelledRevision: index + 2,
+          }
+        : {
+            ...base.snapshot.items[0],
+            itemId: `item-${index}`,
+          },
+    )
+    const maximumState: LiveRequestCachedState = {
+      ...base,
+      etag: '"revision-101"',
+      snapshot: {
+        ...base.snapshot,
+        revision: 101,
+        updatesCount: 100,
+        items,
+      },
+      pendingChanges: items.map((item, index) =>
+        index < 100
+          ? {
+              kind: 'cancelled' as const,
+              itemId: item.itemId,
+              revision: index + 2,
+            }
+          : {
+              kind: 'added' as const,
+              itemId: item.itemId,
+              revision: 1,
+            },
+      ),
+    }
+
+    expect(saveLiveRequestCachedState(maximumState, storage)).toBe(true)
+    expect(loadLiveRequestCachedState(token, storage)).toEqual(maximumState)
+  })
+
   it('rejects corruption, stale ETag, extra keys, and changes for unknown items', () => {
     expect(parseLiveRequestCachedState({}, token)).toBeUndefined()
     expect(

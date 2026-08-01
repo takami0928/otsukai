@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  MAX_SHARED_REQUEST_CUSTOM_ITEMS,
   MAX_SHARED_REQUEST_UPDATES,
   SHARED_REQUEST_RETENTION_MS,
 } from '../src/sharedRequestConstants'
@@ -293,6 +294,72 @@ describe('SharedRequestObject', () => {
           {
             type: 'add',
             item: newItem(3, { productId: 'product-1' }),
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({
+      status: 'updated',
+      request: { revision: 3 },
+    })
+  })
+
+  it('limits active custom items and permits a replacement after tombstoning one', async () => {
+    const tooManyCustomItems = Array.from(
+      { length: MAX_SHARED_REQUEST_CUSTOM_ITEMS + 1 },
+      (_, index) =>
+        newItem(index, { productId: `custom:one-time-${index}` }),
+    )
+    const invalid = createObject()
+    await expect(
+      invalid.object.createRequest(
+        createInput({ items: tooManyCustomItems }),
+      ),
+    ).rejects.toThrow('Invalid shared request storage input')
+
+    const { object } = createObject()
+    const maximumCustomItems = tooManyCustomItems.slice(
+      0,
+      MAX_SHARED_REQUEST_CUSTOM_ITEMS,
+    )
+    await object.createRequest(createInput({ items: maximumCustomItems }))
+    await expect(
+      object.updateRequest({
+        now: createdAt + 1,
+        expectedRevision: 1,
+        editSecretHash,
+        operations: [
+          {
+            type: 'add',
+            item: newItem(MAX_SHARED_REQUEST_CUSTOM_ITEMS, {
+              productId: `custom:one-time-${MAX_SHARED_REQUEST_CUSTOM_ITEMS}`,
+            }),
+          },
+        ],
+      }),
+    ).resolves.toEqual({ status: 'operation-invalid' })
+
+    await expect(
+      object.updateRequest({
+        now: createdAt + 2,
+        expectedRevision: 1,
+        editSecretHash,
+        operations: [{ type: 'cancel', itemId: 'item-0' }],
+      }),
+    ).resolves.toMatchObject({
+      status: 'updated',
+      request: { revision: 2 },
+    })
+    await expect(
+      object.updateRequest({
+        now: createdAt + 3,
+        expectedRevision: 2,
+        editSecretHash,
+        operations: [
+          {
+            type: 'add',
+            item: newItem(MAX_SHARED_REQUEST_CUSTOM_ITEMS, {
+              productId: `custom:one-time-${MAX_SHARED_REQUEST_CUSTOM_ITEMS}`,
+            }),
           },
         ],
       }),

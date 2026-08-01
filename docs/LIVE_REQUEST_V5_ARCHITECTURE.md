@@ -84,6 +84,7 @@ PATCH操作は`add`、`set-quantity`、`set-memo`、`cancel`だけです。全�
 
 - JSON body 512KiB以下
 - 最大303商品（既存v3と同じ、基準93＋家庭追加200＋自由追加10）
+- activeな自由追加商品は最大10件。取消済みtombstoneはこの10件に数えず、再追加時は新しい`itemId`を使う
 - 数量1〜20、条件30文字、有効商品の条件合計1,000文字
 - 1 PATCH最大50操作、1依頼最大100更新
 - ID、名称、単位、カテゴリ、icon、sort orderをWorkerで再検証

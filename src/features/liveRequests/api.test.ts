@@ -117,6 +117,53 @@ describe('WorkerLiveRequestApi', () => {
     })
   })
 
+  it.each([
+    ['without a sent validator', undefined, '"revision-1"'],
+    ['with a mismatched response ETag', '"revision-1"', '"revision-2"'],
+  ])('rejects 304 %s', async (_name, sentEtag, responseEtag) => {
+    const api = new WorkerLiveRequestApi(
+      'https://worker.example/',
+      undefined,
+      vi.fn(async () =>
+        new Response(null, {
+          status: 304,
+          headers: { ETag: responseEtag },
+        })) as typeof fetch,
+    )
+
+    await expect(
+      api.get(requestToken, sentEtag ? { etag: sentEtag } : undefined),
+    ).rejects.toMatchObject({
+      code: 'invalid-response',
+      status: 304,
+    })
+  })
+
+  it('accepts only the exact successful GET and PATCH status codes', async () => {
+    const responses = [
+      json(snapshot(), 201),
+      json(snapshot(2), 201, 2),
+    ]
+    const api = new WorkerLiveRequestApi(
+      'https://worker.example/',
+      tokenProvider(),
+      vi.fn(async () => responses.shift() as Response) as typeof fetch,
+    )
+
+    await expect(api.get(requestToken)).rejects.toMatchObject({
+      code: 'invalid-response',
+      status: 201,
+    })
+    await expect(
+      api.patch(requestToken, editSecret, 1, [
+        { type: 'cancel', itemId: 'item-1' },
+      ]),
+    ).rejects.toMatchObject({
+      code: 'invalid-response',
+      status: 201,
+    })
+  })
+
   it('distinguishes missing, expired, and safe failure classes', async () => {
     const responses = [
       json({ code: 'REQUEST_NOT_FOUND' }, 404),

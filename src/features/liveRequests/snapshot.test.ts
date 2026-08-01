@@ -100,6 +100,24 @@ describe('live request snapshot diff', () => {
     ])
   })
 
+  it('keeps a newly added item as one pending addition after later edits', () => {
+    const previous = snapshot(2)
+    const next = snapshot(3)
+    next.items[0] = {
+      ...next.items[0],
+      quantity: 2,
+      updatedRevision: 3,
+    }
+
+    expect(
+      diffLiveRequestSnapshots(previous, next, [
+        { kind: 'added', itemId: 'milk-item', revision: 2 },
+      ]),
+    ).toEqual([
+      { kind: 'added', itemId: 'milk-item', revision: 2 },
+    ])
+  })
+
   it('ignores equal or older revisions', () => {
     const pending = [
       { kind: 'added' as const, itemId: 'milk-item', revision: 1 },

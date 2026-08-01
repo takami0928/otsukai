@@ -38,6 +38,20 @@ function snapshot(): LiveRequestSnapshot {
   }
 }
 
+function repeatedItems(
+  count: number,
+  overrides: (index: number) => Partial<LiveRequestSnapshot['items'][number]> =
+    () => ({}),
+): LiveRequestSnapshot['items'] {
+  const base = snapshot().items[0]
+  return Array.from({ length: count }, (_, index) => ({
+    ...base,
+    itemId: `item-${index}`,
+    memo: '',
+    ...overrides(index),
+  }))
+}
+
 describe('live request front-end validation', () => {
   it('validates capabilities and matching ETags exactly', () => {
     expect(isLiveRequestToken(requestToken)).toBe(true)
@@ -80,6 +94,44 @@ describe('live request front-end validation', () => {
     ['duplicate item ID', {
       ...snapshot(),
       items: [snapshot().items[0], snapshot().items[0]],
+    }],
+    ['non-fixed expiry', {
+      ...snapshot(),
+      expiresAt: '2026-08-14T23:59:59.999Z',
+    }],
+    ['revision/update count mismatch', {
+      ...snapshot(),
+      updatesCount: 0,
+    }],
+    ['more than 100 updates', {
+      ...snapshot(),
+      revision: 102,
+      updatesCount: 101,
+    }],
+    ['more than 303 active items', {
+      ...snapshot(),
+      items: repeatedItems(304),
+    }],
+    ['more than ten active custom items', {
+      ...snapshot(),
+      items: repeatedItems(11, (index) => ({
+        productId: `custom:one-time-${index}`,
+      })),
+    }],
+    ['more than 1000 active memo characters', {
+      ...snapshot(),
+      items: repeatedItems(34, (index) => ({
+        memo: '条'.repeat(index < 33 ? 30 : 11),
+      })),
+    }],
+    ['mismatched cancelled revision', {
+      ...snapshot(),
+      items: [{
+        ...snapshot().items[0],
+        lifecycle: 'cancelled-by-requester',
+        updatedRevision: 2,
+        cancelledRevision: 1,
+      }],
     }],
   ])('rejects %s', (_name, value) => {
     expect(parseLiveRequestSnapshot(value, requestToken)).toBeUndefined()

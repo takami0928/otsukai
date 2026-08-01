@@ -6,6 +6,7 @@ import {
 import { SHARE_PRODUCT_IDS_V2 } from '../../src/data/shareProductIdsV2'
 import {
   MAX_SHARED_REQUEST_BODY_BYTES,
+  MAX_SHARED_REQUEST_CUSTOM_ITEMS,
   MAX_SHARED_REQUEST_ITEMS,
 } from '../src/sharedRequestConstants'
 import type { SharedRequestNewItem } from '../src/sharedRequestTypes'
@@ -95,6 +96,37 @@ describe('shared request validation', () => {
         jsonRequest({
           turnstileToken: 'single-use-token',
           items: [...items, item(MAX_SHARED_REQUEST_ITEMS)],
+        }),
+      ),
+    )
+  })
+
+  it('enforces the existing ten one-time custom item ceiling', async () => {
+    expect(MAX_SHARED_REQUEST_CUSTOM_ITEMS).toBe(MAX_CUSTOM_ITEMS)
+    const customItems = Array.from(
+      { length: MAX_SHARED_REQUEST_CUSTOM_ITEMS },
+      (_, index) =>
+        item(index, { productId: `custom:one-time-${index}` }),
+    )
+
+    await expect(
+      validateSharedRequestCreateRequest(
+        jsonRequest({
+          turnstileToken: 'single-use-token',
+          items: customItems,
+        }),
+      ),
+    ).resolves.toMatchObject({ items: { length: MAX_CUSTOM_ITEMS } })
+    await expectInvalid(
+      validateSharedRequestCreateRequest(
+        jsonRequest({
+          turnstileToken: 'single-use-token',
+          items: [
+            ...customItems,
+            item(MAX_CUSTOM_ITEMS, {
+              productId: `custom:one-time-${MAX_CUSTOM_ITEMS}`,
+            }),
+          ],
         }),
       ),
     )

@@ -240,6 +240,31 @@ describe('LiveRequestManagePage', () => {
     expect(container.textContent).toContain('更新サービスへ接続できません')
   })
 
+  it('disables one-time item addition at the existing ten-item ceiling', async () => {
+    const maximumCustomItems = Array.from({ length: 10 }, (_, index) => ({
+      ...snapshot().items[0],
+      itemId: `custom-item-${index}`,
+      productId: `custom:one-time-${index}`,
+      productNameSnapshot: `自由商品${index}`,
+    }))
+    vi.mocked(api.get).mockResolvedValueOnce({
+      status: 'found',
+      request: { ...snapshot(), items: maximumCustomItems },
+      etag: '"revision-1"',
+    })
+    await renderPage()
+    const customMode = container.querySelectorAll<HTMLInputElement>(
+      'input[name="live-add-mode"]',
+    )[1]
+    await click(customMode)
+
+    expect(container.textContent).toContain(
+      'リストにない商品は10件までです',
+    )
+    expect(button('商品を追加').disabled).toBe(true)
+    expect(api.patch).not.toHaveBeenCalled()
+  })
+
   it('uses a tombstone operation only after the required confirmation', async () => {
     const confirm = vi.fn(() => true)
     Object.defineProperty(window, 'confirm', {

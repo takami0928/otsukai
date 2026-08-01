@@ -49,6 +49,9 @@ export function diffLiveRequestSnapshots(
       (oldItem.quantity !== item.quantity ||
         (oldItem.memo ?? '') !== (item.memo ?? ''))
     ) {
+      if (changes.has(`${item.itemId}:added`)) {
+        continue
+      }
       const existing = changes.get(`${item.itemId}:changed`)
       changes.set(`${item.itemId}:changed`, {
         kind: 'changed',

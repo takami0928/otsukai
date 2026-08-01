@@ -161,6 +161,9 @@ describe('CreateRequestPage live request sharing', () => {
   })
 
   it('uses v5 only after explicit selection and never shares the edit secret', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(
+      Date.parse('2026-08-01T00:00:00.000Z'),
+    )
     await renderPage()
     const liveChoice = container.querySelector<HTMLInputElement>(
       'input[name="request-sharing-mode"][value="live"]',
@@ -203,6 +206,59 @@ describe('CreateRequestPage live request sharing', () => {
       },
     ).join('\n')
     expect(storedValues).not.toContain(editSecret)
+
+    await click(button('更新可能な依頼をLINEで送る'))
+    expect(api.create).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates a new v5 request after reload because the management capability is not persisted', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(
+      Date.parse('2026-08-01T00:00:00.000Z'),
+    )
+    await renderPage()
+    const liveChoice = container.querySelector<HTMLInputElement>(
+      'input[name="request-sharing-mode"][value="live"]',
+    )!
+    await click(liveChoice)
+    await selectMilk()
+    await click(button('確認へ'))
+    await click(button('更新可能な依頼をLINEで送る'))
+    expect(api.create).toHaveBeenCalledTimes(1)
+
+    act(() => root.unmount())
+    root = createRoot(container)
+    await renderPage()
+    expect(container.textContent).not.toContain('依頼者用の管理リンク')
+    await click(button('修正する'))
+    const restoredLiveChoice = container.querySelector<HTMLInputElement>(
+      'input[name="request-sharing-mode"][value="live"]',
+    )!
+    await click(restoredLiveChoice)
+    await click(button('確認へ'))
+    await click(button('更新可能な依頼をLINEで送る'))
+
+    expect(api.create).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('依頼者用の管理リンク')
+  })
+
+  it('does not reuse an expired v5 request in the same browser session', async () => {
+    const now = vi
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-08-01T00:00:00.000Z'))
+    await renderPage()
+    const liveChoice = container.querySelector<HTMLInputElement>(
+      'input[name="request-sharing-mode"][value="live"]',
+    )!
+    await click(liveChoice)
+    await selectMilk()
+    await click(button('確認へ'))
+    await click(button('更新可能な依頼をLINEで送る'))
+    expect(api.create).toHaveBeenCalledTimes(1)
+
+    now.mockReturnValue(Date.parse('2026-08-15T00:00:00.000Z'))
+    await click(button('更新可能な依頼をLINEで送る'))
+
+    expect(api.create).toHaveBeenCalledTimes(2)
   })
 
   it('keeps fixed mode as the default even when live requests are configured', async () => {

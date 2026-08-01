@@ -201,7 +201,7 @@ export class WorkerLiveRequestApi implements LiveRequestApi {
       )
       if (response.status === 304) {
         const etag = parseLiveRequestEtag(response.headers.get('ETag'))
-        if (!etag || (options.etag && etag !== options.etag)) {
+        if (!options.etag || !etag || etag !== options.etag) {
           throw new LiveRequestApiError('invalid-response', 304)
         }
         return { status: 'not-modified', etag }
@@ -214,6 +214,9 @@ export class WorkerLiveRequestApi implements LiveRequestApi {
       }
       if (!response.ok) {
         throw mapFailure(response.status, await readErrorCode(response))
+      }
+      if (response.status !== 200) {
+        throw new LiveRequestApiError('invalid-response', response.status)
       }
       const request = parseLiveRequestSnapshot(
         await readJson(response),
@@ -275,6 +278,9 @@ export class WorkerLiveRequestApi implements LiveRequestApi {
       )
       if (!response.ok) {
         throw mapFailure(response.status, await readErrorCode(response))
+      }
+      if (response.status !== 200) {
+        throw new LiveRequestApiError('invalid-response', response.status)
       }
       const request = parseLiveRequestSnapshot(
         await readJson(response),

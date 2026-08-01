@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LiveRequestManagementItem } from '../components/LiveRequestManagementItem'
 import { ImeAwareTextInput } from '../components/ImeAwareTextInput'
+import { MAX_CUSTOM_ITEMS } from '../constants/requestLimits'
 import { categories } from '../data/categories'
 import {
   LIVE_REQUEST_UPDATE_TURNSTILE_ACTION,
@@ -238,6 +239,15 @@ export function LiveRequestManagePage({
     (item) => item.lifecycle === 'active',
   ) ?? []
   const activeProductIds = new Set(activeItems.map((item) => item.productId))
+  const activeCustomItemCount = activeItems.filter((item) =>
+    item.productId.startsWith('custom:'),
+  ).length
+  const customItemLimitReached =
+    activeCustomItemCount >= MAX_CUSTOM_ITEMS
+  const addFormDisabled =
+    isUpdating ||
+    isExpired ||
+    (addMode === 'custom' && customItemLimitReached)
   const availableProducts = effectiveProducts.filter(
     (product) => !product.hidden && !activeProductIds.has(product.id),
   )
@@ -264,6 +274,9 @@ export function LiveRequestManagePage({
         sortOrderSnapshot: product.sortOrder,
       }
     }
+    if (customItemLimitReached) {
+      return undefined
+    }
     const name = addName.trim()
     const unit = addUnit.trim() || '個'
     if (!name) {
@@ -284,6 +297,12 @@ export function LiveRequestManagePage({
   }
 
   const handleAdd = async () => {
+    if (addMode === 'custom' && customItemLimitReached) {
+      setMessage(
+        `リストにない商品は${MAX_CUSTOM_ITEMS}件までです。既存の商品を取り消すと、新しい商品を追加できます。`,
+      )
+      return
+    }
     const item = createAddedItem()
     if (!item) {
       setMessage('追加する商品を選ぶか、商品名を入力してください。')
@@ -379,6 +398,11 @@ export function LiveRequestManagePage({
               </label>
             ) : (
               <div className="live-request-custom-fields">
+                {customItemLimitReached ? (
+                  <p className="helper-text" role="status">
+                    リストにない商品は{MAX_CUSTOM_ITEMS}件までです。既存の商品を取り消すと、新しい商品を追加できます。
+                  </p>
+                ) : null}
                 <label>
                   商品名
                   <ImeAwareTextInput
@@ -388,7 +412,7 @@ export function LiveRequestManagePage({
                       setAddName(value)
                       return { value, accepted: value !== addName }
                     }}
-                    disabled={isUpdating || isExpired}
+                    disabled={addFormDisabled}
                   />
                 </label>
                 <label>
@@ -400,7 +424,7 @@ export function LiveRequestManagePage({
                       setAddUnit(value)
                       return { value, accepted: value !== addUnit }
                     }}
-                    disabled={isUpdating || isExpired}
+                    disabled={addFormDisabled}
                   />
                 </label>
               </div>
@@ -420,7 +444,7 @@ export function LiveRequestManagePage({
                     ),
                   )
                 }
-                disabled={isUpdating || isExpired}
+                disabled={addFormDisabled}
               />
             </label>
             <label>
@@ -432,14 +456,14 @@ export function LiveRequestManagePage({
                   setAddMemo(value)
                   return { value, accepted: value !== addMemo }
                 }}
-                disabled={isUpdating || isExpired}
+                disabled={addFormDisabled}
               />
             </label>
             <button
               type="button"
               className="primary-button"
               onClick={() => void handleAdd()}
-              disabled={isUpdating || isExpired || !updateApi}
+              disabled={addFormDisabled || !updateApi}
             >
               商品を追加
             </button>

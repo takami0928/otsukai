@@ -64,6 +64,15 @@ function initialState(
       }
 }
 
+function isExpiredSnapshot(
+  snapshot: LiveRequestSnapshot | undefined,
+  now: () => number,
+): boolean {
+  return Boolean(
+    snapshot && Date.parse(snapshot.expiresAt) <= now(),
+  )
+}
+
 export function useLiveRequestSync({
   enabled,
   requestToken,
@@ -156,7 +165,11 @@ export function useLiveRequestSync({
         if (result.status === 'missing') {
           commitState({
             ...latest,
-            status: latest.snapshot ? 'stale' : 'missing',
+            status: isExpiredSnapshot(latest.snapshot, now)
+              ? 'expired'
+              : latest.snapshot
+                ? 'stale'
+                : 'missing',
           })
           return
         }
@@ -191,7 +204,11 @@ export function useLiveRequestSync({
           const latest = stateRef.current
           commitState({
             ...latest,
-            status: latest.snapshot ? 'stale' : 'missing',
+            status: isExpiredSnapshot(latest.snapshot, now)
+              ? 'expired'
+              : latest.snapshot
+                ? 'stale'
+                : 'missing',
           })
         }
       } finally {
@@ -203,7 +220,7 @@ export function useLiveRequestSync({
     })()
     inFlightRef.current = operation
     return operation
-  }, [api, commitState, enabled, persist, requestToken])
+  }, [api, commitState, enabled, now, persist, requestToken])
 
   const acknowledgeChanges = useCallback(() => {
     const current = stateRef.current
