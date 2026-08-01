@@ -17,6 +17,20 @@ React/Vite
 
 画像、商品候補、モデル出力はアプリやWorkerへ保存しません。本番コードはこれらやSecretをログへ出しません。フロントは利用者が確認した通常商品と自由追加商品だけを既存draftへ反映するため、画像、読み取った生の内容、取り込み元を示す情報は共有URLに入りません。
 
+## Workerルートと機能境界
+
+Workerの公開Endpointは変更せず、次の互換ルートを持ちます。
+
+| Method | Path | 状態 |
+| --- | --- | --- |
+| `POST` | `/` | 既存の手書き解析ルート |
+| `POST` | `/v1/handwriting/analyze` | 同じ手書き解析handlerを呼ぶ明示ルート |
+| `OPTIONS` | `/*` | 許可Originだけに応答するCORS preflight |
+
+写真APIと更新可能依頼APIは後続PRで追加します。`PHOTO_API_ENABLED`と`SHARED_REQUEST_API_ENABLED`は未設定または`true`以外ならOFFです。設定判定はサービスごとに分離され、`GEMINI_API_KEY`が必要なのは手書き解析だけです。写真・更新可能依頼のコードはGeminiや`@google/genai`へ依存させません。
+
+フロントの`VITE_PRODUCT_PHOTOS_ENABLED`と`VITE_LIVE_REQUESTS_ENABLED`も同様に、明示的な`true`だけを有効とします。現在の通常公開では両方OFFで、導線は表示されません。
+
 ## 固定したGemini設定
 
 - Model: `gemini-3.5-flash-lite`
@@ -98,6 +112,8 @@ npx wrangler secret put TURNSTILE_SECRET_KEY --config worker/wrangler.toml
 [vars]
 ALLOWED_ORIGINS = "https://takami0928.github.io"
 DIAGNOSTIC_MODE = "false"
+PHOTO_API_ENABLED = "false"
+SHARED_REQUEST_API_ENABLED = "false"
 ```
 
 Originは完全一致でカンマ区切り指定します。パスや末尾スラッシュは含めません。CORSはブラウザ制御であり認証ではないため、許可Originに加えてTurnstileを毎回検証します。
