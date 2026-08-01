@@ -213,7 +213,7 @@ export function LiveRequestManagePage({
         snapshot.revision,
         operations,
       )
-      applySnapshot(result.request, false)
+      applySnapshot(result.request, true)
       setMessage('依頼内容を更新しました。')
       return true
     } catch (error) {
