@@ -222,6 +222,24 @@ describe('LiveRequestManagePage', () => {
     })
   })
 
+  it('keeps an add selection when the update request fails', async () => {
+    vi.mocked(api.patch).mockRejectedValueOnce(new Error('offline'))
+    await renderPage()
+    const select = container.querySelector<HTMLSelectElement>('select')!
+    const option = [...select.options].find((candidate) => candidate.value)
+    if (!option) throw new Error('No catalog item was available')
+    await act(async () => {
+      select.value = option.value
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    await click(button('商品を追加'))
+
+    expect(select.value).toBe(option.value)
+    expect(container.textContent).toContain('更新サービスへ接続できません')
+  })
+
   it('uses a tombstone operation only after the required confirmation', async () => {
     const confirm = vi.fn(() => true)
     Object.defineProperty(window, 'confirm', {

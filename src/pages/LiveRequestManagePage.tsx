@@ -202,7 +202,7 @@ export function LiveRequestManagePage({
     operations: readonly LiveRequestOperation[],
   ) => {
     if (!snapshot || !updateApi || isExpired || isUpdating) {
-      return
+      return false
     }
     setIsUpdating(true)
     setMessage('')
@@ -215,6 +215,7 @@ export function LiveRequestManagePage({
       )
       applySnapshot(result.request, false)
       setMessage('依頼内容を更新しました。')
+      return true
     } catch (error) {
       setMessage(finiteMessage(error))
       if (error instanceof LiveRequestApiError && error.code === 'conflict') {
@@ -227,6 +228,7 @@ export function LiveRequestManagePage({
       ) {
         setIsExpired(true)
       }
+      return false
     } finally {
       setIsUpdating(false)
     }
@@ -287,12 +289,13 @@ export function LiveRequestManagePage({
       setMessage('追加する商品を選ぶか、商品名を入力してください。')
       return
     }
-    await submitOperations([{ type: 'add', item }])
-    setAddProductId('')
-    setAddName('')
-    setAddUnit('個')
-    setAddQuantity(1)
-    setAddMemo('')
+    if (await submitOperations([{ type: 'add', item }])) {
+      setAddProductId('')
+      setAddName('')
+      setAddUnit('個')
+      setAddQuantity(1)
+      setAddMemo('')
+    }
   }
 
   if (!config.enabled) {
