@@ -435,12 +435,18 @@ export function LiveRequestManagePage({
                 type="number"
                 min={1}
                 max={20}
+                step={1}
                 value={addQuantity}
                 onChange={(event) =>
                   setAddQuantity(
                     Math.min(
                       20,
-                      Math.max(1, Number(event.currentTarget.value) || 1),
+                      Math.max(
+                        1,
+                        Math.trunc(
+                          Number(event.currentTarget.value) || 1,
+                        ),
+                      ),
                     ),
                   )
                 }

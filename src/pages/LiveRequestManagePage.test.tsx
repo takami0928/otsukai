@@ -181,7 +181,8 @@ describe('LiveRequestManagePage', () => {
     const quantity = container.querySelector<HTMLInputElement>(
       'input[aria-label="牛乳の新しい数量"]',
     )!
-    await changeInput(quantity, '2')
+    await changeInput(quantity, '2.9')
+    expect(quantity.value).toBe('2')
     await click(button('数量を変更'))
     expect(api.patch).toHaveBeenLastCalledWith(
       requestToken,
@@ -213,12 +214,17 @@ describe('LiveRequestManagePage', () => {
       select.dispatchEvent(new Event('change', { bubbles: true }))
       await Promise.resolve()
     })
+    const addQuantity = container.querySelector<HTMLInputElement>(
+      '.live-request-add-card input[type="number"]',
+    )!
+    await changeInput(addQuantity, '3.8')
+    expect(addQuantity.value).toBe('3')
     await click(button('商品を追加'))
 
     const operations = vi.mocked(api.patch).mock.calls[0][3]
     expect(operations[0]).toMatchObject({
       type: 'add',
-      item: { itemId: 'new-item', productId: option.value },
+      item: { itemId: 'new-item', productId: option.value, quantity: 3 },
     })
   })
 

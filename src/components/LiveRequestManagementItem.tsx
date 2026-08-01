@@ -41,10 +41,17 @@ export function LiveRequestManagementItem({
           min={1}
           max={20}
           inputMode="numeric"
+          step={1}
           value={quantity}
           onChange={(event) =>
             onQuantityChange(
-              Math.min(20, Math.max(1, Number(event.currentTarget.value) || 1)),
+              Math.min(
+                20,
+                Math.max(
+                  1,
+                  Math.trunc(Number(event.currentTarget.value) || 1),
+                ),
+              ),
             )
           }
           disabled={disabled}
