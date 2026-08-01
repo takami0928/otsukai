@@ -46,6 +46,7 @@ jobs:
       VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }}
       VITE_PRODUCT_PHOTOS_ENABLED: ${{ vars.VITE_PRODUCT_PHOTOS_ENABLED }}
       VITE_LIVE_REQUESTS_ENABLED: ${{ vars.VITE_LIVE_REQUESTS_ENABLED }}
+      VITE_MANUAL_VALIDATION_ENABLED: ${{ vars.VITE_MANUAL_VALIDATION_ENABLED }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

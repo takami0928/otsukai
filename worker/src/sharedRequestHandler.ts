@@ -27,6 +27,11 @@ import {
 } from './sharedRequestValidation'
 import { verifyTurnstileToken } from './turnstile'
 import { parseAllowedOrigins } from './validation'
+import {
+  getManualValidationModeStatus,
+  manualValidationErrorResponse,
+  validateManualValidationSession,
+} from './manualValidation'
 
 export const SHARED_REQUEST_COLLECTION_PATH = '/v1/requests'
 const SHARED_REQUEST_PATH_PATTERN =
@@ -311,8 +316,15 @@ export async function handleSharedRequestApiRequest(
   env: WorkerEnv,
   dependencies: SharedRequestHandlerDependencies = {},
 ): Promise<Response> {
-  if (!isSharedRequestApiEnabled(env)) {
-    return jsonResponse({ code: 'NOT_FOUND' }, 404)
+  const publiclyEnabled = isSharedRequestApiEnabled(env)
+  const modeStatus = publiclyEnabled
+    ? 'disabled'
+    : getManualValidationModeStatus(
+        env,
+        (dependencies.now ?? Date.now)(),
+      )
+  if (!publiclyEnabled && modeStatus === 'disabled') {
+    return manualValidationErrorResponse('disabled')
   }
   const allowedOrigins = parseAllowedOrigins(env.ALLOWED_ORIGINS ?? '')
   const requestOrigin = request.headers.get('Origin') ?? ''
@@ -321,6 +333,21 @@ export async function handleSharedRequestApiRequest(
     : undefined
   if (!origin) {
     return jsonResponse({ code: 'ORIGIN_NOT_ALLOWED' }, 403)
+  }
+  if (!publiclyEnabled) {
+    if (modeStatus === 'expired') {
+      return manualValidationErrorResponse('expired', origin)
+    }
+    if (request.method === 'POST' || request.method === 'PATCH') {
+      const validationStatus = await validateManualValidationSession(
+        request,
+        env,
+        dependencies,
+      )
+      if (validationStatus !== 'valid') {
+        return manualValidationErrorResponse(validationStatus, origin)
+      }
+    }
   }
   if (!hasSharedRequestConfiguration(env)) {
     return jsonResponse({ code: 'SERVICE_UNAVAILABLE' }, 503, origin)

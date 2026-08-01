@@ -38,6 +38,8 @@ Workerの公開Endpointは変更せず、次の互換ルートを持ちます。
 
 フロントの`VITE_PRODUCT_PHOTOS_ENABLED`と`VITE_LIVE_REQUESTS_ENABLED`も同様に、明示的な`true`だけを有効とします。現在の通常公開では両方OFFで、導線は表示されません。
 
+通常flagをOFFのまま実機確認する期限付きゲートは[`../docs/PHOTO_V5_LIMITED_VALIDATION.md`](../docs/PHOTO_V5_LIMITED_VALIDATION.md)で定義します。`MANUAL_VALIDATION_ENABLED`は未設定または`true`以外ならOFFです。有効時も写真・v5の書き込みは専用session headerと既存Turnstileの両方を要求します。session tokenやhashの実値をこのREADME、GitHub、ログへ記録しません。
+
 ## 固定したGemini設定
 
 - Model: `gemini-3.5-flash-lite`
@@ -121,6 +123,8 @@ ALLOWED_ORIGINS = "https://takami0928.github.io"
 DIAGNOSTIC_MODE = "false"
 PHOTO_API_ENABLED = "false"
 SHARED_REQUEST_API_ENABLED = "false"
+MANUAL_VALIDATION_ENABLED = "false"
+MANUAL_VALIDATION_EXPIRES_AT = ""
 ```
 
 写真保存の設定例には`PHOTO_OBJECTS` bindingとSQLite migrationも含まれます。上記の手順でgit管理外の`worker/wrangler.toml`へコピーまたは反映してから、`npx wrangler deploy --dry-run --config worker/wrangler.toml`でbundleだけを確認します。`wrangler.toml.example`を本番設定として直接使いません。migrationの本番適用は運用者の明示承認後に限ります。

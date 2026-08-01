@@ -16,6 +16,7 @@ type ProductPhotoViewerProps = {
   fetchImplementation?: typeof fetch
   createPreviewUrl?: (blob: Blob) => string
   revokePreviewUrl?: (url: string) => void
+  validationSessionToken?: string
 }
 
 function photoUrl(endpoint: string, token: string): string {
@@ -49,6 +50,7 @@ export function ProductPhotoViewer({
   fetchImplementation = fetch,
   createPreviewUrl = defaultCreatePreviewUrl,
   revokePreviewUrl = defaultRevokePreviewUrl,
+  validationSessionToken,
 }: ProductPhotoViewerProps) {
   const [state, setState] = useState<ProductPhotoLoadState>('loading')
   const [previewUrl, setPreviewUrl] = useState('')
@@ -72,6 +74,13 @@ export function ProductPhotoViewer({
       try {
         const response = await fetchImplementation(photoUrl(endpoint, token), {
           method: 'GET',
+          ...(validationSessionToken
+            ? {
+                headers: {
+                  'X-Otsukai-Validation-Session': validationSessionToken,
+                },
+              }
+            : {}),
           signal: controller.signal,
           cache: 'no-store',
         })
@@ -141,6 +150,7 @@ export function ProductPhotoViewer({
     fetchImplementation,
     revokePreviewUrl,
     token,
+    validationSessionToken,
   ])
 
   return (

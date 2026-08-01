@@ -224,7 +224,9 @@ export function encodeCompactRequest(payload: CompactRequestV2): string {
 
 export function buildCompactRequestUrl(baseUrl: string, encoded: string): string {
   const withoutHash = baseUrl.split('#', 1)[0].replace(/\/$/, '')
-  return `${withoutHash}/#/l/${encoded}`
+  return withoutHash.includes('?')
+    ? `${withoutHash}#/l/${encoded}`
+    : `${withoutHash}/#/l/${encoded}`
 }
 
 export function buildCompactRequestUrlFromInput(

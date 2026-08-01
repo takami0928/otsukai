@@ -2,6 +2,7 @@ export type LiveRequestConfig = {
   enabled: boolean
   endpoint: string
   turnstileSiteKey: string
+  validationSessionToken?: string
 }
 
 type LiveRequestEnvironment = {
@@ -25,22 +26,32 @@ function isAllowedEndpoint(value: string): boolean {
 
 export function resolveLiveRequestConfig(
   environment: LiveRequestEnvironment,
+  validationSessionToken?: string,
 ): LiveRequestConfig {
   const endpoint =
     environment.VITE_HANDWRITING_IMPORT_ENDPOINT?.trim() ?? ''
   const turnstileSiteKey =
     environment.VITE_TURNSTILE_SITE_KEY?.trim() ?? ''
+  const transportReady = isAllowedEndpoint(endpoint) && Boolean(turnstileSiteKey)
+  const manualValidationEnabled = Boolean(
+    validationSessionToken &&
+      isManualValidationSessionToken(validationSessionToken),
+  )
   return {
     enabled:
-      environment.VITE_LIVE_REQUESTS_ENABLED?.trim().toLowerCase() ===
-        'true' &&
-      isAllowedEndpoint(endpoint) &&
-      Boolean(turnstileSiteKey),
+      transportReady &&
+      (environment.VITE_LIVE_REQUESTS_ENABLED?.trim().toLowerCase() ===
+        'true' ||
+        manualValidationEnabled),
     endpoint,
     turnstileSiteKey,
+    ...(manualValidationEnabled ? { validationSessionToken } : {}),
   }
 }
 
-export function getLiveRequestConfig(): LiveRequestConfig {
-  return resolveLiveRequestConfig(import.meta.env)
+export function getLiveRequestConfig(
+  validationSessionToken?: string,
+): LiveRequestConfig {
+  return resolveLiveRequestConfig(import.meta.env, validationSessionToken)
 }
+import { isManualValidationSessionToken } from '../manualValidation/session'

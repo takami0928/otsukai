@@ -280,6 +280,9 @@ describe('deployment manifest validation', () => {
       manualTestSessionId: expected.sessionId,
       handwritingImportEnabled: true,
       diagnosticsEnabled: true,
+      productPhotosEnabled: false,
+      liveRequestsEnabled: false,
+      manualValidationEnabled: false,
       endpointConfigured: true,
       turnstileSiteKeyConfigured: true,
       builtAt: '2026-07-28T00:00:00.000Z',
@@ -317,6 +320,10 @@ describe('deployment manifest validation', () => {
     ['missing endpoint', { endpointConfigured: false }],
     ['missing site key', { turnstileSiteKeyConfigured: false }],
     ['wrong mode', { manualTestMode: 'manual-off' }],
+    ['photo feature enabled', { productPhotosEnabled: true }],
+    ['live request feature enabled', { liveRequestsEnabled: true }],
+    ['manual validation enabled', { manualValidationEnabled: true }],
+    ['unsafe feature state type', { manualValidationEnabled: 'false' }],
     ['unexpected property', { endpoint: 'https://should-not-leak/' }],
   ])('rejects %s', (_label, override) => {
     expect(() =>

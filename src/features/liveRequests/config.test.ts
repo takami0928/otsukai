@@ -63,4 +63,34 @@ describe('live request configuration', () => {
       }).enabled,
     ).toBe(false)
   })
+
+  it('allows a Worker-verified validation session without enabling the public flag', () => {
+    const validationSessionToken = `mv1_${'A'.repeat(32)}`
+    expect(
+      resolveLiveRequestConfig(
+        {
+          ...configured,
+          VITE_LIVE_REQUESTS_ENABLED: 'false',
+        },
+        validationSessionToken,
+      ),
+    ).toEqual({
+      enabled: true,
+      endpoint: 'https://worker.example/',
+      turnstileSiteKey: 'public-site-key',
+      validationSessionToken,
+    })
+  })
+
+  it('does not enable from an unsafe validation session value', () => {
+    expect(
+      resolveLiveRequestConfig(
+        {
+          ...configured,
+          VITE_LIVE_REQUESTS_ENABLED: 'false',
+        },
+        'unsafe\r\nheader',
+      ).enabled,
+    ).toBe(false)
+  })
 })

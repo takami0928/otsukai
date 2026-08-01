@@ -18,6 +18,17 @@ import {
   validPhotoTokens,
 } from './photoTestHelpers'
 
+const manualValidationToken = `mv1_${'M'.repeat(32)}`
+
+async function sha256(value: string): Promise<string> {
+  const digest = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)),
+  )
+  return [...digest]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
 class FakePhotoStub {
   saveResult: SavePhotoResult = { status: 'created' }
   readResult: ReadPhotoResult = { status: 'missing' }
@@ -304,6 +315,68 @@ describe('photo API handler', () => {
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(
       new Uint8Array(jpeg),
     )
+  })
+
+  it('allows only a verified manual session to reach photo writes while the public flag is off', async () => {
+    const { env, namespace } = photoEnv()
+    const gateNow = Date.UTC(2026, 7, 2)
+    Object.assign(env, {
+      PHOTO_API_ENABLED: 'false',
+      MANUAL_VALIDATION_ENABLED: 'true',
+      MANUAL_VALIDATION_SESSION_SHA256: await sha256(
+        manualValidationToken,
+      ),
+      MANUAL_VALIDATION_EXPIRES_AT: new Date(
+        gateNow + 60_000,
+      ).toISOString(),
+    })
+    const fetchImplementation = successfulTurnstileFetch()
+
+    const missingSession = await handlePhotoApiRequest(
+      photoBatchRequest(),
+      env,
+      { fetchImplementation, now: () => gateNow },
+    )
+    expect(missingSession.status).toBe(403)
+    expect(fetchImplementation).not.toHaveBeenCalled()
+    expect(namespace.getByName).not.toHaveBeenCalled()
+
+    const baseRequest = photoBatchRequest()
+    const headers = new Headers(baseRequest.headers)
+    headers.set('X-Otsukai-Validation-Session', manualValidationToken)
+    const response = await handlePhotoApiRequest(
+      new Request(baseRequest, { headers }),
+      env,
+      { fetchImplementation, now: () => gateNow },
+    )
+    expect(response.status).toBe(200)
+    expect(fetchImplementation).toHaveBeenCalledTimes(1)
+    expect(namespace.getByName).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows capability photo reads during an unexpired manual session without a session header', async () => {
+    const { env, namespace } = photoEnv()
+    const gateNow = Date.UTC(2026, 7, 2)
+    Object.assign(env, {
+      PHOTO_API_ENABLED: 'false',
+      MANUAL_VALIDATION_ENABLED: 'true',
+      MANUAL_VALIDATION_SESSION_SHA256: await sha256(
+        manualValidationToken,
+      ),
+      MANUAL_VALIDATION_EXPIRES_AT: new Date(
+        gateNow + 60_000,
+      ).toISOString(),
+    })
+    const response = await handlePhotoApiRequest(
+      photoBatchRequest({
+        method: 'GET',
+        pathname: `/v1/photos/${validPhotoTokens[0]}`,
+      }),
+      env,
+      { now: () => gateNow },
+    )
+    expect(response.status).toBe(404)
+    expect(namespace.getByName).toHaveBeenCalledWith(validPhotoTokens[0])
   })
 
   it('keeps disabled or incomplete photo configuration safely unavailable', async () => {

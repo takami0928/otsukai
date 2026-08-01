@@ -13,6 +13,9 @@ import {
   isLiveRequestEditSecret,
   isLiveRequestToken,
 } from './features/liveRequests/validation'
+import { useManualValidationSession } from './features/manualValidation/session'
+import { getProductPhotoConfig } from './features/productPhotos/config'
+import { getLiveRequestConfig } from './features/liveRequests/config'
 
 export type RouteState =
   | { page: 'home' }
@@ -133,6 +136,19 @@ function navigate(hashPath: string) {
 
 export default function App() {
   const [route, setRoute] = useState<RouteState>(() => parseHashRoute(window.location.hash))
+  const manualValidationAccess = useManualValidationSession()
+  const manualValidationSession =
+    manualValidationAccess.status === 'active'
+      ? manualValidationAccess.session
+      : undefined
+  const productPhotoConfig = useMemo(
+    () => getProductPhotoConfig(manualValidationSession?.token),
+    [manualValidationSession?.token],
+  )
+  const liveRequestConfig = useMemo(
+    () => getLiveRequestConfig(manualValidationSession?.token),
+    [manualValidationSession?.token],
+  )
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -145,6 +161,12 @@ export default function App() {
   }, [])
 
   const page = useMemo(() => {
+    if (
+      manualValidationAccess.status === 'checking' &&
+      (route.page === 'liveRequest' || route.page === 'manageLiveRequest')
+    ) {
+      return <main><p role="status">検証セッションを確認中…</p></main>
+    }
     switch (route.page) {
       case 'home':
         return (
@@ -155,7 +177,13 @@ export default function App() {
           />
         )
       case 'create':
-        return <CreateRequestPage onBackHome={() => navigate('/')} />
+        return (
+          <CreateRequestPage
+            onBackHome={() => navigate('/')}
+            productPhotoConfig={productPhotoConfig}
+            liveRequestConfig={liveRequestConfig}
+          />
+        )
       case 'products':
         return <ProductCatalogPage onBackHome={() => navigate('/')} />
       case 'catalogRestore':
@@ -174,6 +202,7 @@ export default function App() {
           <ShoppingListPage
             encodedPayload={route.encoded}
             payloadCodec={route.codec}
+            productPhotoConfig={productPhotoConfig}
             onBackHome={() => navigate('/')}
             onError={(title, description) => setRoute({ page: 'error', title, description })}
           />
@@ -183,6 +212,8 @@ export default function App() {
           <LiveShoppingListPage
             key={route.requestToken}
             requestToken={route.requestToken}
+            liveRequestConfig={liveRequestConfig}
+            productPhotoConfig={productPhotoConfig}
             onBackHome={() => navigate('/')}
             onError={(title, description) =>
               setRoute({ page: 'error', title, description })
@@ -195,6 +226,7 @@ export default function App() {
             key={`${route.requestToken}:${route.editSecret}`}
             requestToken={route.requestToken}
             editSecret={route.editSecret}
+            liveRequestConfig={liveRequestConfig}
             onBackHome={() => navigate('/')}
             onError={(title, description) =>
               setRoute({ page: 'error', title, description })
@@ -212,7 +244,12 @@ export default function App() {
       default:
         return null
     }
-  }, [route])
+  }, [
+    liveRequestConfig,
+    manualValidationAccess.status,
+    productPhotoConfig,
+    route,
+  ])
 
   return <div className="app-shell">{page}</div>
 }

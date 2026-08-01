@@ -9,6 +9,7 @@ interface ImportMetaEnv {
   readonly VITE_TURNSTILE_SITE_KEY?: string
   readonly VITE_PRODUCT_PHOTOS_ENABLED?: string
   readonly VITE_LIVE_REQUESTS_ENABLED?: string
+  readonly VITE_MANUAL_VALIDATION_ENABLED?: string
 }
 
 interface ImportMeta {

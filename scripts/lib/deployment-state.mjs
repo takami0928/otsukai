@@ -103,6 +103,15 @@ export function createDeploymentManifest(environment) {
     diagnosticsEnabled: parseBoolean(
       environment.VITE_HANDWRITING_DIAGNOSTICS_ENABLED,
     ),
+    productPhotosEnabled: parseBoolean(
+      environment.VITE_PRODUCT_PHOTOS_ENABLED,
+    ),
+    liveRequestsEnabled: parseBoolean(
+      environment.VITE_LIVE_REQUESTS_ENABLED,
+    ),
+    manualValidationEnabled: parseBoolean(
+      environment.VITE_MANUAL_VALIDATION_ENABLED,
+    ),
     endpointConfigured: Boolean(
       environment.VITE_HANDWRITING_IMPORT_ENDPOINT?.trim(),
     ),

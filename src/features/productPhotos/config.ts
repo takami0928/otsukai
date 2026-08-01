@@ -2,6 +2,7 @@ export type ProductPhotoConfig = {
   enabled: boolean
   endpoint: string
   turnstileSiteKey: string
+  validationSessionToken?: string
 }
 
 type ProductPhotoEnvironment = {
@@ -25,22 +26,32 @@ function isAllowedEndpoint(value: string): boolean {
 
 export function resolveProductPhotoConfig(
   environment: ProductPhotoEnvironment,
+  validationSessionToken?: string,
 ): ProductPhotoConfig {
   const endpoint =
     environment.VITE_HANDWRITING_IMPORT_ENDPOINT?.trim() ?? ''
   const turnstileSiteKey =
     environment.VITE_TURNSTILE_SITE_KEY?.trim() ?? ''
+  const transportReady = isAllowedEndpoint(endpoint) && Boolean(turnstileSiteKey)
+  const manualValidationEnabled = Boolean(
+    validationSessionToken &&
+      isManualValidationSessionToken(validationSessionToken),
+  )
   return {
     enabled:
-      environment.VITE_PRODUCT_PHOTOS_ENABLED?.trim().toLowerCase() ===
-        'true' &&
-      isAllowedEndpoint(endpoint) &&
-      Boolean(turnstileSiteKey),
+      transportReady &&
+      (environment.VITE_PRODUCT_PHOTOS_ENABLED?.trim().toLowerCase() ===
+        'true' ||
+        manualValidationEnabled),
     endpoint,
     turnstileSiteKey,
+    ...(manualValidationEnabled ? { validationSessionToken } : {}),
   }
 }
 
-export function getProductPhotoConfig(): ProductPhotoConfig {
-  return resolveProductPhotoConfig(import.meta.env)
+export function getProductPhotoConfig(
+  validationSessionToken?: string,
+): ProductPhotoConfig {
+  return resolveProductPhotoConfig(import.meta.env, validationSessionToken)
 }
+import { isManualValidationSessionToken } from '../manualValidation/session'

@@ -821,6 +821,9 @@ export function ShoppingListPage({
                     photoConfig.enabled && item.photoToken ? (
                       <ProductPhotoViewer
                         endpoint={photoConfig.endpoint}
+                        validationSessionToken={
+                          photoConfig.validationSessionToken
+                        }
                         token={item.photoToken}
                         itemName={item.productNameSnapshot}
                       />

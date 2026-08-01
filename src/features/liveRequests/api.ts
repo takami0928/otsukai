@@ -128,7 +128,17 @@ export class WorkerLiveRequestApi implements LiveRequestApi {
     private readonly endpoint: string,
     private readonly turnstile?: TurnstileTokenProvider,
     private readonly fetchImplementation: typeof fetch = fetch,
+    private readonly validationSessionToken?: string,
   ) {}
+
+  private headers(values: Record<string, string> = {}): HeadersInit {
+    return this.validationSessionToken
+      ? {
+          ...values,
+          'X-Otsukai-Validation-Session': this.validationSessionToken,
+        }
+      : values
+  }
 
   private async token(signal?: AbortSignal): Promise<string> {
     if (!this.turnstile) {
@@ -148,7 +158,7 @@ export class WorkerLiveRequestApi implements LiveRequestApi {
         requestInit(
           {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: this.headers({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ turnstileToken, items }),
           },
           options.signal,
@@ -192,9 +202,9 @@ export class WorkerLiveRequestApi implements LiveRequestApi {
         requestInit(
           {
             method: 'GET',
-            headers: options.etag
-              ? { 'If-None-Match': options.etag }
-              : undefined,
+            headers: this.headers(
+              options.etag ? { 'If-None-Match': options.etag } : {},
+            ),
           },
           options.signal,
         ),
@@ -263,10 +273,10 @@ export class WorkerLiveRequestApi implements LiveRequestApi {
         requestInit(
           {
             method: 'PATCH',
-            headers: {
+            headers: this.headers({
               'Content-Type': 'application/json',
               'If-Match': `"revision-${revision}"`,
-            },
+            }),
             body: JSON.stringify({
               turnstileToken,
               editSecret,

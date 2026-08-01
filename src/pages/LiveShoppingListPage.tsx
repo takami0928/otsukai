@@ -30,9 +30,19 @@ export function LiveShoppingListPage({
     () =>
       liveRequestApi ??
       (config.enabled
-        ? new WorkerLiveRequestApi(config.endpoint)
+        ? new WorkerLiveRequestApi(
+            config.endpoint,
+            undefined,
+            fetch,
+            config.validationSessionToken,
+          )
         : undefined),
-    [config.enabled, config.endpoint, liveRequestApi],
+    [
+      config.enabled,
+      config.endpoint,
+      config.validationSessionToken,
+      liveRequestApi,
+    ],
   )
 
   useEffect(() => {

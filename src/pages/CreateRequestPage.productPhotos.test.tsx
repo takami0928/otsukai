@@ -138,18 +138,23 @@ describe('CreateRequestPage product photo sharing', () => {
   }
 
   function sharedPayload() {
-    const text = share.mock.calls[0]?.[0].text ?? ''
-    const requestUrl = text.split('\n').at(-1) ?? ''
+    const requestUrl = sharedRequestUrl()
     return decodeShoppingSessionPayload({
       encodedPayload: new URL(requestUrl).hash.slice('#/l/'.length),
       codec: 'compact-path',
     })
   }
 
+  function sharedRequestUrl(): string {
+    const text = share.mock.calls[0]?.[0].text ?? ''
+    return text.split('\n').at(-1) ?? ''
+  }
+
   async function renderPage(input: {
     processPhoto?: () => Promise<ProcessedProductPhoto>
     upload?: ProductPhotoUploadProvider['upload']
     enabled?: boolean
+    validationSessionToken?: string
   } = {}): Promise<void> {
     const uploader: ProductPhotoUploadProvider = {
       upload: input.upload ?? vi.fn(async () => undefined),
@@ -159,7 +164,17 @@ describe('CreateRequestPage product photo sharing', () => {
         <CreateRequestPage
           onBackHome={() => undefined}
           productPhotoConfig={
-            input.enabled === false ? disabledPhotoConfig : photoConfig
+            input.enabled === false
+              ? disabledPhotoConfig
+              : {
+                  ...photoConfig,
+                  ...(input.validationSessionToken
+                    ? {
+                        validationSessionToken:
+                          input.validationSessionToken,
+                      }
+                    : {}),
+                }
           }
           productPhotoUploadProvider={uploader}
           processProductPhoto={input.processPhoto ?? (async () => processedPhoto())}
@@ -184,6 +199,30 @@ describe('CreateRequestPage product photo sharing', () => {
 
     expect(upload).not.toHaveBeenCalled()
     expect(sharedPayload().requestId).toMatch(/^v3-/)
+  })
+
+  it('does not put the validation capability on a photo-free v3 share', async () => {
+    const validationSessionToken = `mv1_${'V'.repeat(32)}`
+    await renderPage({ validationSessionToken })
+    await click(increaseMilkButton())
+    await click(button('確認へ'))
+    await click(button('LINEで送る'))
+
+    expect(sharedPayload().requestId).toMatch(/^v3-/)
+    expect(sharedRequestUrl()).not.toContain(validationSessionToken)
+  })
+
+  it('puts the validation capability on a gated v4 share', async () => {
+    const validationSessionToken = `mv1_${'V'.repeat(32)}`
+    await renderPage({ validationSessionToken })
+    await selectMilkPhoto()
+    await click(button('確認へ'))
+    await click(button('LINEで送る'))
+
+    expect(sharedPayload().requestId).toMatch(/^v4-/)
+    expect(new URL(sharedRequestUrl()).searchParams.get(
+      'manualValidationSessionId',
+    )).toBe(validationSessionToken)
   })
 
   it('processes locally, uploads before OS share, and creates v4 only after confirmation', async () => {

@@ -8,6 +8,9 @@ export type WorkerEnv = {
   DIAGNOSTIC_MODE?: string
   PHOTO_API_ENABLED?: string
   SHARED_REQUEST_API_ENABLED?: string
+  MANUAL_VALIDATION_ENABLED?: string
+  MANUAL_VALIDATION_SESSION_SHA256?: string
+  MANUAL_VALIDATION_EXPIRES_AT?: string
   PHOTO_OBJECTS?: DurableObjectNamespace<PhotoObject>
   SHARED_REQUEST_OBJECTS?: DurableObjectNamespace<SharedRequestObject>
 }
@@ -50,8 +53,7 @@ export function hasPhotoConfiguration(
   env: WorkerEnv,
 ): env is PhotoConfiguredEnv {
   return Boolean(
-    isPhotoApiEnabled(env) &&
-      env.TURNSTILE_SECRET_KEY?.trim() &&
+    env.TURNSTILE_SECRET_KEY?.trim() &&
       env.ALLOWED_ORIGINS?.trim() &&
       env.PHOTO_OBJECTS,
   )
@@ -67,8 +69,7 @@ export function hasSharedRequestConfiguration(
   env: WorkerEnv,
 ): env is SharedRequestConfiguredEnv {
   return Boolean(
-    isSharedRequestApiEnabled(env) &&
-      env.TURNSTILE_SECRET_KEY?.trim() &&
+    env.TURNSTILE_SECRET_KEY?.trim() &&
       env.ALLOWED_ORIGINS?.trim() &&
       env.SHARED_REQUEST_OBJECTS,
   )

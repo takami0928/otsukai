@@ -43,6 +43,8 @@ https://takami0928.github.io/otsukai/#/l/<v2圧縮データ>
 
 共有後に更新できるv5は既存固定依頼とは別の、期限付きserver-backed方式です。依頼者が明示選択した場合だけ購入者用`#/r/`と依頼者用`#/manage/`を作成します。購入画面はvisible中の45秒poll、focus、手動操作でETagを確認し、通信失敗や期限切れでも最後の正常snapshotと端末内購入進捗を維持します。Worker API、SQLite-backed `SharedRequestObject`、フロントUIはいずれもflag OFFで非公開です。capability URL、revision/ETag、tombstone、固定14日期限、手動Cloudflare設定、rollback、実機試験は[`docs/LIVE_REQUEST_V5_ARCHITECTURE.md`](docs/LIVE_REQUEST_V5_ARCHITECTURE.md)と[`docs/LIVE_REQUEST_V5_MANUAL_VERIFICATION.md`](docs/LIVE_REQUEST_V5_MANUAL_VERIFICATION.md)を参照してください。
 
+写真・v5の通常flagをOFFのまま期限付きで実機確認する運用は[`docs/PHOTO_V5_LIMITED_VALIDATION.md`](docs/PHOTO_V5_LIMITED_VALIDATION.md)に分離しています。検証sessionはWorkerでハッシュ照合し、URLから除去後はsessionStorageだけへ保持します。
+
 ### v3ペイロード
 
 v3は短いJSON配列を `lz-string` で圧縮します。
