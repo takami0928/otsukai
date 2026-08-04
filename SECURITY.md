@@ -61,7 +61,9 @@ This is an individually operated project. Immediate or 24-hour response is not g
 - Product photos and live requests use bounded retention and must not be treated as permanent storage.
 - The service is not intended to make medical, allergy, or other safety-critical purchasing decisions on behalf of users.
 - AI maintenance tools must not receive user photos, shopping content, capability URLs, Secrets, raw support messages, private operations Issues, or unrestricted private repository search results.
-- AI maintenance tools may receive only information explicitly exported into a validated AI-safe allowlist schema.
+- AI maintenance tools may receive only payloads explicitly exported into a defined AI-safe allowlist schema and verified by a deterministic validator before use.
+- Anonymization or removal of direct identifiers alone is not an AI-safe input condition and does not replace allowlisting, data minimization, prohibited-field validation, or prompt-injection controls.
+- Any AI-specific queue or artifact may contain only schema-valid, validator-approved payloads. It must not contain free text, source records, raw logs, private links, or repository search results.
 
 ## Operational safety
 
