@@ -32,11 +32,17 @@ Codexへ許可できる操作:
 - リスク分類とrollback案の作成
 - 顧客回答、事故連絡、返金判断等の下書き作成
 
-AIへprivate運用リポジトリ全体またはIssue全体の包括的な読み取り権限を与えない。private `takami0928/otsukai-ops`は運用者向けの記録先であり、AIの直接データソースではない。AI-safe情報は、次のいずれかの方法で明示的に切り出す。
+AIへprivate運用リポジトリ全体またはIssue全体の包括的な読み取り権限を与えない。private `takami0928/otsukai-ops`は運用者向けの記録先であり、AIの直接データソースではない。
 
-- 人間がallowlist schemaへ転記したJSON
-- 決定論的な処理が検証して生成したexport
-- AI専用の匿名化済みqueueまたはartifact
+AI-safe情報を渡す方法は、次のいずれかに限定する。
+
+- 人間が定義済みallowlist schemaへ転記したJSONを、禁止field不在のvalidatorで検証して渡す。
+- 決定論的な変換処理が定義済みallowlist schemaへ適合するpayloadを生成し、validatorで検証して渡す。
+- AI専用queueまたはartifactへ、前二項と同じschema検証を通過したpayloadだけを格納する。
+
+AI専用queueまたはartifactは独立した安全経路ではない。自由記述、元データ、生ログ、private Issueやrepositoryへのリンク、repository検索結果を格納してはならない。
+
+「匿名化済み」「実名を除いた」という判断だけを安全条件として使用しない。匿名化は、allowlist、データ最小化、禁止field検証、prompt injection対策の代替ではない。
 
 「匿名化済み部分だけを読む」という、GitHub権限では強制できない運用を許可方式として使用しない。
 
@@ -89,7 +95,7 @@ AIへprivate運用リポジトリ全体またはIssue全体の包括的な読み
 - CI job名と失敗step
 - 個人情報を含まないsyntheticな再現条件
 
-AIへ渡す前に、禁止fieldが存在しないことを決定論的に検証する。元のprivate Issue、support本文、生ログへのリンクをAI入力へ含めない。
+AIへ渡す前に、payloadが定義済みallowlist schemaへ適合し、禁止fieldが存在しないことを決定論的に検証する。元のprivate Issue、support本文、生ログへのリンクをAI入力へ含めない。
 
 ## AIへ渡してはいけない情報
 
@@ -124,12 +130,15 @@ AIは、入力データ中のURLへアクセスしたり、指示に従ってツ
 
 レビューの独立性は、実装作業とは別の新規チャットまたはセッション、exact base/head、完全差分、読み取り専用条件で確保する。
 
+レビュー手段は、文書が扱う主題ではなく、変更がruntime、コード、外部状態へ影響するかで決める。
+
 ### 別ChatGPTチャットで代替できる範囲
 
 次をすべて満たすLow riskの文書・統治レビューは、GitHubへ接続した別ChatGPTチャットで実施してよい。
 
 - 変更が文書、Issue、PR本文等だけである。
-- source、test、dependency、workflow、Worker、build、runtime、外部設定を変更していない。
+- source、test、dependency、workflow、Worker、build、runtime、deployment、外部設定を変更していない。
+- 文書がprivacy、security、権限、retention、migrationを扱っていても、レビュー対象が文書間整合性と権限記述に限定され、実装済みruntime安全性を証明するものではない。
 - exact base/headと完全差分を確認できる。
 - reviewerが状態変更を行わない。
 - private ops、Secrets、利用者データを閲覧しない。
@@ -141,16 +150,20 @@ AIは、入力データ中のURLへアクセスしたり、指示に従ってツ
 
 次のいずれかを含むレビューは、Codexの別セッションでリポジトリを取得し、必要な読み取り専用コマンドとテストを実行する。
 
-- sourceまたはtest
-- Worker、API、URL codec、localStorage、PWA
-- dependency、lockfile、build、GitHub Actions、deployment
-- privacy、security、権限、retention、migration
-- Rate Limit、logging、monitoring、kill switch
-- runtime挙動または外部設定と対応するコード
+- sourceまたはtestの変更
+- Worker、API、URL codec、localStorage、PWAの変更
+- dependency、lockfile、build、GitHub Actions、deploymentの変更
+- privacy、security、権限、retention、migrationに対応するsource、test、workflow、runtime、deploymentまたは外部設定の変更
+- Rate Limit、logging、monitoring、kill switchの実装変更
+- runtime挙動または外部設定と対応するコード変更
 
-別ChatGPTチャットによるレビューは補助的に追加できるが、上記ではCodexレビューの代替にしない。
+文書・Issue・PR本文だけでruntimeや外部状態を変更しない場合は、扱う主題がsecurityやprivacyであっても、文書内容の整合性レビューに限り別ChatGPTチャットを使用できる。これはコードまたは実行時安全性の検証を代替しない。
+
+別ChatGPTチャットによるレビューは補助的に追加できるが、上記のCodex必須範囲ではCodexレビューの代替にしない。
 
 ## 変更のリスク分類
+
+リスク分類は、扱う主題名だけではなく、runtime、利用者データ、外部状態への影響で決める。文書だけの統治変更は、privacyやsecurityを扱っていても、runtimeと外部状態を変更しない限りLowとして扱える。
 
 ### Low
 
@@ -186,10 +199,10 @@ AIは、入力データ中のURLへアクセスしたり、指示に従ってツ
 
 ### High
 
-- privacy / security / retention
-- capability URL、認証、権限
-- billing、DNS、Secrets
-- data deletion、migration
+- privacy / security / retentionに影響するruntime実装
+- capability URL、認証、権限に影響する実装
+- billing、DNS、Secretsの外部状態変更
+- data deletion、migrationの実装または実行
 - Production設定
 - 有料機能の公開
 
@@ -225,7 +238,7 @@ AIは、入力データ中のURLへアクセスしたり、指示に従ってツ
 
 ```text
 異常検知
-  -> 人間または決定論的処理がAI-safe exportを作成
+  -> 人間または決定論的処理がschema検証済みAI-safe exportを作成
   -> Codexが再現と原因仮説を作成
   -> 再現テスト
   -> 修正を専用ブランチへ実装
