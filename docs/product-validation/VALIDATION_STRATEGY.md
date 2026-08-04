@@ -149,6 +149,8 @@ Public Release開始前に、次を事前固定して満たす。
 
 商品名、条件本文、写真、共有URL、capability tokenは収集しない。
 
+実験記録をAIへ渡す場合も、private ops repositoryを直接読ませず、禁止fieldが存在しないAI-safe exportへ変換する。
+
 ## 効果の分解
 
 成功時は、次を区別する。
