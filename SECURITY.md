@@ -24,7 +24,7 @@ Do not include any of the following in public content:
 
 Until a dedicated private reporting channel is published, contact the repository owner through a private channel available from the owner's GitHub profile. Provide only the minimum information needed to establish contact. Do not send live Secrets or user data in the first message.
 
-If no suitable private channel is available, create a public Issue containing only the title `Security contact requested` and no technical details. The repository owner will arrange a private follow-up channel.
+If no suitable private channel is available, create a public Issue containing only the title `Security contact requested` and no technical details. The repository owner will arrange a private follow-up channel. The existence of a private operations repository does not make it a public vulnerability-reporting endpoint.
 
 ## Useful report contents
 
