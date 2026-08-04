@@ -32,7 +32,7 @@ Codexへ許可できる操作:
 - リスク分類とrollback案の作成
 - 顧客回答、事故連絡、返金判断等の下書き作成
 
-AIへprivate運用リポジトリ全体またはIssue全体の包括的な読み取り権限を与えない。AI-safe情報は、次のいずれかの方法で明示的に切り出す。
+AIへprivate運用リポジトリ全体またはIssue全体の包括的な読み取り権限を与えない。private `takami0928/otsukai-ops`は運用者向けの記録先であり、AIの直接データソースではない。AI-safe情報は、次のいずれかの方法で明示的に切り出す。
 
 - 人間がallowlist schemaへ転記したJSON
 - 決定論的な処理が検証して生成したexport
