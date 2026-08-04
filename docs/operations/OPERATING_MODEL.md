@@ -6,7 +6,7 @@ Status: approved direction, implementation tracked by Issue #56
 
 本サービスは、家庭内の買い物依頼を安全に共有し、普段買い物を担当しない家族が一人で買い物を完了できる状態を支援する。
 
-運用上の目標はAIによる無人経営ではない。通常時は決定論的な自動化で維持し、異常時は安全に縮退し、Codexが調査・修正PR作成まで担当し、人間は本番・金銭・個人情報・秘密情報・法務の判断だけを行う「例外駆動型の個人運用」とする。
+運用上の目標はAIによる無人経営ではない。通常時は決定論的な自動化で維持し、異常時は安全に縮退し、Codexが調査・修正Draft PR作成まで担当し、人間は本番・金銭・個人情報・秘密情報・法務に関する判断と状態変更を自分で実行する「例外駆動型の個人運用」とする。
 
 ## 不変条件
 
@@ -15,7 +15,8 @@ Status: approved direction, implementation tracked by Issue #56
 - OpenAI、Google、Cloudflareの一部機能が停止しても、固定依頼の閲覧と端末内購入進捗を可能な限り継続する。
 - 公開リポジトリへ利用者情報、秘密情報、capability URL、実写真、実依頼本文を保存しない。
 - AIへCloudflare、決済、Secrets、Productionデータの直接権限を与えない。
-- Production変更、返金、データ削除、Secret変更、法務対応は人間の明示承認を必要とする。
+- 人間の承認があっても、AIはmerge、Production反映、外部設定変更、顧客送信、返金、解約、データ削除、事故通知を実行しない。
+- merge、Production変更、返金、データ削除、Secret変更、顧客連絡、法務対応は権限を持つ人間が自分の操作として実行する。
 - 障害時に自動化するのは修正ではなく、安全停止、縮退、証拠収集である。
 
 ## 4層構成
@@ -60,45 +61,52 @@ Status: approved direction, implementation tracked by Issue #56
 Codexの責務:
 
 - IssueとCI結果の整理
-- 匿名化された障害サマリーの分析
+- AI-safe形式へ明示的にexportされた障害サマリーの分析
 - 再現テストの追加
 - 修正実装
 - Draft PR作成
 - 文書更新
 - 別コンテキストでの読み取り専用レビュー
+- merge、Production反映、顧客返信等の手順案・文案の作成
 
 Codexに許可しないこと:
 
-- 自動merge
-- Production deploy
-- Cloudflare設定変更
-- DNS変更
+- pull requestのmerge、auto-merge、merge queue投入
+- Production deploy、Production workflowの起動・承認・再実行
+- Cloudflare、GitHub Environment、DNS等の外部設定変更
 - Secretの閲覧・変更
-- 決済操作
+- 決済、返金、解約
 - 利用者データの閲覧・削除
-- 顧客への自動返信
+- 顧客、参加者、報告者への送信
+- セキュリティ事故の公表・通知
+
+Codexへprivate運用リポジトリ全体の読み取り権限を与えない。人間または決定論的処理がallowlist schemaへ変換したAI-safe exportだけを入力とする。
 
 ### 4. 人間統治層
 
-人間が保持する責任:
+人間が判断し、自分で実行する責任:
 
-- Production反映の最終承認
+- pull requestのmerge
+- Production反映、停止、再開、rollback
 - Cloudflare / GitHub / DNS / 決済の設定変更
 - Secretの追加、失効、ローテーション
 - Durable Object migration
 - 返金、解約、課金判断
-- 個人情報を含む問い合わせ対応
-- セキュリティ事故の評価と通知
-- 規約、プライバシーポリシー、特商法表示
+- 個人情報を含む問い合わせ対応と送信
+- セキュリティ事故の評価、公表、通知
+- データ削除・復旧
+- 規約、プライバシーポリシー、特商法表示の確定・公開
 - サービス継続・停止判断
+
+人間はAIの提案を利用できるが、AIへ最終操作を委任しない。
 
 ## 提供チャネル
 
 単一コードベースを維持し、機能の提供対象を分離する。
 
-### Stable
+### Stable Free Core
 
-一般および家庭内で使う無料コア。
+現在利用者へ提供中の無料コア。最新`main`ではなく、Productionへdeploy済みの特定releaseまたはcommitを指す。
 
 - 固定依頼
 - URL共有
@@ -114,7 +122,7 @@ Codexに許可しないこと:
 
 - 実験中であることを明示する。
 - 通常公開へ自動昇格しない。
-- 失敗時はStableへ戻せる。
+- 失敗時はStable Free Coreへ戻せる。
 
 ### Closed Alpha
 
@@ -127,11 +135,20 @@ Codexに許可しないこと:
 
 ### Paid Beta
 
-支払い意思と繰り返し利用が確認された後の有料検証。
+Closed Alphaの完了証拠と支払い意思が確認された後の、人数・期間を限定した有料検証。
 
 - 最初は単一商品、単一価格、一回払いとする。
 - 課金基盤の自動化より先に、運用と価値を検証する。
 - 無料コアを人質にしない。
+- 一般公開とは別段階であり、Paid Betaの成功だけで自動的に一般公開しない。
+
+### Public Release / General Availability
+
+Paid Beta後に、有料機能または補助機能を通常の公開導線へ提供する段階。
+
+開始には、事前に固定した利用実績、信頼性、費用、サポート負荷、法務、緊急停止、7日不在耐性の基準をすべて満たす必要がある。一般公開後も個人で維持できない場合は開始しない。
+
+Stable Free Coreの継続と、有料・補助機能のPublic Releaseを同一の判断として扱わない。
 
 ## 機能ライフサイクル
 
@@ -140,10 +157,11 @@ Codexに許可しないこと:
 - `personal-experiment`: 家庭内でのみ試す。
 - `product-candidate`: 他家庭にも再現する可能性がある。
 - `alpha-approved`: 外部αへ出すための安全・説明・計測条件を満たす。
-- `public-stable`: 一般利用で維持する責任を受け入れた。
+- `paid-beta-approved`: 有料βの非免除条件と外部検証ゲートを満たす。
+- `public-stable`: Public Release基準を満たし、一般利用で維持する責任と実運用能力が確認されている。
 - `retired`: 利用価値、保守性、安全性の理由で停止する。
 
-家庭内で役立ったことだけを理由に`public-stable`へ昇格させない。
+家庭内で役立ったこと、支払いが一件発生したこと、運用者が責任を受け入れたことだけを理由に`paid-beta-approved`または`public-stable`へ昇格させない。
 
 ## 通常運用の目標
 
@@ -153,14 +171,14 @@ Codexに許可しないこと:
 - 週次の人間作業を原則30〜60分以内に収める。
 - サポートをメールまたはフォームへ限定し、即時対応を約束しない。
 - 依存更新と低優先度Issueを週次でまとめて処理する。
-- Productionリリースは必要時だけ行う。
+- Productionリリースは必要時だけ人間が実行する。
 - 運用者が7日不在でも無料コアが継続し、費用が暴走せず、補助機能が安全に停止または縮退する。
 
 ## 非公開運用領域
 
 公開`otsukai`リポジトリはコード、一般設計、公開可能なRunbookだけを正本とする。
 
-将来作成するprivate `takami0928/otsukai-ops`では、匿名化された次の運用情報を管理する。
+private `takami0928/otsukai-ops`では、次の運用記録を匿名コードと最小要約で管理する。
 
 - incident
 - support
@@ -169,14 +187,16 @@ Codexに許可しないこと:
 - security
 - weekly operations report
 
-氏名、メールアドレス、実写真、共有URL、capability token、Secretはprivate Issueにも原則記録しない。必要な情報は専用の安全な保管先に置き、Issueには匿名コードと最小要約だけを残す。
+氏名、メールアドレス、実写真、共有URL、capability token、Secretはprivate Issueにも原則記録しない。必要な情報は専用の安全な保管先に置く。
+
+AIはprivate repositoryまたはprivate Issueを直接読まない。AIへ渡す場合は、人間または決定論的処理が禁止fieldの不存在を確認し、AI-safe schemaへ明示的にexportする。
 
 ## 費用方針
 
 - 現在はChatGPT Plusのみを使用する。
 - Codex利用量が実際に業務を阻害するまで上位プランへ変更しない。
 - 異種モデルレビューを有料βの必須条件にしない。
-- 高リスク変更は、別コンテキストのCodexレビュー、CI、決定論的チェックリスト、staging、人間承認で補う。
+- 高リスク変更は、別コンテキストのCodexレビュー、CI、決定論的チェックリスト、staging、人間によるmergeとProduction操作で補う。
 - AI費用をサービスの実行経路へ組み込まない。
 
 ## 変更管理
