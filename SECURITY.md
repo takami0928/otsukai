@@ -6,7 +6,7 @@ This project is under active development. The primary user-facing supported stat
 
 The latest `main` branch is a development and investigation target. It is not automatically a deployed or user-facing supported release. It may contain changes that are not yet deployed, remain disabled, or are available only in staging.
 
-Experimental photo, live-request, handwriting, Family Lab, Closed Alpha, and Paid Beta paths may remain disabled, invitation-only, or restricted to a separately identified deployed release.
+Experimental photo, live-request, handwriting, Family Lab, Closed Alpha, and Paid Beta paths may remain disabled, invitation-only, or restricted to a separately identified deployed release. Public Release / General Availability is a separate deployed environment or release state for generally available paid or optional features and must be identified independently from the Stable Free Core.
 
 ## Reporting a vulnerability
 
@@ -34,7 +34,7 @@ After a private channel is established, include:
 - whether the affected code also exists on `main`
 - prerequisites and impact
 - minimal reproduction steps using synthetic data
-- whether the issue affects the Stable Free Core, Family Lab, Closed Alpha, Paid Beta, or disabled path
+- whether the issue affects the Stable Free Core, Family Lab, Closed Alpha, Paid Beta, Public Release / General Availability, or a disabled path
 - evidence that does not contain Secrets or user content
 - suggested mitigation, when available
 
