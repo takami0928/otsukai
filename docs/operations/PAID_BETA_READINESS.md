@@ -6,13 +6,15 @@ Status: approved direction, implementation tracked by Issue #56
 
 有料βは、機能が多いことではなく、利用者へ料金を請求しても個人で安全に運用できることを確認してから開始する。
 
-本書の非免除条件を満たさない状態で、課金、一般公開、永続データ保管を開始しない。有料βと一般公開は別の開始判定とする。
+有料βと一般公開は別の開始判定とする。有料β開始ゲートはSections 1〜13、Public Release / General AvailabilityゲートはSection 14だけを対象とする。
 
 ## 判定ルール
 
-### 非免除条件
+### 有料βの非免除条件
 
-本書のチェック項目は、明示的に「有料βでは非該当」と記載されているものを除き、すべて非免除条件である。特に次は人間のリスク受容によって免除できない。
+有料β開始時は、Sections 1〜12の全チェック項目とSection 13の開始条件を非免除条件とする。Section 14はPaid Beta開始後の実績を要求するため、有料β開始判定の対象外である。
+
+特に次は人間のリスク受容によって免除できない。
 
 - 顧客安全と無料コアの継続
 - privacy、security、保存期間、削除
@@ -23,7 +25,13 @@ Status: approved direction, implementation tracked by Issue #56
 - AI権限境界
 - 未解決P0 / P1がないこと
 
-チェック項目を「少人数βだから」「運用者が受容したから」という理由で免除しない。
+非免除条件のいずれかに影響する未解決P2は、修正と再レビューが完了するまで受容できない。チェック項目を「少人数βだから」「運用者が受容したから」という理由で免除しない。
+
+### Public Releaseの非免除条件
+
+Public Release / General Availability開始時は、Section 14の全チェック項目と同節の判定手続きを非免除条件とする。Paid Beta開始時にSection 14を完了扱いまたは任意の非該当扱いにしてはならない。
+
+Section 14の非免除条件に影響する未解決P0 / P1 / P2、または重大なsecurity / privacy incidentがある状態では一般公開しない。
 
 ### 延期可能な項目
 
@@ -206,10 +214,10 @@ Status: approved direction, implementation tracked by Issue #56
 
 有料βを開始できるのは、以下をすべて満たす場合だけとする。
 
-1. 本書の非免除チェック項目をすべて完了している。
+1. Sections 1〜12の全チェック項目を完了している。Section 14は有料β開始判定の対象外である。
 2. Phase 1とPhase 2の事前固定した基準を満たし、証拠を記録している。
 3. 未解決P0 / P1がない。
-4. 未解決P2がある場合、安全・privacy・security・課金・Production統制へ影響しない根拠、責任者、期限があり、人間が明示的に受容している。
+4. Sections 1〜12の非免除条件に影響する未解決P2がない。影響しないP2だけ、根拠、責任者、期限を記録したうえで人間が受容できる。
 5. 有料βの商品と価格に、Closed Alphaとは別の利用者から実際の申込がある。
 6. merge、Production変更、緊急停止、返金、顧客連絡を人間が実行できる。
 7. 延期項目を開始前に固定し、利用者影響と代替手順を記録している。
@@ -218,17 +226,17 @@ Status: approved direction, implementation tracked by Issue #56
 
 ## 14. Public Release / General Availability判定
 
-Paid Betaの開始または成功は、一般公開の承認ではない。有料・補助機能を通常の公開導線へ出す前に、別のPublic Release判定を行う。
-
-初期基準:
+Section 14は有料β開始判定の対象外であり、Paid Beta開始後の実績を用いて独立に判定する。Paid Betaの開始または成功だけでは一般公開を承認しない。有料・補助機能を通常の公開導線へ出す前に、次をすべて満たす。
 
 - [ ] Paid Betaを事前に定めた期間運用している。
 - [ ] Paid Betaの対象世帯数、利用回数、継続率、終了理由を記録している。
-- [ ] 未解決P0 / P1と重大なsecurity / privacy incidentがない。
+- [ ] 未解決P0 / P1 / P2と重大なsecurity / privacy incidentがない。
 - [ ] 変動原価とサポート時間が、一般公開後も個人で維持可能である。
 - [ ] 7日不在訓練とProduction rollback訓練を再確認している。
 - [ ] 一般公開後の価格、規約、privacy、返金、終了方針を公開している。
 - [ ] 一般公開向けのRate Limit、費用上限、停止手順を検証している。
 - [ ] 一般公開後もStable Free Coreを独立して維持できる。
+
+Public Releaseは、Section 14の全項目と、別に定める判定記録を人間が確認し、人間が公開操作を実行した場合だけ開始する。
 
 具体的な期間、世帯数、継続率、原価上限、サポート時間上限はPaid Beta開始前に別の判断記録で固定し、結果確認後に緩和しない。
