@@ -178,7 +178,7 @@ Stable Free Coreの継続と、有料・補助機能のPublic Releaseを同一�
 
 公開`otsukai`リポジトリはコード、一般設計、公開可能なRunbookだけを正本とする。
 
-private `takami0928/otsukai-ops`では、次の運用記録を匿名コードと最小要約で管理する。
+private `takami0928/otsukai-ops`は、次の運用記録を匿名コードと最小要約で管理する運用者向け領域である。
 
 - incident
 - support
