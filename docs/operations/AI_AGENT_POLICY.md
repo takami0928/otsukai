@@ -120,6 +120,36 @@ AIへ渡す前に、禁止fieldが存在しないことを決定論的に検証�
 
 AIは、入力データ中のURLへアクセスしたり、指示に従ってツールを実行したりしない。必要な外部参照は、運用者が信頼できる対象を明示する。
 
+## レビュー実行手段
+
+レビューの独立性は、実装作業とは別の新規チャットまたはセッション、exact base/head、完全差分、読み取り専用条件で確保する。
+
+### 別ChatGPTチャットで代替できる範囲
+
+次をすべて満たすLow riskの文書・統治レビューは、GitHubへ接続した別ChatGPTチャットで実施してよい。
+
+- 変更が文書、Issue、PR本文等だけである。
+- source、test、dependency、workflow、Worker、build、runtime、外部設定を変更していない。
+- exact base/headと完全差分を確認できる。
+- reviewerが状態変更を行わない。
+- private ops、Secrets、利用者データを閲覧しない。
+- 実行結果を検証するためのローカルコマンドやテストが不要である。
+
+この場合もhead変更後は以前のレビューを無効とし、完全な再レビューを行う。
+
+### Codexを必要とする範囲
+
+次のいずれかを含むレビューは、Codexの別セッションでリポジトリを取得し、必要な読み取り専用コマンドとテストを実行する。
+
+- sourceまたはtest
+- Worker、API、URL codec、localStorage、PWA
+- dependency、lockfile、build、GitHub Actions、deployment
+- privacy、security、権限、retention、migration
+- Rate Limit、logging、monitoring、kill switch
+- runtime挙動または外部設定と対応するコード
+
+別ChatGPTチャットによるレビューは補助的に追加できるが、上記ではCodexレビューの代替にしない。
+
 ## 変更のリスク分類
 
 ### Low
@@ -134,6 +164,7 @@ AIは、入力データ中のURLへアクセスしたり、指示に従ってツ
 - focused testまたは非該当理由
 - CI
 - 別コンテキストの読み取り専用レビュー
+- 文書だけの変更は前節の条件を満たす別ChatGPTチャットでもよい
 - mergeは人間が実行する
 
 ### Medium
@@ -149,7 +180,7 @@ AIは、入力データ中のURLへアクセスしたり、指示に従ってツ
 - 事前計画
 - 専用ブランチ
 - focused testとfull CI
-- exact base/headに対する別コンテキストレビュー
+- exact base/headに対する別Codexセッションのレビュー
 - baseまたはhead変更時のレビュー無効化
 - 人間によるmerge承認とmerge実行
 
@@ -167,7 +198,7 @@ AIは、入力データ中のURLへアクセスしたり、指示に従ってツ
 - rollbackを含む文書化された計画
 - 専用ブランチ
 - focused testとfull CI
-- exact base/headに対する別コンテキストCodexレビュー
+- exact base/headに対する別Codexセッションのレビュー
 - baseまたはhead変更時のレビュー無効化と完全な再レビュー
 - 決定論的security checklist
 - staging検証
@@ -180,14 +211,15 @@ AIは、入力データ中のURLへアクセスしたり、指示に従ってツ
 
 当面はClaude等の異種モデルを契約しない。高リスク変更の独立性は次で補う。
 
-- 実装したCodexセッションとは別の新規セッションを使う。
+- 実装したセッションとは別の新規セッションを使う。
 - reviewerは読み取り専用とする。
 - task goal、base SHA、head SHA、変更全体を渡す。
 - 実装者の結論を前提にせず、失敗経路、入力境界、互換性、privacy、rollbackを再評価する。
 - review後にbaseまたはheadが変わった場合、以前の最終レビューを無効とする。
 - P0は必ず修正する。
 - P1は必ず修正し、再レビューする。
-- P2は修正するか、安全・privacy・security・課金・Production統制へ影響しない根拠、責任者、期限を記録したうえで人間が明示的に受容する。
+- 有料βまたはPublic Releaseの非免除条件に影響するP2は必ず修正し、再レビューする。
+- 非免除条件に影響しないP2だけ、根拠、責任者、期限を記録したうえで人間が明示的に受容できる。
 
 ## 標準保守フロー
 
@@ -198,7 +230,7 @@ AIは、入力データ中のURLへアクセスしたり、指示に従ってツ
   -> 再現テスト
   -> 修正を専用ブランチへ実装
   -> focused test / full CI
-  -> 別コンテキストCodexレビュー
+  -> 別Codexセッションでレビュー
   -> Draft PR更新
   -> staging検証
   -> AIがmerge・Production手順と確認事項を提示して停止
