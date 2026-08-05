@@ -1,4 +1,7 @@
-import type { TurnstileTokenProvider } from '../handwriting/turnstile'
+import type {
+  TurnstileClientDiagnosticStage,
+  TurnstileTokenProvider,
+} from '../handwriting/turnstile'
 import {
   MAX_PRODUCT_PHOTO_BYTES,
 } from './imageProcessing'
@@ -14,8 +17,18 @@ export type ProductPhotoUploadErrorCode =
   | 'origin-not-allowed'
   | 'invalid-photo'
   | 'limit-reached'
+  | 'network-failed'
   | 'timeout'
   | 'service-unavailable'
+
+export type ProductPhotoClientDiagnosticStage =
+  | TurnstileClientDiagnosticStage
+  | 'photo-fetch-started'
+  | 'photo-fetch-failed'
+
+export interface ProductPhotoClientDiagnosticsReporter {
+  record(stage: ProductPhotoClientDiagnosticStage): void
+}
 
 export class ProductPhotoUploadError extends Error {
   constructor(
@@ -165,7 +178,16 @@ export class WorkerProductPhotoUploadProvider
     private readonly turnstile: TurnstileTokenProvider,
     private readonly fetchImplementation: typeof fetch = fetch,
     private readonly validationSessionToken?: string,
+    private readonly diagnostics?: ProductPhotoClientDiagnosticsReporter,
   ) {}
+
+  private recordStage(stage: ProductPhotoClientDiagnosticStage): void {
+    try {
+      this.diagnostics?.record(stage)
+    } catch {
+      // Diagnostics must never change the upload flow.
+    }
+  }
 
   async upload(
     photos: readonly PendingPhoto[],
@@ -173,7 +195,15 @@ export class WorkerProductPhotoUploadProvider
   ): Promise<void> {
     validatePhotos(photos)
     try {
-      const token = await this.turnstile.getToken({ signal: options.signal })
+      let token: string
+      try {
+        token = await this.turnstile.getToken({ signal: options.signal })
+      } catch (error) {
+        if (options.signal?.aborted) {
+          throw new DOMException('The operation was aborted.', 'AbortError')
+        }
+        throw new ProductPhotoUploadError('auth-failed')
+      }
       const body = new FormData()
       body.append('turnstileToken', token)
       body.append(
@@ -189,19 +219,29 @@ export class WorkerProductPhotoUploadProvider
         body.append('photo', photo.blob, 'photo.jpg')
       }
 
-      const response = await this.fetchImplementation(uploadUrl(this.endpoint), {
-        method: 'POST',
-        ...(this.validationSessionToken
-          ? {
-              headers: {
-                'X-Otsukai-Validation-Session':
-                  this.validationSessionToken,
-              },
-            }
-          : {}),
-        body,
-        signal: options.signal,
-      })
+      let response: Response
+      this.recordStage('photo-fetch-started')
+      try {
+        response = await this.fetchImplementation(uploadUrl(this.endpoint), {
+          method: 'POST',
+          ...(this.validationSessionToken
+            ? {
+                headers: {
+                  'X-Otsukai-Validation-Session':
+                    this.validationSessionToken,
+                },
+              }
+            : {}),
+          body,
+          signal: options.signal,
+        })
+      } catch (error) {
+        if (options.signal?.aborted) {
+          throw new DOMException('The operation was aborted.', 'AbortError')
+        }
+        this.recordStage('photo-fetch-failed')
+        throw new ProductPhotoUploadError('network-failed')
+      }
       const requestId = safeRequestId(response)
       if (!response.ok) {
         throw mapUploadFailure(

@@ -12,6 +12,7 @@ import {
   ProductPhotoUploadError,
   type ProductPhotoUploadProvider,
 } from '../features/productPhotos/ProductPhotoUploadProvider'
+import type { TurnstileApi } from '../features/handwriting/turnstile'
 import {
   createEmptyHouseholdCatalog,
   updateBaseProduct,
@@ -76,6 +77,8 @@ describe('CreateRequestPage product photo sharing', () => {
     window.history.replaceState({}, '', '/')
     delete (window.navigator as unknown as Record<string, unknown>).share
     delete (window.navigator as unknown as Record<string, unknown>).clipboard
+    delete window.turnstile
+    vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
 
@@ -155,6 +158,7 @@ describe('CreateRequestPage product photo sharing', () => {
     upload?: ProductPhotoUploadProvider['upload']
     enabled?: boolean
     validationSessionToken?: string
+    useDefaultUploader?: boolean
   } = {}): Promise<void> {
     const uploader: ProductPhotoUploadProvider = {
       upload: input.upload ?? vi.fn(async () => undefined),
@@ -176,7 +180,9 @@ describe('CreateRequestPage product photo sharing', () => {
                     : {}),
                 }
           }
-          productPhotoUploadProvider={uploader}
+          productPhotoUploadProvider={
+            input.useDefaultUploader ? undefined : uploader
+          }
           processProductPhoto={input.processPhoto ?? (async () => processedPhoto())}
           createProductPhotoPreviewUrl={() => 'blob:compressed-preview'}
           revokeProductPhotoPreviewUrl={revokePreviewUrl}
@@ -329,11 +335,87 @@ describe('CreateRequestPage product photo sharing', () => {
     await click(button('LINEで送る'))
 
     expect(container.textContent).toContain(expectedMessage)
+    expect(container.textContent).toContain(`エラー分類: ${code}`)
     expect(container.textContent).toContain(
       '問い合わせID: safe-photo-request-123',
     )
     expect(container.textContent).not.toContain('SERVICE_UNAVAILABLE')
     expect(share).not.toHaveBeenCalled()
+  })
+
+  it('shows auth-failed and the safe client stage when Turnstile returns an error', async () => {
+    const validationSessionToken = `mv1_${'V'.repeat(32)}`
+    let renderOptions: Parameters<TurnstileApi['render']>[1] | undefined
+    const fetchImplementation = vi.fn()
+    vi.stubGlobal('fetch', fetchImplementation)
+    window.turnstile = {
+      render: vi.fn((_container, options) => {
+        renderOptions = options
+        return 'photo-widget'
+      }),
+      execute: vi.fn(() => renderOptions?.['error-callback']()),
+      reset: vi.fn(),
+      remove: vi.fn(),
+    }
+    await renderPage({
+      useDefaultUploader: true,
+      validationSessionToken,
+    })
+    await selectMilkPhoto()
+    await click(button('確認へ'))
+    await click(button('LINEで送る'))
+
+    expect(
+      container.querySelector('[aria-label="写真共有の認証確認"]'),
+    ).not.toBeNull()
+    expect(renderOptions).toMatchObject({
+      action: 'product_photo_upload',
+      sitekey: 'public-site-key',
+    })
+    expect(fetchImplementation).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('エラー分類: auth-failed')
+    expect(container.textContent).toContain(
+      '処理段階: turnstile-token-failed',
+    )
+    expect(container.textContent).not.toContain('問い合わせID:')
+    expect(container.textContent).not.toContain(validationSessionToken)
+    expect(container.textContent).not.toContain('public-site-key')
+  })
+
+  it('shows network-failed after a token is received but fetch rejects', async () => {
+    const validationSessionToken = `mv1_${'V'.repeat(32)}`
+    let renderOptions: Parameters<TurnstileApi['render']>[1] | undefined
+    const fetchImplementation = vi.fn(async () => {
+      throw new TypeError('private network detail')
+    })
+    vi.stubGlobal('fetch', fetchImplementation)
+    window.turnstile = {
+      render: vi.fn((_container, options) => {
+        renderOptions = options
+        return 'photo-widget'
+      }),
+      execute: vi.fn(() => renderOptions?.callback('private-token')),
+      reset: vi.fn(),
+      remove: vi.fn(),
+    }
+    await renderPage({
+      useDefaultUploader: true,
+      validationSessionToken,
+    })
+    await selectMilkPhoto()
+    await click(button('確認へ'))
+    await click(button('LINEで送る'))
+
+    expect(fetchImplementation).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('エラー分類: network-failed')
+    expect(container.textContent).toContain(
+      '処理段階: photo-fetch-failed',
+    )
+    expect(container.textContent).not.toContain('問い合わせID:')
+    expect(container.textContent).not.toContain('private-token')
+    expect(container.textContent).not.toContain('private network detail')
+    expect(container.textContent).not.toContain(validationSessionToken)
+    expect(container.textContent).not.toContain('public-site-key')
   })
 
   it('clears a previous correlation ID while an upload retry is running', async () => {

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { HandwritingImportError } from '../handwriting/errors'
 import type { TurnstileTokenProvider } from '../handwriting/turnstile'
 import {
   ProductPhotoUploadError,
@@ -34,6 +35,7 @@ function turnstile(): TurnstileTokenProvider {
 describe('WorkerProductPhotoUploadProvider', () => {
   it('gets one token and uploads a strict multipart batch', async () => {
     const challenge = turnstile()
+    const record = vi.fn()
     const fetchImplementation = vi.fn(async (input, init) => {
       expect(String(input)).toBe('https://worker.example/v1/photos/batch')
       expect(init?.method).toBe('POST')
@@ -52,11 +54,14 @@ describe('WorkerProductPhotoUploadProvider', () => {
       'https://worker.example/',
       challenge,
       fetchImplementation,
+      undefined,
+      { record },
     )
 
     await expect(provider.upload([photo()])).resolves.toBeUndefined()
     expect(challenge.getToken).toHaveBeenCalledTimes(1)
     expect(challenge.reset).toHaveBeenCalledTimes(1)
+    expect(record.mock.calls).toEqual([['photo-fetch-started']])
   })
 
   it('adds a verified validation session only as the dedicated request header', async () => {
@@ -90,6 +95,108 @@ describe('WorkerProductPhotoUploadProvider', () => {
     ).rejects.toBeInstanceOf(ProductPhotoUploadError)
     expect(challenge.getToken).not.toHaveBeenCalled()
     expect(fetchImplementation).not.toHaveBeenCalled()
+  })
+
+  it('classifies a Turnstile failure before fetch as auth-failed', async () => {
+    const challenge = turnstile()
+    vi.mocked(challenge.getToken).mockRejectedValue(
+      new HandwritingImportError('auth-failed'),
+    )
+    const fetchImplementation = vi.fn()
+    const provider = new WorkerProductPhotoUploadProvider(
+      'https://worker.example/',
+      challenge,
+      fetchImplementation,
+    )
+
+    await expect(provider.upload([photo()])).rejects.toMatchObject({
+      code: 'auth-failed',
+      requestId: undefined,
+    })
+    expect(fetchImplementation).not.toHaveBeenCalled()
+    expect(challenge.reset).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not treat an AbortError as cancellation without an aborted signal', async () => {
+    const challenge = turnstile()
+    vi.mocked(challenge.getToken).mockRejectedValue(
+      new DOMException('not user cancellation', 'AbortError'),
+    )
+    const fetchImplementation = vi.fn()
+    const provider = new WorkerProductPhotoUploadProvider(
+      'https://worker.example/',
+      challenge,
+      fetchImplementation,
+    )
+
+    await expect(provider.upload([photo()])).rejects.toMatchObject({
+      code: 'auth-failed',
+    })
+    expect(fetchImplementation).not.toHaveBeenCalled()
+  })
+
+  it('classifies a fetch rejection after token acquisition as network-failed', async () => {
+    const record = vi.fn()
+    const provider = new WorkerProductPhotoUploadProvider(
+      'https://worker.example/',
+      turnstile(),
+      vi.fn(async () => {
+        throw new TypeError('private network detail')
+      }) as typeof fetch,
+      undefined,
+      { record },
+    )
+
+    await expect(provider.upload([photo()])).rejects.toMatchObject({
+      code: 'network-failed',
+      requestId: undefined,
+    })
+    expect(record.mock.calls).toEqual([
+      ['photo-fetch-started'],
+      ['photo-fetch-failed'],
+    ])
+    expect(JSON.stringify(record.mock.calls)).not.toContain(
+      'private network detail',
+    )
+  })
+
+  it('maps an AbortError-shaped fetch rejection to network-failed without an aborted signal', async () => {
+    const record = vi.fn()
+    const provider = new WorkerProductPhotoUploadProvider(
+      'https://worker.example/',
+      turnstile(),
+      vi.fn(async () => {
+        throw new DOMException('not user cancellation', 'AbortError')
+      }) as typeof fetch,
+      undefined,
+      { record },
+    )
+
+    await expect(provider.upload([photo()])).rejects.toMatchObject({
+      code: 'network-failed',
+    })
+    expect(record.mock.calls).toEqual([
+      ['photo-fetch-started'],
+      ['photo-fetch-failed'],
+    ])
+  })
+
+  it('does not let a diagnostics reporter failure affect an upload', async () => {
+    const provider = new WorkerProductPhotoUploadProvider(
+      'https://worker.example/',
+      turnstile(),
+      vi.fn(async () =>
+        Response.json({ photos: [{ token, itemKey: 'milk' }] }),
+      ) as typeof fetch,
+      undefined,
+      {
+        record: () => {
+          throw new Error('diagnostics failure')
+        },
+      },
+    )
+
+    await expect(provider.upload([photo()])).resolves.toBeUndefined()
   })
 
   it.each([

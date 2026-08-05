@@ -36,6 +36,7 @@ describe('BrowserTurnstileTokenProvider', () => {
     const api = createApi((options) => options.callback('one-use-token'))
     const container = document.createElement('div')
     const record = vi.fn()
+    const clientRecord = vi.fn()
     const provider = new BrowserTurnstileTokenProvider(
       container,
       'site-key',
@@ -45,6 +46,8 @@ describe('BrowserTurnstileTokenProvider', () => {
         record,
         adoptRequestId: vi.fn(),
       },
+      'handwriting_import',
+      { record: clientRecord },
     )
 
     await expect(provider.getToken()).resolves.toBe('one-use-token')
@@ -66,6 +69,15 @@ describe('BrowserTurnstileTokenProvider', () => {
       'turnstile-token-received',
     ])
     expect(JSON.stringify(record.mock.calls)).not.toContain(
+      'one-use-token',
+    )
+    expect(clientRecord.mock.calls.map(([stage]) => stage)).toEqual([
+      'turnstile-load-started',
+      'turnstile-ready',
+      'turnstile-execute-started',
+      'turnstile-token-received',
+    ])
+    expect(JSON.stringify(clientRecord.mock.calls)).not.toContain(
       'one-use-token',
     )
     provider.reset()
@@ -107,16 +119,55 @@ describe('BrowserTurnstileTokenProvider', () => {
     expect(api.reset).toHaveBeenCalledWith('widget-id')
   })
 
-  it('maps challenge failures without returning a token', async () => {
-    const api = createApi((options) => options['error-callback']())
+  it.each([
+    'error-callback',
+    'timeout-callback',
+    'unsupported-callback',
+  ] as const)('maps %s without returning a token', async (callbackName) => {
+    const api = createApi((options) => options[callbackName]())
+    const record = vi.fn()
     const provider = new BrowserTurnstileTokenProvider(
       document.createElement('div'),
       'site-key',
       async () => api,
+      undefined,
+      'product_photo_upload',
+      { record },
     )
     await expect(provider.getToken()).rejects.toMatchObject({
       code: 'auth-failed',
     })
+    expect(record.mock.calls.map(([stage]) => stage)).toEqual([
+      'turnstile-load-started',
+      'turnstile-ready',
+      'turnstile-execute-started',
+      'turnstile-token-failed',
+    ])
+  })
+
+  it('records a loader failure without exposing the native error', async () => {
+    const record = vi.fn()
+    const provider = new BrowserTurnstileTokenProvider(
+      document.createElement('div'),
+      'site-key',
+      async () => {
+        throw new Error('private loader detail')
+      },
+      undefined,
+      'product_photo_upload',
+      { record },
+    )
+
+    await expect(provider.getToken()).rejects.toMatchObject({
+      code: 'auth-failed',
+    })
+    expect(record.mock.calls).toEqual([
+      ['turnstile-load-started'],
+      ['turnstile-token-failed'],
+    ])
+    expect(JSON.stringify(record.mock.calls)).not.toContain(
+      'private loader detail',
+    )
   })
 
   it('removes its widget on disposal', async () => {
@@ -182,6 +233,7 @@ describe('BrowserTurnstileTokenProvider', () => {
   })
 
   it('maps render and execute exceptions to authentication failure', async () => {
+    const renderRecord = vi.fn()
     const renderFailure: TurnstileApi = {
       render: vi.fn(() => {
         throw new Error('render detail')
@@ -194,12 +246,21 @@ describe('BrowserTurnstileTokenProvider', () => {
       document.createElement('div'),
       'site-key',
       async () => renderFailure,
+      undefined,
+      'product_photo_upload',
+      { record: renderRecord },
     )
     await expect(renderProvider.getToken()).rejects.toMatchObject({
       code: 'auth-failed',
     })
+    expect(renderRecord.mock.calls).toEqual([
+      ['turnstile-load-started'],
+      ['turnstile-ready'],
+      ['turnstile-token-failed'],
+    ])
 
     const executeFailure = createApi(() => undefined)
+    const executeRecord = vi.fn()
     vi.mocked(executeFailure.execute).mockImplementation(() => {
       throw new Error('execute detail')
     })
@@ -207,9 +268,18 @@ describe('BrowserTurnstileTokenProvider', () => {
       document.createElement('div'),
       'site-key',
       async () => executeFailure,
+      undefined,
+      'product_photo_upload',
+      { record: executeRecord },
     )
     await expect(executeProvider.getToken()).rejects.toMatchObject({
       code: 'auth-failed',
     })
+    expect(executeRecord.mock.calls).toEqual([
+      ['turnstile-load-started'],
+      ['turnstile-ready'],
+      ['turnstile-execute-started'],
+      ['turnstile-token-failed'],
+    ])
   })
 })

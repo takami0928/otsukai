@@ -106,6 +106,7 @@ import {
   PRODUCT_PHOTO_TURNSTILE_ACTION,
   ProductPhotoUploadError,
   WorkerProductPhotoUploadProvider,
+  type ProductPhotoClientDiagnosticStage,
   type ProductPhotoUploadProvider,
 } from '../features/productPhotos/ProductPhotoUploadProvider'
 import {
@@ -157,7 +158,10 @@ type CreateRequestPageProps = {
   createLiveRequestItemId?: () => string
 }
 
-function productPhotoUploadErrorMessage(error: unknown): string {
+function productPhotoUploadErrorMessage(
+  error: unknown,
+  clientStage?: ProductPhotoClientDiagnosticStage,
+): string {
   if (!(error instanceof ProductPhotoUploadError)) {
     return '写真を保存できませんでした。再試行するか、写真を外して共有してください。'
   }
@@ -175,15 +179,25 @@ function productPhotoUploadErrorMessage(error: unknown): string {
         return '写真の形式または容量を確認できませんでした。別の写真を選んでください。'
       case 'limit-reached':
         return '写真保存の無料枠または容量上限に達した可能性があります。再試行するか、写真を外して共有してください。'
+      case 'network-failed':
+        return '写真保存サービスへ接続できませんでした。通信状態を確認して、もう一度お試しください。'
       case 'timeout':
         return '写真の保存が時間内に完了しませんでした。再試行するか、写真を外して共有してください。'
       default:
         return '写真保存サービスで問題が発生しました。再試行するか、写真を外して共有してください。'
     }
   })()
-  return error.requestId
-    ? `${message} 問い合わせID: ${error.requestId}`
-    : message
+  const classification = ` エラー分類: ${error.code}`
+  const stage =
+    !error.requestId &&
+    (error.code === 'auth-failed' || error.code === 'network-failed') &&
+    clientStage
+      ? ` 処理段階: ${clientStage}`
+      : ''
+  const requestId = error.requestId
+    ? ` 問い合わせID: ${error.requestId}`
+    : ''
+  return `${message}${classification}${stage}${requestId}`
 }
 
 type CreateMode = 'edit' | 'review'
@@ -307,6 +321,7 @@ export function CreateRequestPage({
   const [defaultLiveRequestApi, setDefaultLiveRequestApi] =
     useState<LiveRequestApi>()
   const shareLockRef = useRef(createRequestShareLock())
+  const photoClientStageRef = useRef<ProductPhotoClientDiagnosticStage>()
   const photoTurnstileContainerRef = useRef<HTMLDivElement>(null)
   const liveTurnstileContainerRef = useRef<HTMLDivElement>(null)
   const pendingPhotos = usePendingProductPhotos({
@@ -365,12 +380,18 @@ export function CreateRequestPage({
     ) {
       return
     }
+    const clientDiagnostics = {
+      record(stage: ProductPhotoClientDiagnosticStage) {
+        photoClientStageRef.current = stage
+      },
+    }
     const turnstile = new BrowserTurnstileTokenProvider(
       photoTurnstileContainerRef.current,
       photoConfig.turnstileSiteKey,
       undefined,
       undefined,
       PRODUCT_PHOTO_TURNSTILE_ACTION,
+      clientDiagnostics,
     )
     setDefaultPhotoUploader(
       new WorkerProductPhotoUploadProvider(
@@ -378,6 +399,7 @@ export function CreateRequestPage({
         turnstile,
         fetch,
         photoConfig.validationSessionToken,
+        clientDiagnostics,
       ),
     )
     return () => turnstile.dispose()
@@ -884,6 +906,7 @@ export function CreateRequestPage({
       return false
     }
     const itemKeys = photos.map((photo) => photo.itemKey)
+    photoClientStageRef.current = undefined
     setShareMessage('')
     setShareStatus('')
     setPhotoUploadFailed(false)
@@ -897,7 +920,14 @@ export function CreateRequestPage({
       pendingPhotos.setPhotoStatus(itemKeys, 'failed')
       setPhotoUploadFailed(true)
       setShareStatus('error')
-      setShareMessage(productPhotoUploadErrorMessage(error))
+      setShareMessage(
+        productPhotoUploadErrorMessage(
+          error,
+          photoConfig.validationSessionToken
+            ? photoClientStageRef.current
+            : undefined,
+        ),
+      )
       return false
     } finally {
       setIsUploadingPhotos(false)
