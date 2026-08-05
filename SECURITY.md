@@ -2,9 +2,9 @@
 
 ## Supported state
 
-This project is under active development. The primary user-facing supported state is the specific release or commit currently deployed to the public Stable Free Core environment.
+This project is under active development. The primary user-facing supported state is the specific release or exact commit whose deployment to the public Stable Free Core environment completed successfully.
 
-The latest `main` branch is a development and investigation target. It is not automatically a deployed or user-facing supported release. It may contain changes that are not yet deployed, remain disabled, or are available only in staging.
+At present, a push to `main` automatically starts the GitHub Pages deployment workflow. That trigger does not make the mutable `main` branch name itself the supported release. A `main` commit may still be pending deployment, have a failed deployment, or contain code paths that remain disabled or restricted. Security reports and operational decisions must identify the exact successfully deployed commit or release.
 
 Experimental photo, live-request, handwriting, Family Lab, Closed Alpha, and Paid Beta paths may remain disabled, invitation-only, or restricted to a separately identified deployed release. Public Release / General Availability is a separate deployed environment or release state for generally available paid or optional features and must be identified independently from the Stable Free Core.
 
