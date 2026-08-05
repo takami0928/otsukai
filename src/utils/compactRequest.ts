@@ -15,6 +15,7 @@ import type { Category, Product } from '../types/product'
 import type { CreateDraftState, ShoppingRequestPayload } from '../types/shopping'
 import { decodeCompressedRequestJson } from './requestPayloadDecoder'
 import { countUserCharacters, truncateUserCharacters } from './textLength'
+import { buildApplicationHashUrl } from './applicationUrls'
 
 const QUANTITY_CODES = '0123456789abcdefghijk'
 const DEFAULT_REQUEST_TITLE = 'おつかい依頼'
@@ -223,10 +224,7 @@ export function encodeCompactRequest(payload: CompactRequestV2): string {
 }
 
 export function buildCompactRequestUrl(baseUrl: string, encoded: string): string {
-  const withoutHash = baseUrl.split('#', 1)[0].replace(/\/$/, '')
-  return withoutHash.includes('?')
-    ? `${withoutHash}#/l/${encoded}`
-    : `${withoutHash}/#/l/${encoded}`
+  return buildApplicationHashUrl(baseUrl, `/l/${encoded}`)
 }
 
 export function buildCompactRequestUrlFromInput(

@@ -110,7 +110,7 @@ describe('CatalogBackupStatus', () => {
       title: 'おつかいアプリの商品リスト復旧用リンク',
     })
     expect(share.mock.calls[0][0].text).toContain(
-      'http://localhost:3000/otsukai/#/catalog/restore/',
+      'http://localhost:3000/#/catalog/restore/',
     )
     expect(container.textContent).toContain(
       '復旧リンクをLINEやメモへ保存しましたか？',

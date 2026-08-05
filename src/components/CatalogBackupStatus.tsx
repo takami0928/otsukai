@@ -6,6 +6,7 @@ import {
 } from '../utils/catalogRecovery'
 import type { CatalogBackupStatus as BackupStatus } from '../utils/catalogFingerprint'
 import { shareText } from '../utils/shareText'
+import { getApplicationBaseUrl } from '../config/application'
 
 type CatalogBackupStatusProps = {
   catalog: HouseholdCatalogV1
@@ -22,7 +23,7 @@ type PendingBackupConfirmation = {
 const RECOVERY_SHARE_TITLE = 'おつかいアプリの商品リスト復旧用リンク'
 
 function getRecoveryBaseUrl(): string {
-  return window.location.href.split('#', 1)[0]
+  return getApplicationBaseUrl()
 }
 
 export function downloadCatalogRecoveryJson(

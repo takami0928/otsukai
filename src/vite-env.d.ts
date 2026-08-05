@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  readonly VITE_PUBLIC_APP_ORIGIN?: string
   readonly VITE_HANDWRITING_IMPORT_ENABLED?: string
   readonly VITE_HANDWRITING_DIAGNOSTICS_ENABLED?: string
   readonly VITE_HANDWRITING_IMPORT_ENDPOINT?: string

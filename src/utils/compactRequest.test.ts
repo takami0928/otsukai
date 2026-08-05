@@ -290,6 +290,26 @@ describe('v2 request encode and decode', () => {
     expect(url).not.toContain('?data=')
   })
 
+  it.each([
+    ['https://app.example/', 'https://app.example/#/l/'],
+    [
+      'https://app.example/otsukai/',
+      'https://app.example/otsukai/#/l/',
+    ],
+  ])('builds fixed-request URLs for base %s', (baseUrl, expectedPrefix) => {
+    const draft = createDraft()
+    draft.cabbage = { quantity: 1, memo: '' }
+    const url = buildCompactRequestUrlFromInput(
+      baseUrl,
+      createInput({ draft }),
+    )
+    expect(url.startsWith(expectedPrefix)).toBe(true)
+    expect(url).not.toContain('//#/')
+    expect(decodeCompactRequest(new URL(url).hash.slice('#/l/'.length))).toMatchObject({
+      requestId: 'v2-m1234567-abcd',
+    })
+  })
+
   it('creates a short deterministic-format request key from time plus random data', () => {
     const key = createRequestKey(1_700_000_000_000, 0.5)
     expect(key).toMatch(/^[0-9a-z]+-[0-9a-z]{4}$/)

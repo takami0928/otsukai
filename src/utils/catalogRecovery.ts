@@ -18,6 +18,7 @@ import {
   hasDangerousObjectKeys,
   normalizeHouseholdCatalog,
 } from './householdCatalog'
+import { buildApplicationHashUrl } from './applicationUrls'
 
 const RECOVERY_PAYLOAD_KEYS = new Set(['version', 'createdAt', 'catalog'])
 const MAX_ENCODED_RECOVERY_CHARS = 50_000
@@ -110,8 +111,7 @@ export function buildCatalogRecoveryUrl(
   baseUrl: string,
   encoded: string,
 ): string {
-  const withoutHash = baseUrl.split('#', 1)[0].replace(/\/$/, '')
-  return `${withoutHash}/#/catalog/restore/${encoded}`
+  return buildApplicationHashUrl(baseUrl, `/catalog/restore/${encoded}`)
 }
 
 export function createCatalogRecoveryBundle(

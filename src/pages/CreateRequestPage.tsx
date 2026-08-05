@@ -136,6 +136,7 @@ import {
 } from '../features/liveRequests/createItems'
 import type { LiveRequestApi } from '../features/liveRequests/types'
 import { addManualValidationSessionToBaseUrl } from '../features/manualValidation/session'
+import { getApplicationBaseUrl } from '../config/application'
 
 type CreateRequestPageProps = {
   onBackHome: () => void
@@ -335,7 +336,7 @@ export function CreateRequestPage({
   })
 
   const requestBaseUrl = useMemo(
-    () => `${window.location.origin}${window.location.pathname}`,
+    () => getApplicationBaseUrl(),
     [],
   )
   const validationRequestBaseUrl = useMemo(

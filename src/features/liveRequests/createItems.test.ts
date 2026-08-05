@@ -64,6 +64,22 @@ describe('live request create conversion', () => {
     expect(urls.managementUrl).toContain('/e1_')
   })
 
+  it.each([
+    ['https://example.test/', 'https://example.test/#/r/'],
+    [
+      'https://example.test/otsukai/',
+      'https://example.test/otsukai/#/r/',
+    ],
+  ])('builds live-request routes for base %s', (baseUrl, expectedPrefix) => {
+    const urls = buildLiveRequestUrls(
+      baseUrl,
+      `r1_${'A'.repeat(32)}`,
+      `e1_${'B'.repeat(43)}`,
+    )
+    expect(urls.purchaserUrl.startsWith(expectedPrefix)).toBe(true)
+    expect(urls.purchaserUrl).not.toContain('//#/')
+  })
+
   it('preserves a validation query on both links without leaking edit secret to purchaser', () => {
     const validationToken = `mv1_${'V'.repeat(32)}`
     const urls = buildLiveRequestUrls(
