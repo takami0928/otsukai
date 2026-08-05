@@ -94,19 +94,49 @@ describe('WorkerProductPhotoUploadProvider', () => {
 
   it.each([
     [403, 'AUTH_FAILED', 'auth-failed'],
+    [403, 'VALIDATION_SESSION_INVALID', 'validation-session-invalid'],
+    [410, 'VALIDATION_SESSION_EXPIRED', 'validation-session-expired'],
+    [403, 'ORIGIN_NOT_ALLOWED', 'origin-not-allowed'],
     [413, 'PHOTO_TOO_LARGE', 'limit-reached'],
     [415, 'PHOTO_INVALID', 'invalid-photo'],
     [504, 'TIMEOUT', 'timeout'],
     [503, 'SERVICE_UNAVAILABLE', 'service-unavailable'],
   ] as const)('maps HTTP %s without exposing response content', async (status, code, expected) => {
+    const requestId = 'safe-request-id-123'
     const provider = new WorkerProductPhotoUploadProvider(
       'https://worker.example/',
       turnstile(),
-      vi.fn(async () => Response.json({ code }, { status })) as typeof fetch,
+      vi.fn(async () => Response.json(
+        { code },
+        {
+          status,
+          headers: { 'X-Otsukai-Request-Id': requestId },
+        },
+      )) as typeof fetch,
     )
 
     await expect(provider.upload([photo()])).rejects.toMatchObject({
       code: expected,
+      requestId,
+    })
+  })
+
+  it('ignores malformed correlation IDs and unexpected response fields', async () => {
+    const provider = new WorkerProductPhotoUploadProvider(
+      'https://worker.example/',
+      turnstile(),
+      vi.fn(async () => Response.json(
+        { code: 'VALIDATION_SESSION_INVALID', detail: 'must not escape' },
+        {
+          status: 403,
+          headers: { 'X-Otsukai-Request-Id': 'bad id' },
+        },
+      )) as typeof fetch,
+    )
+
+    await expect(provider.upload([photo()])).rejects.toMatchObject({
+      code: 'auth-failed',
+      requestId: undefined,
     })
   })
 

@@ -157,6 +157,35 @@ type CreateRequestPageProps = {
   createLiveRequestItemId?: () => string
 }
 
+function productPhotoUploadErrorMessage(error: unknown): string {
+  if (!(error instanceof ProductPhotoUploadError)) {
+    return '写真を保存できませんでした。再試行するか、写真を外して共有してください。'
+  }
+  const message = (() => {
+    switch (error.code) {
+      case 'auth-failed':
+        return '写真保存の認証確認に失敗しました。もう一度お試しください。'
+      case 'validation-session-invalid':
+        return '限定検証セッションを確認できませんでした。検証URLを開き直してください。'
+      case 'validation-session-expired':
+        return '限定検証セッションの有効期限が切れています。'
+      case 'origin-not-allowed':
+        return '写真保存への接続元を確認できませんでした。通常の商品選択は引き続き利用できます。'
+      case 'invalid-photo':
+        return '写真の形式または容量を確認できませんでした。別の写真を選んでください。'
+      case 'limit-reached':
+        return '写真保存の無料枠または容量上限に達した可能性があります。再試行するか、写真を外して共有してください。'
+      case 'timeout':
+        return '写真の保存が時間内に完了しませんでした。再試行するか、写真を外して共有してください。'
+      default:
+        return '写真保存サービスで問題が発生しました。再試行するか、写真を外して共有してください。'
+    }
+  })()
+  return error.requestId
+    ? `${message} 問い合わせID: ${error.requestId}`
+    : message
+}
+
 type CreateMode = 'edit' | 'review'
 
 type CustomItem = CustomRequestDraftItem
@@ -865,12 +894,7 @@ export function CreateRequestPage({
       pendingPhotos.setPhotoStatus(itemKeys, 'failed')
       setPhotoUploadFailed(true)
       setShareStatus('error')
-      setShareMessage(
-        error instanceof ProductPhotoUploadError &&
-          error.code === 'limit-reached'
-          ? '写真保存の無料枠または容量上限に達した可能性があります。再試行するか、写真を外して共有してください。'
-          : '写真を保存できませんでした。再試行するか、写真を外して共有してください。',
-      )
+      setShareMessage(productPhotoUploadErrorMessage(error))
       return false
     } finally {
       setIsUploadingPhotos(false)

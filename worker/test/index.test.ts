@@ -157,7 +157,11 @@ describe('Worker routing and feature configuration', () => {
         headers: { Origin: allowedOrigin },
       }),
       env,
-      { analyzeImplementation, fetchImplementation },
+      {
+        analyzeImplementation,
+        fetchImplementation,
+        createRequestId: () => 'worker-preflight-id',
+      },
     )
 
     expect(response.status).toBe(204)
@@ -171,6 +175,12 @@ describe('Worker routing and feature configuration', () => {
       'Content-Type, If-Match, If-None-Match, X-Otsukai-Validation-Session',
     )
     expect(response.headers.get('Cache-Control')).toBe('no-store')
+    expect(response.headers.get('X-Otsukai-Request-Id')).toBe(
+      'worker-preflight-id',
+    )
+    expect(response.headers.get('Access-Control-Expose-Headers')).toBe(
+      'X-Otsukai-Request-Id',
+    )
     expect(analyzeImplementation).not.toHaveBeenCalled()
     expect(fetchImplementation).not.toHaveBeenCalled()
   })
