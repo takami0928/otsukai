@@ -62,7 +62,7 @@ Status: approved direction, implementation tracked by Issue #56
 Codexの責務:
 
 - IssueとCI結果の整理
-- version管理されたallowlist schemaへ適合し、決定論的producerとvalidatorを通過したAI-safe障害サマリーの分析
+- [AI_AGENT_POLICY.mdの「AI-safe export」](AI_AGENT_POLICY.md#ai-safe-export)をcanonical definitionとし、その全条件を継承し、短縮記述、checklist、Issue、runbook、queueまたはartifactによる省略・緩和を認めないAI-safe障害サマリーの分析
 - 再現テストの追加
 - 修正実装
 - Draft PR作成
@@ -82,7 +82,7 @@ Codexに許可しないこと:
 - 顧客、参加者、報告者への送信
 - セキュリティ事故の公表・通知
 
-Codexへprivate運用リポジトリ全体の読み取り権限を与えない。人間はexport作成を開始できるが、AIへ入力できるのは、version管理されたallowlist schemaに基づく決定論的producerが生成し、未知field拒否、型・値範囲、全禁止fieldの不存在を決定論的validatorが確認した後のpayloadだけである。人間の目視確認、匿名化、仮名化、実名除去だけではAI-safeとみなさない。
+Codexへprivate運用リポジトリ全体の読み取り権限を与えない。AIへ入力できるのは、[AI_AGENT_POLICY.mdの「AI-safe export」](AI_AGENT_POLICY.md#ai-safe-export)をcanonical definitionとし、その全条件を継承するAI-safe exportだけである。短縮記述、checklist、Issue、runbook、queueまたはartifactによって条件を省略・緩和しない。人間はexport作成を開始できるが、version管理されたallowlist schemaに基づく決定論的producerが生成し、未知field拒否、型・値範囲、全禁止fieldの不存在を決定論的validatorが確認した後のpayloadだけをAIへ入力できる。人間の目視確認、匿名化、仮名化、実名除去だけではAI-safeとみなさない。
 
 GitHub接続を持つ操作役AIは、実装・必須レビューとは別contextで、権限を持つ人間のexact PR/headに対する明示承認後だけmergeを代行できる。merge直前にbase、head、Draft、mergeable、必須CI、独立レビュー、findingを再取得し、`expected_head_sha`等でhead移動を拒否する。base、head、差分、CI、レビュー結果が変われば承認と必要なレビューを失効させる。auto-merge、merge queue、gate迂回は使用しない。指定がなければSquashとし、merge後にmain側SHAを報告する。詳細は[`AI_MERGE_APPROVAL.md`](AI_MERGE_APPROVAL.md)を正本とする。
 
@@ -194,7 +194,7 @@ private `takami0928/otsukai-ops`は、次の運用記録を匿名コードと最
 
 氏名、メールアドレス、実写真、共有URL、capability token、Secretはprivate Issueにも原則記録しない。必要な情報は専用の安全な保管先に置く。
 
-AIはprivate repositoryまたはprivate Issueを直接読まない。AIへ渡せるのは、version管理されたallowlist schemaに基づく決定論的producerが生成し、未知field拒否、型・値範囲、全禁止fieldの不存在を決定論的validatorが確認した後のAI-safe exportだけである。人間の目視判定、匿名化、仮名化、実名除去だけでAI-safeに昇格させない。
+AIはprivate repositoryまたはprivate Issueを直接読まない。AIへ渡せるのは、[AI_AGENT_POLICY.mdの「AI-safe export」](AI_AGENT_POLICY.md#ai-safe-export)をcanonical definitionとし、その全条件を継承するAI-safe exportだけである。短縮記述、checklist、Issue、runbook、queueまたはartifactによって条件を省略・緩和しない。version管理されたallowlist schemaに基づく決定論的producerが生成し、未知field拒否、型・値範囲、全禁止fieldの不存在を決定論的validatorが確認した後のpayloadだけを使用する。人間の目視判定、匿名化、仮名化、実名除去だけでAI-safeに昇格させない。
 
 ## 費用方針
 

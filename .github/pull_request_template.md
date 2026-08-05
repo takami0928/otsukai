@@ -63,9 +63,13 @@ Runtime/compatibility notes:
 - [ ] `takami0928/otsukai-ops`, private Issues/PRs/Runbooks, Secrets, and user data were
       not browsed, searched, fetched, or read.
 - [ ] No prohibited data or Secret-like value is present in this diff or PR body.
-- [ ] Any AI operational input used a defined allowlist schema and deterministic
-      schema/prohibited-field validation; anonymization alone was not used as a safety
-      condition.
+- [ ] Any AI operational input used the
+      [canonical "AI-safe export" definition](../docs/operations/AI_AGENT_POLICY.md#ai-safe-export)
+      at `docs/operations/AI_AGENT_POLICY.md#ai-safe-export` and inherited all of its
+      conditions; no shorter description, checklist, Issue, runbook, queue, or
+      artifact omitted or relaxed them. It used a defined allowlist schema and
+      deterministic schema/prohibited-field validation; anonymization alone was not
+      used as a safety condition.
 
 ## Independent review
 
