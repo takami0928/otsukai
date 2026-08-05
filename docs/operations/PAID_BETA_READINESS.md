@@ -121,7 +121,7 @@ Section 14の非免除条件に影響する未解決P0 / P1 / P2、または重�
 - [ ] 収集するデータと収集しないデータを一覧化している。
 - [ ] 写真、依頼、capability tokenをログへ出さない。
 - [ ] AIへ写真、商品名、条件本文、自由記述、完全な共有URL、token、Secret、cookie、authorization header、個人情報、支払い識別子、生support本文、request / response body、providerの生error、private Issue / PR / Runbook / repository検索結果を渡さない。
-- [ ] AIはprivate `takami0928/otsukai-ops`を閲覧、検索、fetch、取得せず、定義済みallowlist schemaへ適合し、禁止field不在を決定論的validatorで確認したAI-safe exportだけを受け取る。匿名化、仮名化、実名除去だけを安全条件にしない。
+- [ ] AIはprivate `takami0928/otsukai-ops`を閲覧、検索、fetch、取得しない。AIへ渡す運用情報は、[`AI_AGENT_POLICY.md`の「AI-safe export」](AI_AGENT_POLICY.md#ai-safe-export)をcanonical definitionとして、version管理されたallowlist schema、決定論的producer、型・値範囲・未知field拒否・全禁止field不存在を確認する決定論的validator、validator成功後だけの送信、queue / artifactへの同一条件をすべて満たす。人間の目視、匿名化、仮名化、hash化、実名除去だけを安全条件にしない。
 - [ ] 実験サマリーは商品内容を含まず、件数・エラー等に限定する。
 - [ ] 参加者情報と公開リポジトリを分離する。
 - [ ] データ削除依頼の受付と人間による実行手順がある。
@@ -162,7 +162,7 @@ Section 14の非免除条件に影響する未解決P0 / P1 / P2、または重�
 - [ ] 操作役AIはmerge直前にbase、head、Draft、mergeable、必須CI、独立レビュー、findingを再取得し、`expected_head_sha`等でhead移動を拒否する。
 - [ ] 承認後にbase、head、差分、CI、レビュー結果が変われば承認と必要なレビューを失効させ、完全な再確認と再承認を要求する。
 - [ ] AIはProduction反映、Production workflow、外部設定変更、顧客送信、返金、解約、利用者data操作を実行しない。
-- [ ] AI-safe障害サマリーのschemaとexport手順がある。
+- [ ] AI-safe障害サマリーのschemaとexport手順があり、前節のcanonical AI-safe export条件を緩和しない。
 - [ ] CI失敗から再現テスト、修正Draft PRまでの標準手順がある。
 - [ ] Medium / High risk変更に別コンテキストレビューがある。
 - [ ] base / head SHA変更時にレビューを無効化する。
