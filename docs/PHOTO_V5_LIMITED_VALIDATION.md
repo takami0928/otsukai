@@ -28,7 +28,7 @@ https://takami0928.github.io/otsukai/?manualValidationSessionId=SESSION_TOKEN#/c
 
 ## Workerの許可範囲
 
-`MANUAL_VALIDATION_ENABLED=true`かつsession期限内でも、書き込みには有効なsession headerと既存Turnstile検証の両方が必要です。
+`MANUAL_VALIDATION_ENABLED=true`かつsession期限内でも、書き込みには有効なsessionと既存Turnstile検証の両方が必要です。写真batch POSTはFormDataの`validationSessionToken`を使用し、v5作成・更新は既存session headerを使用します。写真batchの旧header入力は移行互換としてだけ受理し、FormDataとheaderが同時にある場合は完全一致が必要です。
 
 - `POST /v1/photos/batch`
 - `POST /v1/requests`

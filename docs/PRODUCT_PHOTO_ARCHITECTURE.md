@@ -35,11 +35,14 @@ Canvas再エンコードにより元ファイル名、EXIF、GPS、撮影日時�
 
 ### `POST /v1/photos/batch`
 
-`multipart/form-data`のフィールドは次の3種類です。
+`multipart/form-data`のフィールドは次の4種類です。
 
+- `validationSessionToken`: 限定検証時だけ送るsession token 1件。通常公開時は省略
 - `turnstileToken`: 1回限りのtoken 1件
 - `metadata`: `{ token, itemKey }`のJSON配列
 - `photo`: metadataと同じ順序のJPEG 1〜3件
+
+限定検証の写真POSTは`validationSessionToken`をFormDataで送り、ブラウザからカスタムrequest headerを付けません。移行期間中のWorkerは旧`X-Otsukai-Validation-Session` headerも受理します。両方がある場合は完全一致を要求し、不一致なら`403 VALIDATION_SESSION_INVALID`です。`GET /v1/manual-validation/session`のheader契約は変更しません。
 
 Workerは許可Originを完全一致で確認し、Turnstile action `product_photo_upload`を1回だけ検証します。写真は1枚500KiB以下、合計1,500KiB以下です。JPEG SOI/EOI、SOF寸法、長辺1,280px以下を実データから確認し、APP1（EXIF/XMP）、MIME偽装、SVG、HTML、PNG、実行形式を拒否します。tokenとitemKeyはbatch内で重複できません。
 

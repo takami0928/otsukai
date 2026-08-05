@@ -38,7 +38,7 @@ Workerの公開Endpointは変更せず、次の互換ルートを持ちます。
 
 フロントの`VITE_PRODUCT_PHOTOS_ENABLED`と`VITE_LIVE_REQUESTS_ENABLED`も同様に、明示的な`true`だけを有効とします。現在の通常公開では両方OFFで、導線は表示されません。
 
-通常flagをOFFのまま実機確認する期限付きゲートは[`../docs/PHOTO_V5_LIMITED_VALIDATION.md`](../docs/PHOTO_V5_LIMITED_VALIDATION.md)で定義します。`MANUAL_VALIDATION_ENABLED`は未設定または`true`以外ならOFFです。有効時も写真・v5の書き込みは専用session headerと既存Turnstileの両方を要求します。session tokenやhashの実値をこのREADME、GitHub、ログへ記録しません。
+通常flagをOFFのまま実機確認する期限付きゲートは[`../docs/PHOTO_V5_LIMITED_VALIDATION.md`](../docs/PHOTO_V5_LIMITED_VALIDATION.md)で定義します。`MANUAL_VALIDATION_ENABLED`は未設定または`true`以外ならOFFです。有効時、写真batch書き込みはFormDataの`validationSessionToken`、v5作成・更新は専用session headerを使い、どちらも既存Turnstile検証を要求します。写真batchでは移行期間中だけ旧session headerも受理し、FormDataとheaderの両方がある場合は完全一致を要求します。session tokenやhashの実値をこのREADME、GitHub、ログへ記録しません。
 
 ## 固定したGemini設定
 
