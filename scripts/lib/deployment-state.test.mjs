@@ -214,6 +214,17 @@ describe('deployment manifest', () => {
     })
   })
 
+  it('records the explicitly checked-out source commit instead of the workflow ref', () => {
+    expect(
+      createDeploymentManifest(
+        manifestEnvironment({
+          GITHUB_SHA: 'a'.repeat(40),
+          SOURCE_COMMIT_SHA: 'c'.repeat(40),
+        }),
+      ).commitSha,
+    ).toBe('c'.repeat(40))
+  })
+
   it('writes the manifest to the requested dist path', async () => {
     const root = await temporaryDirectory()
     const path = join(root, 'dist', 'handwriting-deployment-state.json')

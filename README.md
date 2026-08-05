@@ -258,7 +258,7 @@ Geminiが一意に対応させた`matched`だけを初期選択し、複数候�
 
 実画像を通常ブラウザで安全に切り分ける手順、段階別の判定表、テスト画像生成、診断のON/OFF復元は[`docs/HANDWRITING_MANUAL_VERIFICATION.md`](docs/HANDWRITING_MANUAL_VERIFICATION.md)にまとめています。診断は既定OFFです。手動検証buildでも、専用query、build固有のsession ID、45分の有効期限がすべて一致する場合だけ表示・保存します。
 
-手動検証の状態変更、Pages run特定、復旧はNode CLIが担当し、PowerShellファイルは薄い互換ラッパーです。Repository Variablesの両フラグは`false`から変更せず、workflow_dispatchの対象buildだけを一時的にONにします。公開`handwriting-deployment-state.json`がsession ID、commit SHA、設定状態まで一致した後だけ`MANUAL TEST IS ENABLED`を表示します。Workerログは、その後に表示される実version ID入りの完成済み`wrangler tail`コマンドをコピーして開始してください。
+手動検証の状態変更、Pages run特定、復旧はNode CLIが担当し、PowerShellファイルは薄い互換ラッパーです。Repository Variablesの両フラグは`false`から変更せず、workflow_dispatchの対象buildだけを一時的にONにします。CLIは対象refのexact commit SHAをProduction workflowの必須inputにも渡します。公開`handwriting-deployment-state.json`がsession ID、commit SHA、設定状態まで一致した後だけ`MANUAL TEST IS ENABLED`を表示します。Workerログは、その後に表示される実version ID入りの完成済み`wrangler tail`コマンドをコピーして開始してください。
 
 ```bash
 npm run manual:handwriting:preflight
@@ -278,6 +278,11 @@ npm run build
 npm run dev
 ```
 
-## GitHub Pages
+## Hosting build targets
 
-`main` へのpushで `.github/workflows/deploy.yml` が実行され、`BASE_PATH=/otsukai/` でビルドした `dist` をGitHub Pagesへ公開します。画面遷移はGitHub Pagesで直接開いても壊れにくいハッシュルーティングです。
+- GitHub Pages向けbuildは`BUILD_TARGET=github-pages`、`BASE_PATH=/otsukai/`を使用します。
+- 将来のCloudflare Pages向けbuildは`BUILD_TARGET=cloudflare-pages`、`BASE_PATH=/`を使用します。将来domainは未選定のため、staging artifactへpublic originを固定しません。
+- Pull Requestでは`.github/workflows/verify-pr.yml`がexact PR head SHAのroot buildを自動生成し、`cloudflare-pages-root-<SHA>`という非Production artifactとして保存します。deployは行いません。
+- `.github/workflows/deploy.yml`は`main` pushでは起動しません。人間がexact 40文字commit SHAを明示して手動起動した場合だけ、`/otsukai/` buildをGitHub PagesへdeployできるProduction workflowです。
+
+画面遷移は両targetともhash routingを維持します。manifest、icon、service workerのpathとscopeはbuild baseに追従します。詳細、外部GitHub Environment保護、rollback、Cloudflare移行との境界は[`docs/operations/DEPLOYMENT_ENVIRONMENTS.md`](docs/operations/DEPLOYMENT_ENVIRONMENTS.md)を参照してください。

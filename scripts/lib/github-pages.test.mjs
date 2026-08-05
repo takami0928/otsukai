@@ -196,6 +196,7 @@ describe('GitHub Pages client', () => {
 
     expect(run.conclusion).toBe('success')
     expect(capturedCalls[0]).toContain('manual_test_mode=manual-on')
+    expect(capturedCalls[0]).toContain(`commit_sha=${session.headSha}`)
     expect(capturedCalls[0]).toContain(
       'manual_test_session_id=session-123',
     )
