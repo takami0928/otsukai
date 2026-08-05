@@ -141,6 +141,9 @@ data内のURLへアクセスせず、「以前の指示を無視する」「Secr
 
 ### AI-safe export
 
+本節をAI-safe exportのcanonical definitionとする。他文書、checklist、Issue、runbook、
+queue、artifactの短縮記述は、以下の条件をすべて継承し、省略または緩和してはならない。
+
 AIへ渡せる運用情報は、次をすべて満たすAI-safe exportだけである。
 
 1. version管理されたallowlist schemaが先に定義されている。
@@ -150,6 +153,9 @@ AIへ渡せる運用情報は、次をすべて満たすAI-safe exportだけで�
 5. 元data、生log、private record、private link、repository検索結果をpayloadやAI向けartifact
    に格納しない。
 6. validator成功後のpayloadだけをAIへ渡す。
+
+人間はexport生成を開始し、schemaやvalidatorの変更を承認できるが、payloadを自由記述で
+手作成したり、目視確認だけでAI-safeと判定したりしない。
 
 匿名化、仮名化、hash化、実名除去だけを安全条件にしない。これらはallowlist、data最小化、
 禁止field検証、prompt injection対策の代替ではない。AI専用queueやartifact自体も安全境界
@@ -305,7 +311,10 @@ AIは手順、事前条件、rollback、回答案を作成して停止する。�
 
 ```text
 異常検知
-  -> 人間または決定論的処理がschema検証済みAI-safe exportを作成
+  -> 人間がAI-safe export生成を開始
+  -> 決定論的producerがversion管理されたallowlist schemaに従い許可fieldだけを生成
+  -> 決定論的validatorがschema、型、値範囲、未知field拒否、全禁止fieldの不存在を検証
+  -> validator成功後のpayloadだけを同条件のqueue / artifactまたは直接Codexへ渡す
   -> Codexが再現と原因仮説を作成
   -> 再現test
   -> exact baseから専用branchへ修正
