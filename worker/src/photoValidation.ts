@@ -5,6 +5,10 @@ import {
   MAX_PHOTOS_PER_BATCH,
   PHOTO_TOKEN_PATTERN,
 } from './photoConstants'
+import {
+  isManualValidationSessionToken,
+  MANUAL_VALIDATION_SESSION_HEADER,
+} from './manualValidation'
 
 export {
   MAX_PHOTO_BATCH_BYTES,
@@ -50,9 +54,18 @@ export type ValidatedPhotoUpload = PhotoBatchMetadata & {
 
 export type ValidatedPhotoBatchRequest = {
   turnstileToken: string
+  validationSessionToken?: string
   photos: ValidatedPhotoUpload[]
   origin: string
   remoteIp?: string
+}
+
+export type ParsedPhotoBatchRequest = Omit<
+  ValidatedPhotoBatchRequest,
+  'photos'
+> & {
+  metadata: PhotoBatchMetadata[]
+  files: File[]
 }
 
 export class PhotoRequestValidationError extends Error {
@@ -79,6 +92,41 @@ function hasExactMetadataKeys(value: Record<string, unknown>): boolean {
     keys.length === PHOTO_METADATA_KEYS.length &&
     PHOTO_METADATA_KEYS.every((key, index) => keys[index] === key)
   )
+}
+
+function resolveValidationSessionToken(
+  request: Request,
+  entries: FormDataEntryValue[],
+): string | undefined {
+  if (entries.length > 1) {
+    throw new PhotoRequestValidationError(
+      403,
+      'VALIDATION_SESSION_INVALID',
+    )
+  }
+  const formToken = entries[0]
+  const headerToken =
+    request.headers.get(MANUAL_VALIDATION_SESSION_HEADER) ?? undefined
+  if (
+    (formToken !== undefined && typeof formToken !== 'string') ||
+    (typeof formToken === 'string' &&
+      headerToken !== undefined &&
+      formToken !== headerToken)
+  ) {
+    throw new PhotoRequestValidationError(
+      403,
+      'VALIDATION_SESSION_INVALID',
+    )
+  }
+  const token =
+    typeof formToken === 'string' ? formToken : headerToken
+  if (token !== undefined && !isManualValidationSessionToken(token)) {
+    throw new PhotoRequestValidationError(
+      403,
+      'VALIDATION_SESSION_INVALID',
+    )
+  }
+  return token
 }
 
 function readUint16(bytes: Uint8Array, offset: number): number {
@@ -214,10 +262,10 @@ function parseMetadata(value: string): PhotoBatchMetadata[] {
   })
 }
 
-export async function validatePhotoBatchRequest(
+export async function parsePhotoBatchRequest(
   request: Request,
   allowedOrigins: ReadonlySet<string>,
-): Promise<ValidatedPhotoBatchRequest> {
+): Promise<ParsedPhotoBatchRequest> {
   const origin = request.headers.get('Origin') ?? ''
   if (!origin || !allowedOrigins.has(origin)) {
     throw new PhotoRequestValidationError(403, 'ORIGIN_NOT_ALLOWED')
@@ -243,8 +291,15 @@ export async function validatePhotoBatchRequest(
 
   const entries = [...formData.entries()]
   const tokenEntries = formData.getAll('turnstileToken')
+  const validationSessionEntries = formData.getAll(
+    'validationSessionToken',
+  )
   const metadataEntries = formData.getAll('metadata')
   const photoEntries = formData.getAll('photo')
+  const validationSessionToken = resolveValidationSessionToken(
+    request,
+    validationSessionEntries,
+  )
   if (
     tokenEntries.length !== 1 ||
     metadataEntries.length !== 1 ||
@@ -253,9 +308,15 @@ export async function validatePhotoBatchRequest(
     photoEntries.length < 1 ||
     photoEntries.length > MAX_PHOTOS_PER_BATCH ||
     !photoEntries.every(isFile) ||
-    entries.length !== photoEntries.length + 2 ||
+    entries.length !==
+      photoEntries.length + 2 + validationSessionEntries.length ||
     entries.some(([key]) =>
-      !['turnstileToken', 'metadata', 'photo'].includes(key),
+      ![
+        'validationSessionToken',
+        'turnstileToken',
+        'metadata',
+        'photo',
+      ].includes(key),
     )
   ) {
     throw new PhotoRequestValidationError(400, 'PHOTO_REQUEST_INVALID')
@@ -276,9 +337,7 @@ export async function validatePhotoBatchRequest(
     throw new PhotoRequestValidationError(413, 'PHOTO_BATCH_TOO_LARGE')
   }
 
-  const photos: ValidatedPhotoUpload[] = []
-  for (let index = 0; index < files.length; index += 1) {
-    const file = files[index]
+  for (const file of files) {
     if (file.type !== 'image/jpeg') {
       throw new PhotoRequestValidationError(415, 'PHOTO_INVALID')
     }
@@ -290,17 +349,49 @@ export async function validatePhotoBatchRequest(
           : 'PHOTO_REQUEST_INVALID',
       )
     }
-    const jpeg = await file.arrayBuffer()
-    const dimensions = inspectPhotoJpeg(new Uint8Array(jpeg))
-    photos.push({ ...metadata[index], jpeg, ...dimensions })
   }
 
   return {
     turnstileToken,
-    photos,
+    ...(validationSessionToken ? { validationSessionToken } : {}),
+    metadata,
+    files,
     origin,
     ...(request.headers.get('CF-Connecting-IP')
       ? { remoteIp: request.headers.get('CF-Connecting-IP') ?? undefined }
       : {}),
   }
+}
+
+export async function validateParsedPhotoBatchRequest(
+  parsed: ParsedPhotoBatchRequest,
+): Promise<ValidatedPhotoBatchRequest> {
+  const photos: ValidatedPhotoUpload[] = []
+  for (let index = 0; index < parsed.files.length; index += 1) {
+    const file = parsed.files[index]
+    const jpeg = await file.arrayBuffer()
+    const dimensions = inspectPhotoJpeg(new Uint8Array(jpeg))
+    photos.push({ ...parsed.metadata[index], jpeg, ...dimensions })
+  }
+
+  return {
+    turnstileToken: parsed.turnstileToken,
+    ...(parsed.validationSessionToken
+      ? { validationSessionToken: parsed.validationSessionToken }
+      : {}),
+    photos,
+    origin: parsed.origin,
+    ...(parsed.remoteIp
+      ? { remoteIp: parsed.remoteIp }
+      : {}),
+  }
+}
+
+export async function validatePhotoBatchRequest(
+  request: Request,
+  allowedOrigins: ReadonlySet<string>,
+): Promise<ValidatedPhotoBatchRequest> {
+  return validateParsedPhotoBatchRequest(
+    await parsePhotoBatchRequest(request, allowedOrigins),
+  )
 }

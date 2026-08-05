@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   inspectPhotoJpeg,
   MAX_PHOTO_BATCH_BYTES,
@@ -139,14 +139,51 @@ describe('photo batch request validation', () => {
 
   it('rejects a declared request larger than the multipart safety limit', async () => {
     expect(MAX_PHOTO_BATCH_BYTES).toBe(3 * MAX_PHOTO_BYTES)
+    const request = photoBatchRequest({
+      contentLength: MAX_PHOTO_REQUEST_BYTES + 1,
+    })
+    const formData = vi.spyOn(request, 'formData')
     await expect(
-      validatePhotoBatchRequest(
-        photoBatchRequest({ contentLength: MAX_PHOTO_REQUEST_BYTES + 1 }),
-        origins,
-      ),
+      validatePhotoBatchRequest(request, origins),
     ).rejects.toMatchObject({
       status: 413,
       code: 'PHOTO_BATCH_TOO_LARGE',
+    })
+    expect(formData).not.toHaveBeenCalled()
+  })
+
+  it('parses the body once and resolves either manual-session transport', async () => {
+    const validationSessionToken = `mv1_${'M'.repeat(32)}`
+    for (const request of [
+      photoBatchRequest({ validationSessionToken }),
+      photoBatchRequest({
+        validationSessionHeader: validationSessionToken,
+      }),
+      photoBatchRequest({
+        validationSessionToken,
+        validationSessionHeader: validationSessionToken,
+      }),
+    ]) {
+      const formData = vi.spyOn(request, 'formData')
+      await expect(
+        validatePhotoBatchRequest(request, origins),
+      ).resolves.toMatchObject({ validationSessionToken })
+      expect(formData).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('rejects mismatched manual-session transports', async () => {
+    await expect(
+      validatePhotoBatchRequest(
+        photoBatchRequest({
+          validationSessionToken: `mv1_${'M'.repeat(32)}`,
+          validationSessionHeader: `mv1_${'X'.repeat(32)}`,
+        }),
+        origins,
+      ),
+    ).rejects.toMatchObject({
+      status: 403,
+      code: 'VALIDATION_SESSION_INVALID',
     })
   })
 

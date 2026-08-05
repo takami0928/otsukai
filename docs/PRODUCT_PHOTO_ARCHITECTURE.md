@@ -35,11 +35,14 @@ Canvas再エンコードにより元ファイル名、EXIF、GPS、撮影日時�
 
 ### `POST /v1/photos/batch`
 
-`multipart/form-data`のフィールドは次の3種類です。
+`multipart/form-data`のフィールドは次の4種類です。
 
+- `validationSessionToken`: 限定検証時だけ送るsession token 1件。通常公開時は省略
 - `turnstileToken`: 1回限りのtoken 1件
 - `metadata`: `{ token, itemKey }`のJSON配列
 - `photo`: metadataと同じ順序のJPEG 1〜3件
+
+限定検証の写真POSTは`validationSessionToken`をFormDataで送り、ブラウザからカスタムrequest headerを付けません。移行期間中のWorkerは旧`X-Otsukai-Validation-Session` headerも受理します。両方がある場合は完全一致を要求し、不一致なら`403 VALIDATION_SESSION_INVALID`です。`GET /v1/manual-validation/session`のheader契約は変更しません。
 
 Workerは許可Originを完全一致で確認し、Turnstile action `product_photo_upload`を1回だけ検証します。写真は1枚500KiB以下、合計1,500KiB以下です。JPEG SOI/EOI、SOF寸法、長辺1,280px以下を実データから確認し、APP1（EXIF/XMP）、MIME偽装、SVG、HTML、PNG、実行形式を拒否します。tokenとitemKeyはbatch内で重複できません。
 
@@ -81,7 +84,7 @@ CREATE TABLE IF NOT EXISTS photo (
 
 ## 部分失敗
 
-batch途中で失敗した場合、Workerはそのbatchで新規作成したObjectだけへbest-effort cleanupを行い、成功レスポンスや共有URLを確定しません。cleanupに失敗したObjectも初回保存時に設定済みの14日Alarmで削除されます。以前の再試行で既に存在した同一写真はcleanup対象にしません。
+batch途中で失敗した場合、Workerは成功レスポンスや共有URLを確定しません。Responseを受け取れなかったクライアントの自動再送と先行attemptが並行する可能性があるため、Workerは部分保存済みObjectを即時削除しません。即時削除すると、同じtokenとcontent hashを採用して成功した再送の写真を先行attemptが後から削除できるためです。共有されなかった部分保存も、初回保存時から延長されない14日Alarmで削除されます。
 
 ## セキュリティとプライバシー
 
@@ -115,7 +118,7 @@ Durable Object class migrationは`wrangler deploy`でのみ適用されます。
 - [ ] `PhotoObject`がSQLite-backedとして定義されている
 - [ ] 既存`POST /`と`/v1/handwriting/analyze`の回帰成功
 - [ ] Gemini Secretなしの写真synthetic test成功
-- [ ] 1〜3枚、500KiB境界、APP1拒否、期限切れ、部分cleanup成功
+- [ ] 1〜3枚、500KiB境界、APP1拒否、期限切れ、部分失敗後の冪等再送と14日Alarm削除
 - [ ] iPhone 11、Android Chrome、LINE内ブラウザの実機結果
 - [ ] Free Usageの監視担当と安全停止判断が明確
 - [ ] 写真公開flagをONにする別承認
