@@ -60,6 +60,14 @@ export type ValidatedPhotoBatchRequest = {
   remoteIp?: string
 }
 
+export type ParsedPhotoBatchRequest = Omit<
+  ValidatedPhotoBatchRequest,
+  'photos'
+> & {
+  metadata: PhotoBatchMetadata[]
+  files: File[]
+}
+
 export class PhotoRequestValidationError extends Error {
   constructor(
     readonly status: number,
@@ -254,10 +262,10 @@ function parseMetadata(value: string): PhotoBatchMetadata[] {
   })
 }
 
-export async function validatePhotoBatchRequest(
+export async function parsePhotoBatchRequest(
   request: Request,
   allowedOrigins: ReadonlySet<string>,
-): Promise<ValidatedPhotoBatchRequest> {
+): Promise<ParsedPhotoBatchRequest> {
   const origin = request.headers.get('Origin') ?? ''
   if (!origin || !allowedOrigins.has(origin)) {
     throw new PhotoRequestValidationError(403, 'ORIGIN_NOT_ALLOWED')
@@ -329,9 +337,7 @@ export async function validatePhotoBatchRequest(
     throw new PhotoRequestValidationError(413, 'PHOTO_BATCH_TOO_LARGE')
   }
 
-  const photos: ValidatedPhotoUpload[] = []
-  for (let index = 0; index < files.length; index += 1) {
-    const file = files[index]
+  for (const file of files) {
     if (file.type !== 'image/jpeg') {
       throw new PhotoRequestValidationError(415, 'PHOTO_INVALID')
     }
@@ -343,18 +349,49 @@ export async function validatePhotoBatchRequest(
           : 'PHOTO_REQUEST_INVALID',
       )
     }
-    const jpeg = await file.arrayBuffer()
-    const dimensions = inspectPhotoJpeg(new Uint8Array(jpeg))
-    photos.push({ ...metadata[index], jpeg, ...dimensions })
   }
 
   return {
     turnstileToken,
     ...(validationSessionToken ? { validationSessionToken } : {}),
-    photos,
+    metadata,
+    files,
     origin,
     ...(request.headers.get('CF-Connecting-IP')
       ? { remoteIp: request.headers.get('CF-Connecting-IP') ?? undefined }
       : {}),
   }
+}
+
+export async function validateParsedPhotoBatchRequest(
+  parsed: ParsedPhotoBatchRequest,
+): Promise<ValidatedPhotoBatchRequest> {
+  const photos: ValidatedPhotoUpload[] = []
+  for (let index = 0; index < parsed.files.length; index += 1) {
+    const file = parsed.files[index]
+    const jpeg = await file.arrayBuffer()
+    const dimensions = inspectPhotoJpeg(new Uint8Array(jpeg))
+    photos.push({ ...parsed.metadata[index], jpeg, ...dimensions })
+  }
+
+  return {
+    turnstileToken: parsed.turnstileToken,
+    ...(parsed.validationSessionToken
+      ? { validationSessionToken: parsed.validationSessionToken }
+      : {}),
+    photos,
+    origin: parsed.origin,
+    ...(parsed.remoteIp
+      ? { remoteIp: parsed.remoteIp }
+      : {}),
+  }
+}
+
+export async function validatePhotoBatchRequest(
+  request: Request,
+  allowedOrigins: ReadonlySet<string>,
+): Promise<ValidatedPhotoBatchRequest> {
+  return validateParsedPhotoBatchRequest(
+    await parsePhotoBatchRequest(request, allowedOrigins),
+  )
 }

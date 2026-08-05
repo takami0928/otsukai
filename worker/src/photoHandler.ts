@@ -10,8 +10,9 @@ import {
   PHOTO_TURNSTILE_ACTION,
 } from './photoConstants'
 import {
+  parsePhotoBatchRequest,
   PhotoRequestValidationError,
-  validatePhotoBatchRequest,
+  validateParsedPhotoBatchRequest,
 } from './photoValidation'
 import {
   verifyTurnstileTokenDetailed,
@@ -160,18 +161,17 @@ async function handlePhotoBatch(
   }, dependencies.timeoutMs ?? DEFAULT_TIMEOUT_MS)
   const abortForClient = () => controller.abort()
   request.signal.addEventListener('abort', abortForClient, { once: true })
-  const createdStubs: Array<DurableObjectStub<PhotoObject>> = []
   let failureClass: PhotoDiagnosticErrorClass = 'photo-preparation'
 
   try {
-    const validated = await validatePhotoBatchRequest(
+    const parsed = await parsePhotoBatchRequest(
       request,
       parseAllowedOrigins(env.ALLOWED_ORIGINS),
     )
     if (requiresManualValidation) {
       const validationStatus =
         await validateManualValidationSessionToken(
-          validated.validationSessionToken ?? '',
+          parsed.validationSessionToken ?? '',
           env,
           dependencies,
         )
@@ -183,6 +183,7 @@ async function handlePhotoBatch(
         return manualValidationErrorResponse(validationStatus, origin)
       }
     }
+    const validated = await validateParsedPhotoBatchRequest(parsed)
     diagnostics.record('request-validated', {
       photoCount: validated.photos.length,
       imageBytes: validated.photos.reduce(
@@ -237,9 +238,6 @@ async function handlePhotoBatch(
           'PHOTO_TOKEN_CONFLICT',
         )
       }
-      if (result.status === 'created') {
-        createdStubs.push(stub)
-      }
       failureClass = 'photo-preparation'
     }
     diagnostics.record('photo-save-completed', {
@@ -257,11 +255,10 @@ async function handlePhotoBatch(
       origin,
     )
   } catch (error) {
-    if (createdStubs.length > 0) {
-      await Promise.allSettled(
-        createdStubs.map((stub) => stub.deletePhoto()),
-      )
-    }
+    // A response-less client retry can overlap this attempt. Eagerly
+    // deleting a photo created here could invalidate a successful retry
+    // that adopted the same token and content. Unshared partial writes
+    // remain capability-protected and are deleted by their fixed alarm.
     if (error instanceof PhotoRequestValidationError) {
       diagnostics.record('request-rejected', {
         httpStatus: error.status,

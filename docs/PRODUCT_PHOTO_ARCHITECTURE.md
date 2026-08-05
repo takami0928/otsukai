@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS photo (
 
 ## 部分失敗
 
-batch途中で失敗した場合、Workerはそのbatchで新規作成したObjectだけへbest-effort cleanupを行い、成功レスポンスや共有URLを確定しません。cleanupに失敗したObjectも初回保存時に設定済みの14日Alarmで削除されます。以前の再試行で既に存在した同一写真はcleanup対象にしません。
+batch途中で失敗した場合、Workerは成功レスポンスや共有URLを確定しません。Responseを受け取れなかったクライアントの自動再送と先行attemptが並行する可能性があるため、Workerは部分保存済みObjectを即時削除しません。即時削除すると、同じtokenとcontent hashを採用して成功した再送の写真を先行attemptが後から削除できるためです。共有されなかった部分保存も、初回保存時から延長されない14日Alarmで削除されます。
 
 ## セキュリティとプライバシー
 
@@ -115,7 +115,7 @@ Durable Object class migrationは`wrangler deploy`でのみ適用されます。
 - [ ] `PhotoObject`がSQLite-backedとして定義されている
 - [ ] 既存`POST /`と`/v1/handwriting/analyze`の回帰成功
 - [ ] Gemini Secretなしの写真synthetic test成功
-- [ ] 1〜3枚、500KiB境界、APP1拒否、期限切れ、部分cleanup成功
+- [ ] 1〜3枚、500KiB境界、APP1拒否、期限切れ、部分失敗後の冪等再送と14日Alarm削除
 - [ ] iPhone 11、Android Chrome、LINE内ブラウザの実機結果
 - [ ] Free Usageの監視担当と安全停止判断が明確
 - [ ] 写真公開flagをONにする別承認

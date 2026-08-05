@@ -33,7 +33,6 @@ class FakePhotoStub {
   saveResult: SavePhotoResult = { status: 'created' }
   readResult: ReadPhotoResult = { status: 'missing' }
   saveError: Error | undefined
-  deleteError: Error | undefined
   readonly savePhoto = vi.fn(async (_input: SavePhotoInput) => {
     if (this.saveError) {
       throw this.saveError
@@ -41,11 +40,7 @@ class FakePhotoStub {
     return this.saveResult
   })
   readonly getPhoto = vi.fn(async (_now: number) => this.readResult)
-  readonly deletePhoto = vi.fn(async () => {
-    if (this.deleteError) {
-      throw this.deleteError
-    }
-  })
+  readonly deletePhoto = vi.fn(async () => undefined)
 }
 
 class FakePhotoNamespace {
@@ -259,7 +254,7 @@ describe('photo API handler', () => {
     expect(stub.deletePhoto).not.toHaveBeenCalled()
   })
 
-  it('cleans up newly created objects after a partial save failure', async () => {
+  it('keeps partial writes for an overlapping idempotent retry until fixed expiry', async () => {
     const { env, namespace } = photoEnv()
     const first = new FakePhotoStub()
     const second = new FakePhotoStub()
@@ -277,14 +272,13 @@ describe('photo API handler', () => {
     await expect(response.json()).resolves.toEqual({
       code: 'SERVICE_UNAVAILABLE',
     })
-    expect(first.deletePhoto).toHaveBeenCalledTimes(1)
+    expect(first.deletePhoto).not.toHaveBeenCalled()
     expect(second.deletePhoto).not.toHaveBeenCalled()
   })
 
-  it('does not report success when best-effort cleanup itself fails', async () => {
+  it('does not delete an earlier photo when a later token conflicts', async () => {
     const { env, namespace } = photoEnv()
     const first = new FakePhotoStub()
-    first.deleteError = new Error('synthetic cleanup failure')
     const second = new FakePhotoStub()
     second.saveResult = { status: 'conflict' }
     namespace.stubs.set(validPhotoTokens[0], first)
@@ -297,10 +291,40 @@ describe('photo API handler', () => {
     )
 
     expect(response.status).toBe(409)
-    expect(first.deletePhoto).toHaveBeenCalledTimes(1)
+    expect(first.deletePhoto).not.toHaveBeenCalled()
     await expect(response.json()).resolves.toEqual({
       code: 'PHOTO_TOKEN_CONFLICT',
     })
+  })
+
+  it('completes an idempotent retry after a partial first attempt', async () => {
+    const { env, namespace } = photoEnv()
+    const first = new FakePhotoStub()
+    first.savePhoto
+      .mockResolvedValueOnce({ status: 'created' })
+      .mockResolvedValueOnce({ status: 'existing' })
+    const second = new FakePhotoStub()
+    second.savePhoto
+      .mockRejectedValueOnce(new Error('synthetic first-attempt failure'))
+      .mockResolvedValueOnce({ status: 'created' })
+    namespace.stubs.set(validPhotoTokens[0], first)
+    namespace.stubs.set(validPhotoTokens[1], second)
+
+    const firstResponse = await handlePhotoApiRequest(
+      photoBatchRequest({ count: 2 }),
+      env,
+      { fetchImplementation: successfulTurnstileFetch() },
+    )
+    const retryResponse = await handlePhotoApiRequest(
+      photoBatchRequest({ count: 2 }),
+      env,
+      { fetchImplementation: successfulTurnstileFetch() },
+    )
+
+    expect(firstResponse.status).toBe(503)
+    expect(retryResponse.status).toBe(200)
+    expect(first.deletePhoto).not.toHaveBeenCalled()
+    expect(second.deletePhoto).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -445,6 +469,7 @@ describe('photo API handler', () => {
 
   it('distinguishes invalid and expired manual validation sessions before Turnstile', async () => {
     const gateNow = Date.UTC(2026, 7, 2)
+    const readPhotoBytes = vi.spyOn(File.prototype, 'arrayBuffer')
     const invalid = photoEnv()
     Object.assign(invalid.env, {
       PHOTO_API_ENABLED: 'false',
@@ -452,14 +477,10 @@ describe('photo API handler', () => {
       MANUAL_VALIDATION_SESSION_SHA256: await sha256(manualValidationToken),
       MANUAL_VALIDATION_EXPIRES_AT: new Date(gateNow + 60_000).toISOString(),
     })
-    const invalidBase = photoBatchRequest()
-    const invalidHeaders = new Headers(invalidBase.headers)
-    invalidHeaders.set(
-      'X-Otsukai-Validation-Session',
-      `mv1_${'X'.repeat(32)}`,
-    )
     const invalidResponse = await handlePhotoApiRequest(
-      new Request(invalidBase, { headers: invalidHeaders }),
+      photoBatchRequest({
+        validationSessionHeader: `mv1_${'X'.repeat(32)}`,
+      }),
       invalid.env,
       { now: () => gateNow },
     )
@@ -468,6 +489,7 @@ describe('photo API handler', () => {
       code: 'VALIDATION_SESSION_INVALID',
     })
     expect(invalid.namespace.getByName).not.toHaveBeenCalled()
+    expect(readPhotoBytes).not.toHaveBeenCalled()
 
     const expired = photoEnv()
     Object.assign(expired.env, {
