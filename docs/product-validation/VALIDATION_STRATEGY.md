@@ -149,7 +149,7 @@ Public Release開始前に、次を事前固定して満たす。
 
 商品名、条件本文、写真、共有URL、capability tokenは収集しない。
 
-実験記録をAIへ渡す場合も、private ops repositoryを直接読ませず、禁止fieldが存在しないAI-safe exportへ変換する。
+実験記録をAIへ渡す場合も、private ops repositoryを直接読ませない。AI入力は[`AI_AGENT_POLICY.md`の「AI-safe export」](../operations/AI_AGENT_POLICY.md#ai-safe-export)をcanonical definitionとして、version管理されたallowlist schemaに従う決定論的producerが生成し、型・値範囲・未知field拒否・全禁止field不存在を決定論的validatorが確認した、validator成功後のpayloadだけに限定する。queue / artifactにも同じ条件を適用し、人間の目視、匿名化、仮名化、hash化、実名除去だけではAI-safeとみなさない。
 
 ## 効果の分解
 
