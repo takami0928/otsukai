@@ -105,16 +105,19 @@ configuration.
 
 | Workflow | Trigger | Current jobs/actions |
 | --- | --- | --- |
-| `.github/workflows/verify-pr.yml` | Pull requests targeting `main` | `npm ci`, `npm test`, `npm run test:worker`, `npm run check:worker-bundle`, `npm run test:coverage`, `npm run build` |
-| `.github/workflows/deploy.yml` | Push to `main` and manual `workflow_dispatch` | Build and upload `dist`, then deploy to GitHub Pages |
+| `.github/workflows/verify-pr.yml` | Pull requests targeting `main` | Verify the merge candidate, build `/otsukai/`, and separately upload a non-deploying `/` artifact named for the exact PR head SHA |
+| `.github/workflows/deploy.yml` | Manual `workflow_dispatch` only, with a required exact commit SHA | Validate and check out the exact SHA, build `/otsukai/`, then deploy to GitHub Pages through the `github-pages` Environment |
 
-The second row is a material current-state fact: a merge to `main` currently creates
-a push event that can start the public GitHub Pages workflow. Governance documents
-do not change that trigger. Merge approval is not Production approval; an operator AI
-must re-read current workflows and stop if its merge would cause a prohibited
-Production action. Staging/Production separation is a separate implementation scope.
+The second row is a material current-state fact: a merge or push to `main` does not
+start the public GitHub Pages workflow. Production requires a separate human-initiated
+dispatch naming an exact commit SHA. The `environment:` field keeps the repository
+workflow boundary but does not create or prove external required-reviewer protection;
+that protection remains a GitHub setting controlled outside this repository.
 
-Do not run, approve, rerun, or modify the deploy workflow merely to validate a PR.
+The staging artifact is not a release artifact and cannot authorize deployment. It
+uses no Production credentials and performs no Pages or Cloudflare deployment.
+
+Do not run, approve, or rerun the deploy workflow merely to validate a PR.
 
 ## Commands and CI correspondence
 

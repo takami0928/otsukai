@@ -1,17 +1,17 @@
-name: Deploy to GitHub Pages
+name: Deploy exact commit to GitHub Pages
 
 run-name: >-
-  ${{ github.event_name == 'workflow_dispatch' &&
-      inputs.manual_test_mode != 'repository' &&
+  ${{ inputs.manual_test_mode != 'repository' &&
       format('Deploy Pages [manual:{0}]', inputs.manual_test_session_id) ||
-      'Deploy to GitHub Pages' }}
+      format('Deploy Pages [commit:{0}]', inputs.commit_sha) }}
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
+      commit_sha:
+        description: Exact 40-character commit SHA approved for Production
+        required: true
+        type: string
       manual_test_mode:
         description: Pages build mode
         required: true
@@ -29,17 +29,18 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: github-pages-production
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
+      SOURCE_COMMIT_SHA: ${{ inputs.commit_sha }}
+      BUILD_TARGET: github-pages
+      BASE_PATH: /otsukai/
       REPOSITORY_HANDWRITING_IMPORT_ENABLED: ${{ vars.VITE_HANDWRITING_IMPORT_ENABLED }}
       REPOSITORY_HANDWRITING_DIAGNOSTICS_ENABLED: ${{ vars.VITE_HANDWRITING_DIAGNOSTICS_ENABLED }}
       VITE_HANDWRITING_IMPORT_ENDPOINT: ${{ vars.VITE_HANDWRITING_IMPORT_ENDPOINT }}
@@ -48,8 +49,28 @@ jobs:
       VITE_LIVE_REQUESTS_ENABLED: ${{ vars.VITE_LIVE_REQUESTS_ENABLED }}
       VITE_MANUAL_VALIDATION_ENABLED: ${{ vars.VITE_MANUAL_VALIDATION_ENABLED }}
     steps:
-      - name: Checkout
+      - name: Validate immutable Production input
+        shell: bash
+        run: |
+          if [[ ! "$SOURCE_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "commit_sha must be an exact lowercase 40-character commit SHA." >&2
+            exit 1
+          fi
+
+      - name: Checkout exact approved commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+
+      - name: Verify checked-out commit identity
+        shell: bash
+        run: |
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [[ "$checked_out_sha" != "$SOURCE_COMMIT_SHA" ]]; then
+            echo "Checked-out commit does not match the approved commit SHA." >&2
+            exit 1
+          fi
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -65,23 +86,17 @@ jobs:
 
       - name: Prepare deployment state
         env:
-          MANUAL_TEST_MODE: >-
-            ${{ github.event_name == 'workflow_dispatch' &&
-                inputs.manual_test_mode || 'repository' }}
-          MANUAL_TEST_SESSION_ID: >-
-            ${{ github.event_name == 'workflow_dispatch' &&
-                inputs.manual_test_session_id || '' }}
+          MANUAL_TEST_MODE: ${{ inputs.manual_test_mode }}
+          MANUAL_TEST_SESSION_ID: ${{ inputs.manual_test_session_id }}
         run: node scripts/write-handwriting-deployment-state.mjs prepare
 
-      - name: Build
-        env:
-          BASE_PATH: /otsukai/
+      - name: Build GitHub Pages target
         run: npm run build
 
       - name: Write deployment state manifest
         run: node scripts/write-handwriting-deployment-state.mjs write
 
-      - name: Upload artifact
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
@@ -89,10 +104,15 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    # Required reviewers and protection rules are external GitHub Environment
+    # settings. This workflow definition does not create or prove those settings.
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy
+      - name: Deploy exact approved commit
         id: deployment
         uses: actions/deploy-pages@v4

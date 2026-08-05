@@ -135,7 +135,7 @@ export function createGitHubPagesClient({
     }
   }
 
-  async function dispatch({ ref, mode, sessionId }) {
+  async function dispatch({ ref, mode, sessionId, headSha }) {
     const result = await runCaptured(
       ghCommand,
       [
@@ -146,6 +146,8 @@ export function createGitHubPagesClient({
         ref,
         '--repo',
         repository,
+        '--field',
+        `commit_sha=${headSha}`,
         '--field',
         `manual_test_mode=${mode}`,
         '--field',

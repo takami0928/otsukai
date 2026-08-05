@@ -66,6 +66,16 @@ describe('catalog recovery data', () => {
     expect(bundle.fileName).toBe('otsukai-product-list-2026-07-26.json')
   })
 
+  it.each([
+    ['https://app.example/', 'https://app.example/#/catalog/restore/data'],
+    [
+      'https://app.example/otsukai/',
+      'https://app.example/otsukai/#/catalog/restore/data',
+    ],
+  ])('builds recovery URLs for base %s', (baseUrl, expected) => {
+    expect(buildCatalogRecoveryUrl(baseUrl, 'data')).toBe(expected)
+  })
+
   it('rejects broken, unknown-version, oversized, and unsafe recovery data', () => {
     expect(() => decodeCatalogRecoveryPayload('broken')).toThrow()
     expect(() =>

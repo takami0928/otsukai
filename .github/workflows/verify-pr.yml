@@ -17,8 +17,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout merge candidate
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -41,5 +43,62 @@ jobs:
       - name: Coverage
         run: npm run test:coverage
 
-      - name: Build
+      - name: Build GitHub Pages target
+        env:
+          BUILD_TARGET: github-pages
+          BASE_PATH: /otsukai/
         run: npm run build
+
+  staging-artifact:
+    runs-on: ubuntu-latest
+    env:
+      SOURCE_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+      BUILD_TARGET: cloudflare-pages
+      BASE_PATH: /
+      VITE_PUBLIC_APP_ORIGIN: ''
+      VITE_HANDWRITING_IMPORT_ENDPOINT: ''
+      VITE_TURNSTILE_SITE_KEY: ''
+      VITE_HANDWRITING_IMPORT_ENABLED: 'false'
+      VITE_HANDWRITING_DIAGNOSTICS_ENABLED: 'false'
+      VITE_PRODUCT_PHOTOS_ENABLED: 'false'
+      VITE_LIVE_REQUESTS_ENABLED: 'false'
+      VITE_MANUAL_VALIDATION_ENABLED: 'false'
+
+    steps:
+      - name: Checkout exact pull request head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Verify staging source identity
+        shell: bash
+        run: |
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [[ "$checked_out_sha" != "$SOURCE_COMMIT_SHA" ]]; then
+            echo "Checked-out commit does not match the staging source SHA." >&2
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Cloudflare Pages root artifact
+        run: npm run build
+
+      - name: Write exact-commit artifact metadata
+        run: node scripts/write-staging-artifact-metadata.mjs
+
+      - name: Upload non-Production staging artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-pages-root-${{ github.event.pull_request.head.sha }}
+          path: ./dist
+          if-no-files-found: error
+          retention-days: 7

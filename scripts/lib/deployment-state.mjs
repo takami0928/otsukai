@@ -72,7 +72,8 @@ export async function appendGitHubEnvironment(path, environment) {
 export function createDeploymentManifest(environment) {
   const mode = environment.HANDWRITING_DEPLOYMENT_MODE
   const sessionId = environment.HANDWRITING_DEPLOYMENT_SESSION_ID ?? ''
-  const commitSha = environment.GITHUB_SHA ?? ''
+  const commitSha =
+    environment.SOURCE_COMMIT_SHA ?? environment.GITHUB_SHA ?? ''
   if (
     !MODES.has(mode) ||
     !/^[0-9a-f]{40}$/u.test(commitSha) ||

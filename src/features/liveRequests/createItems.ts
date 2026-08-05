@@ -2,6 +2,7 @@ import { categories } from '../../data/categories'
 import { createId } from '../../utils/id'
 import type { SelectedRequestItem } from '../../utils/selectedRequestItems'
 import type { LiveRequestNewItem } from './types'
+import { buildApplicationHashUrl } from '../../utils/applicationUrls'
 
 type PhotoReference = { itemKey: string; token: string }
 
@@ -50,9 +51,11 @@ export function buildLiveRequestUrls(
   requestToken: string,
   editSecret: string,
 ): { purchaserUrl: string; managementUrl: string } {
-  const base = baseUrl.replace(/#.*$/u, '')
   return {
-    purchaserUrl: `${base}#/r/${requestToken}`,
-    managementUrl: `${base}#/manage/${requestToken}/${editSecret}`,
+    purchaserUrl: buildApplicationHashUrl(baseUrl, `/r/${requestToken}`),
+    managementUrl: buildApplicationHashUrl(
+      baseUrl,
+      `/manage/${requestToken}/${editSecret}`,
+    ),
   }
 }

@@ -113,7 +113,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 
 PowerShellファイルはNode CLIを起動し、その終了コードを返すだけです。外部コマンドのstdout、stderr、終了コードの分離、JSON解析、Pages run特定、状態保存、復旧判断はNode側で行います。
 
-開始処理は事前条件を確認し、最初の状態変更前に`.manual-test/handwriting-manual-session.json`を原子的に保存します。その後、Worker診断版をデプロイし、`deploy.yml`を`manual-on`モードと一意のsession IDで実行します。Repository Variablesの次の値は常に`false`のままで、一時変更しません。
+開始処理は事前条件を確認し、最初の状態変更前に`.manual-test/handwriting-manual-session.json`を原子的に保存します。その後、Worker診断版をデプロイし、`deploy.yml`を対象refのexact commit SHA、`manual-on`モード、一意のsession IDで実行します。branch名だけをPages build identityとして使用しません。Repository Variablesの次の値は常に`false`のままで、一時変更しません。
 
 - `VITE_HANDWRITING_IMPORT_ENABLED`
 - `VITE_HANDWRITING_DIAGNOSTICS_ENABLED`
