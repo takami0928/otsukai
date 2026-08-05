@@ -32,7 +32,7 @@ import {
 import {
   getManualValidationModeStatus,
   manualValidationErrorResponse,
-  validateManualValidationSession,
+  validateManualValidationSessionToken,
 } from './manualValidation'
 
 export const PHOTO_BATCH_PATH = '/v1/photos/batch'
@@ -142,6 +142,7 @@ async function handlePhotoBatch(
   origin: string,
   dependencies: PhotoHandlerDependencies,
   diagnostics: PhotoDiagnostics,
+  requiresManualValidation: boolean,
 ): Promise<Response> {
   if (request.method !== 'POST') {
     diagnostics.record('request-rejected', {
@@ -167,6 +168,21 @@ async function handlePhotoBatch(
       request,
       parseAllowedOrigins(env.ALLOWED_ORIGINS),
     )
+    if (requiresManualValidation) {
+      const validationStatus =
+        await validateManualValidationSessionToken(
+          validated.validationSessionToken ?? '',
+          env,
+          dependencies,
+        )
+      if (validationStatus !== 'valid') {
+        diagnostics.record('request-rejected', {
+          httpStatus: validationStatus === 'expired' ? 410 : 403,
+          errorClass: 'validation-session',
+        })
+        return manualValidationErrorResponse(validationStatus, origin)
+      }
+    }
     diagnostics.record('request-validated', {
       photoCount: validated.photos.length,
       imageBytes: validated.photos.reduce(
@@ -353,20 +369,6 @@ async function handlePhotoApiRequestInternal(
       })
       return manualValidationErrorResponse('expired', origin)
     }
-    if (pathname === PHOTO_BATCH_PATH) {
-      const validationStatus = await validateManualValidationSession(
-        request,
-        env,
-        dependencies,
-      )
-      if (validationStatus !== 'valid') {
-        diagnostics.record('request-rejected', {
-          httpStatus: validationStatus === 'expired' ? 410 : 403,
-          errorClass: 'validation-session',
-        })
-        return manualValidationErrorResponse(validationStatus, origin)
-      }
-    }
   }
   if (!hasPhotoConfiguration(env)) {
     diagnostics.record('request-failed', {
@@ -383,6 +385,7 @@ async function handlePhotoApiRequestInternal(
       origin,
       dependencies,
       diagnostics,
+      !publiclyEnabled,
     )
   }
   const token = matchPhotoToken(pathname)

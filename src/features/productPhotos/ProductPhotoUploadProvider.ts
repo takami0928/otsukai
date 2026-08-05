@@ -2,6 +2,7 @@ import type {
   TurnstileClientDiagnosticStage,
   TurnstileTokenProvider,
 } from '../handwriting/turnstile'
+import { isAbortError } from '../handwriting/errors'
 import {
   MAX_PRODUCT_PHOTO_BYTES,
 } from './imageProcessing'
@@ -23,8 +24,10 @@ export type ProductPhotoUploadErrorCode =
 
 export type ProductPhotoClientDiagnosticStage =
   | TurnstileClientDiagnosticStage
-  | 'photo-fetch-started'
-  | 'photo-fetch-failed'
+  | 'photo-fetch-attempt-1-started'
+  | 'photo-fetch-attempt-1-failed'
+  | 'photo-fetch-retry-started'
+  | 'photo-fetch-retry-failed'
 
 export interface ProductPhotoClientDiagnosticsReporter {
   record(stage: ProductPhotoClientDiagnosticStage): void
@@ -152,6 +155,31 @@ function validatePhotos(photos: readonly PendingPhoto[]): void {
   }
 }
 
+function createUploadBody(
+  photos: readonly PendingPhoto[],
+  turnstileToken: string,
+  validationSessionToken?: string,
+): FormData {
+  const body = new FormData()
+  if (validationSessionToken) {
+    body.append('validationSessionToken', validationSessionToken)
+  }
+  body.append('turnstileToken', turnstileToken)
+  body.append(
+    'metadata',
+    JSON.stringify(
+      photos.map((photo) => ({
+        token: photo.token,
+        itemKey: photo.itemKey,
+      })),
+    ),
+  )
+  for (const photo of photos) {
+    body.append('photo', photo.blob, 'photo.jpg')
+  }
+  return body
+}
+
 function validateSuccess(value: unknown, photos: readonly PendingPhoto[]): boolean {
   if (!isRecord(value) || Object.keys(value).length !== 1 || !Array.isArray(value.photos)) {
     return false
@@ -195,75 +223,86 @@ export class WorkerProductPhotoUploadProvider
   ): Promise<void> {
     validatePhotos(photos)
     try {
-      let token: string
-      try {
-        token = await this.turnstile.getToken({ signal: options.signal })
-      } catch (error) {
-        if (options.signal?.aborted) {
-          throw new DOMException('The operation was aborted.', 'AbortError')
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          let token: string
+          try {
+            token = await this.turnstile.getToken({
+              signal: options.signal,
+            })
+          } catch (error) {
+            if (options.signal?.aborted) {
+              throw new DOMException(
+                'The operation was aborted.',
+                'AbortError',
+              )
+            }
+            throw new ProductPhotoUploadError('auth-failed')
+          }
+          const body = createUploadBody(
+            photos,
+            token,
+            this.validationSessionToken,
+          )
+          const startedStage =
+            attempt === 1
+              ? 'photo-fetch-attempt-1-started'
+              : 'photo-fetch-retry-started'
+          const failedStage =
+            attempt === 1
+              ? 'photo-fetch-attempt-1-failed'
+              : 'photo-fetch-retry-failed'
+          let response: Response
+          this.recordStage(startedStage)
+          try {
+            response = await this.fetchImplementation(
+              uploadUrl(this.endpoint),
+              {
+                method: 'POST',
+                body,
+                signal: options.signal,
+              },
+            )
+          } catch (error) {
+            if (options.signal?.aborted) {
+              throw new DOMException(
+                'The operation was aborted.',
+                'AbortError',
+              )
+            }
+            this.recordStage(failedStage)
+            if (attempt === 1 && !isAbortError(error)) {
+              continue
+            }
+            throw new ProductPhotoUploadError('network-failed')
+          }
+          const requestId = safeRequestId(response)
+          if (!response.ok) {
+            throw mapUploadFailure(
+              response.status,
+              await readErrorCode(response),
+              requestId,
+            )
+          }
+          let responseValue: unknown
+          try {
+            responseValue = await response.json()
+          } catch {
+            throw new ProductPhotoUploadError(
+              'service-unavailable',
+              requestId,
+            )
+          }
+          if (!validateSuccess(responseValue, photos)) {
+            throw new ProductPhotoUploadError(
+              'service-unavailable',
+              requestId,
+            )
+          }
+          return
+        } finally {
+          this.turnstile.reset()
         }
-        throw new ProductPhotoUploadError('auth-failed')
-      }
-      const body = new FormData()
-      body.append('turnstileToken', token)
-      body.append(
-        'metadata',
-        JSON.stringify(
-          photos.map((photo) => ({
-            token: photo.token,
-            itemKey: photo.itemKey,
-          })),
-        ),
-      )
-      for (const photo of photos) {
-        body.append('photo', photo.blob, 'photo.jpg')
-      }
-
-      let response: Response
-      this.recordStage('photo-fetch-started')
-      try {
-        response = await this.fetchImplementation(uploadUrl(this.endpoint), {
-          method: 'POST',
-          ...(this.validationSessionToken
-            ? {
-                headers: {
-                  'X-Otsukai-Validation-Session':
-                    this.validationSessionToken,
-                },
-              }
-            : {}),
-          body,
-          signal: options.signal,
-        })
-      } catch (error) {
-        if (options.signal?.aborted) {
-          throw new DOMException('The operation was aborted.', 'AbortError')
-        }
-        this.recordStage('photo-fetch-failed')
-        throw new ProductPhotoUploadError('network-failed')
-      }
-      const requestId = safeRequestId(response)
-      if (!response.ok) {
-        throw mapUploadFailure(
-          response.status,
-          await readErrorCode(response),
-          requestId,
-        )
-      }
-      let responseValue: unknown
-      try {
-        responseValue = await response.json()
-      } catch {
-        throw new ProductPhotoUploadError(
-          'service-unavailable',
-          requestId,
-        )
-      }
-      if (!validateSuccess(responseValue, photos)) {
-        throw new ProductPhotoUploadError(
-          'service-unavailable',
-          requestId,
-        )
       }
     } catch (error) {
       if (options.signal?.aborted) {
@@ -273,8 +312,6 @@ export class WorkerProductPhotoUploadProvider
         throw error
       }
       throw new ProductPhotoUploadError('service-unavailable')
-    } finally {
-      this.turnstile.reset()
     }
   }
 }

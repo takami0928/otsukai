@@ -14,7 +14,7 @@ export type ManualValidationDependencies = {
   digestImplementation?: (data: ArrayBuffer) => Promise<ArrayBuffer>
 }
 
-type ManualValidationStatus =
+export type ManualValidationStatus =
   | 'disabled'
   | 'expired'
   | 'invalid'
@@ -68,8 +68,12 @@ function equalHex(left: string, right: string): boolean {
   return difference === 0
 }
 
-export async function validateManualValidationSession(
-  request: Request,
+export function isManualValidationSessionToken(value: string): boolean {
+  return SESSION_PATTERN.test(value)
+}
+
+export async function validateManualValidationSessionToken(
+  token: string,
   env: WorkerEnv,
   dependencies: ManualValidationDependencies = {},
 ): Promise<ManualValidationStatus> {
@@ -80,8 +84,7 @@ export async function validateManualValidationSession(
   }
   const configuredHash =
     env.MANUAL_VALIDATION_SESSION_SHA256?.trim().toLowerCase() ?? ''
-  const token = request.headers.get(MANUAL_VALIDATION_SESSION_HEADER) ?? ''
-  if (!SESSION_PATTERN.test(token)) {
+  if (!isManualValidationSessionToken(token)) {
     return 'invalid'
   }
   const digest =
@@ -91,6 +94,18 @@ export async function validateManualValidationSession(
     await digest(new TextEncoder().encode(token).buffer),
   )
   return equalHex(actualHash, configuredHash) ? 'valid' : 'invalid'
+}
+
+export async function validateManualValidationSession(
+  request: Request,
+  env: WorkerEnv,
+  dependencies: ManualValidationDependencies = {},
+): Promise<ManualValidationStatus> {
+  return validateManualValidationSessionToken(
+    request.headers.get(MANUAL_VALIDATION_SESSION_HEADER) ?? '',
+    env,
+    dependencies,
+  )
 }
 
 function jsonResponse(

@@ -406,16 +406,70 @@ describe('CreateRequestPage product photo sharing', () => {
     await click(button('確認へ'))
     await click(button('LINEで送る'))
 
-    expect(fetchImplementation).toHaveBeenCalledTimes(1)
+    expect(fetchImplementation).toHaveBeenCalledTimes(2)
     expect(container.textContent).toContain('エラー分類: network-failed')
     expect(container.textContent).toContain(
-      '処理段階: photo-fetch-failed',
+      '処理段階: photo-fetch-retry-failed',
     )
     expect(container.textContent).not.toContain('問い合わせID:')
     expect(container.textContent).not.toContain('private-token')
     expect(container.textContent).not.toContain('private network detail')
     expect(container.textContent).not.toContain(validationSessionToken)
     expect(container.textContent).not.toContain('public-site-key')
+  })
+
+  it('continues sharing without showing the first retriable network failure', async () => {
+    const validationSessionToken = `mv1_${'V'.repeat(32)}`
+    let renderOptions: Parameters<TurnstileApi['render']>[1] | undefined
+    let finishRetry: ((response: Response) => void) | undefined
+    const retryResponse = new Promise<Response>((resolve) => {
+      finishRetry = resolve
+    })
+    let retryMetadata: Array<{ token: string; itemKey: string }> = []
+    const fetchImplementation = vi.fn(async (_input, init) => {
+      if (fetchImplementation.mock.calls.length === 1) {
+        throw new TypeError('private first-attempt detail')
+      }
+      retryMetadata = JSON.parse(
+        String((init?.body as FormData).get('metadata')),
+      ) as Array<{ token: string; itemKey: string }>
+      return retryResponse
+    })
+    vi.stubGlobal('fetch', fetchImplementation)
+    window.turnstile = {
+      render: vi.fn((_container, options) => {
+        renderOptions = options
+        return 'photo-widget'
+      }),
+      execute: vi.fn(() => renderOptions?.callback('private-token')),
+      reset: vi.fn(),
+      remove: vi.fn(),
+    }
+    await renderPage({
+      useDefaultUploader: true,
+      validationSessionToken,
+    })
+    await selectMilkPhoto()
+    await click(button('確認へ'))
+    await click(button('LINEで送る'))
+
+    expect(fetchImplementation).toHaveBeenCalledTimes(2)
+    expect(share).not.toHaveBeenCalled()
+    expect(container.textContent).not.toContain('エラー分類:')
+
+    await act(async () => {
+      finishRetry?.(Response.json({ photos: retryMetadata }))
+      await retryResponse
+      await Promise.resolve()
+    })
+
+    expect(share).toHaveBeenCalledTimes(1)
+    expect(sharedPayload().requestId).toMatch(/^v4-/)
+    expect(container.textContent).not.toContain('エラー分類:')
+    expect(container.textContent).not.toContain(
+      'private first-attempt detail',
+    )
+    expect(container.textContent).not.toContain(validationSessionToken)
   })
 
   it('clears a previous correlation ID while an upload retry is running', async () => {

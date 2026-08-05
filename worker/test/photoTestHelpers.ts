@@ -112,6 +112,8 @@ export function photoBatchRequest(options: {
   contentLength?: number
   pathname?: string
   method?: string
+  validationSessionToken?: string
+  validationSessionHeader?: string
 } = {}): Request {
   const count = options.count ?? options.files?.length ?? 1
   const files =
@@ -128,6 +130,12 @@ export function photoBatchRequest(options: {
       itemKey: `item-${index}`,
     }))
   const formData = new FormData()
+  if (options.validationSessionToken !== undefined) {
+    formData.append(
+      'validationSessionToken',
+      options.validationSessionToken,
+    )
+  }
   formData.append('turnstileToken', options.token ?? 'single-use-token')
   formData.append('metadata', JSON.stringify(metadata))
   for (const file of files) {
@@ -139,6 +147,12 @@ export function photoBatchRequest(options: {
       method: options.method ?? 'POST',
       headers: {
         Origin: options.origin ?? allowedOrigin,
+        ...(options.validationSessionHeader === undefined
+          ? {}
+          : {
+              'X-Otsukai-Validation-Session':
+                options.validationSessionHeader,
+            }),
         ...(options.contentLength === undefined
           ? {}
           : { 'Content-Length': String(options.contentLength) }),
