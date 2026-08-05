@@ -190,7 +190,10 @@ require explicit human acceptance with rationale, owner, and deadline.
 
 ## Pull requests and merge
 
-- Open a Draft PR unless the user explicitly requests a ready-for-review PR.
+- Codex implementation and review sessions must always open and update Draft PRs only.
+  They must not mark a PR ready for review, even when a user requests it in the task
+  prompt. Ready-for-review status is a separate decision and GitHub operation that
+  an authorized human performs after the required checks and independent review.
 - The PR body must identify the Issue, exact base/head SHAs, changed files, purpose,
   invariants, checks, CI, risk, rollback, external-state impact, data-access boundary,
   and required independent review.
