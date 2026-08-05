@@ -1,4 +1,4 @@
-import { HandwritingImportError } from './errors'
+import { HandwritingImportError, isAbortError } from './errors'
 import type { HandwritingDiagnosticsReporter } from './diagnostics'
 
 type TurnstileWidgetId = string
@@ -36,6 +36,17 @@ export interface TurnstileTokenProvider {
   getToken(options?: { signal?: AbortSignal }): Promise<string>
   reset(): void
   dispose(): void
+}
+
+export type TurnstileClientDiagnosticStage =
+  | 'turnstile-load-started'
+  | 'turnstile-ready'
+  | 'turnstile-execute-started'
+  | 'turnstile-token-received'
+  | 'turnstile-token-failed'
+
+export interface TurnstileClientDiagnosticsReporter {
+  record(stage: TurnstileClientDiagnosticStage): void
 }
 
 type PendingToken = {
@@ -143,7 +154,23 @@ export class BrowserTurnstileTokenProvider
       loadTurnstileApi,
     private readonly diagnostics?: HandwritingDiagnosticsReporter,
     private readonly action = 'handwriting_import',
+    private readonly clientDiagnostics?: TurnstileClientDiagnosticsReporter,
   ) {}
+
+  private recordClientStage(stage: TurnstileClientDiagnosticStage): void {
+    try {
+      this.clientDiagnostics?.record(stage)
+    } catch {
+      // Diagnostics must never change the authentication flow.
+    }
+  }
+
+  private recordStage(
+    stage: Exclude<TurnstileClientDiagnosticStage, 'turnstile-token-failed'>,
+  ): void {
+    this.diagnostics?.record(stage)
+    this.recordClientStage(stage)
+  }
 
   private finishPending(error?: unknown, token?: string): void {
     const pending = this.pending
@@ -153,7 +180,7 @@ export class BrowserTurnstileTokenProvider
     }
     pending.cleanup()
     if (typeof token === 'string' && token) {
-      this.diagnostics?.record('turnstile-token-received')
+      this.recordStage('turnstile-token-received')
       pending.resolve(token)
     } else {
       pending.reject(error ?? new HandwritingImportError('auth-failed'))
@@ -194,38 +221,48 @@ export class BrowserTurnstileTokenProvider
     if (this.disposed || this.pending) {
       throw new HandwritingImportError('auth-failed')
     }
-    this.diagnostics?.record('turnstile-load-started')
-    const api = await withAbort(this.apiLoader(), options.signal)
-    if (options.signal?.aborted) {
-      throw abortError()
-    }
-    if (this.disposed) {
-      throw new HandwritingImportError('auth-failed')
-    }
-    this.api = api
-    const widgetId = this.ensureWidget(api)
-    this.diagnostics?.record('turnstile-ready')
-
-    return new Promise<string>((resolve, reject) => {
+    try {
+      this.recordStage('turnstile-load-started')
+      const api = await withAbort(this.apiLoader(), options.signal)
       if (options.signal?.aborted) {
-        reject(abortError())
-        return
+        throw abortError()
       }
-      const handleAbort = () => this.finishPending(abortError())
-      options.signal?.addEventListener('abort', handleAbort, { once: true })
-      this.pending = {
-        resolve,
-        reject,
-        cleanup: () =>
-          options.signal?.removeEventListener('abort', handleAbort),
+      if (this.disposed) {
+        throw new HandwritingImportError('auth-failed')
       }
-      try {
-        this.diagnostics?.record('turnstile-execute-started')
-        api.execute(widgetId)
-      } catch (error) {
-        this.finishPending(new HandwritingImportError('auth-failed', error))
+      this.api = api
+      this.recordStage('turnstile-ready')
+      const widgetId = this.ensureWidget(api)
+
+      return await new Promise<string>((resolve, reject) => {
+        if (options.signal?.aborted) {
+          reject(abortError())
+          return
+        }
+        const handleAbort = () => this.finishPending(abortError())
+        options.signal?.addEventListener('abort', handleAbort, { once: true })
+        this.pending = {
+          resolve,
+          reject,
+          cleanup: () =>
+            options.signal?.removeEventListener('abort', handleAbort),
+        }
+        try {
+          this.recordStage('turnstile-execute-started')
+          api.execute(widgetId)
+        } catch (error) {
+          this.finishPending(new HandwritingImportError('auth-failed', error))
+        }
+      })
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw error
       }
-    })
+      this.recordClientStage('turnstile-token-failed')
+      throw error instanceof HandwritingImportError
+        ? error
+        : new HandwritingImportError('auth-failed')
+    }
   }
 
   reset(): void {
