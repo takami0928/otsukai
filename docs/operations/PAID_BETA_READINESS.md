@@ -120,8 +120,8 @@ Section 14の非免除条件に影響する未解決P0 / P1 / P2、または重�
 
 - [ ] 収集するデータと収集しないデータを一覧化している。
 - [ ] 写真、依頼、capability tokenをログへ出さない。
-- [ ] AIへ写真、商品名、条件本文、共有URL、Secretを渡さない。
-- [ ] AIはprivate ops repositoryまたはIssueを直接読まず、検証済みAI-safe exportだけを受け取る。
+- [ ] AIへ写真、商品名、条件本文、自由記述、完全な共有URL、token、Secret、cookie、authorization header、個人情報、支払い識別子、生support本文、request / response body、providerの生error、private Issue / PR / Runbook / repository検索結果を渡さない。
+- [ ] AIはprivate `takami0928/otsukai-ops`を閲覧、検索、fetch、取得せず、定義済みallowlist schemaへ適合し、禁止field不在を決定論的validatorで確認したAI-safe exportだけを受け取る。匿名化、仮名化、実名除去だけを安全条件にしない。
 - [ ] 実験サマリーは商品内容を含まず、件数・エラー等に限定する。
 - [ ] 参加者情報と公開リポジトリを分離する。
 - [ ] データ削除依頼の受付と人間による実行手順がある。
@@ -156,14 +156,18 @@ Section 14の非免除条件に影響する未解決P0 / P1 / P2、または重�
 ## 9. AI支援運用
 
 - [ ] CodexへProduction権限を与えていない。
-- [ ] Codexは専用ブランチとDraft PRまでに制限される。
-- [ ] AIはmerge、Production反映、外部設定変更、顧客送信、返金、解約、削除を実行しない。
+- [ ] Codex実装・レビューセッションは専用branch、test、Draft PR、レビュー、修正、rollback案までに制限され、自分が作成、変更、または必須レビューしたPRをmergeしない。
+- [ ] GitHub接続済み操作役AIによるmergeは、権限を持つ人間のexact repository / PR / base / headに対する明示承認と`AI_MERGE_APPROVAL.md`の全条件へ拘束される。
+- [ ] 無承認merge、auto-merge、merge queue、branch protection・required checks・review gateの迂回を禁止している。
+- [ ] 操作役AIはmerge直前にbase、head、Draft、mergeable、必須CI、独立レビュー、findingを再取得し、`expected_head_sha`等でhead移動を拒否する。
+- [ ] 承認後にbase、head、差分、CI、レビュー結果が変われば承認と必要なレビューを失効させ、完全な再確認と再承認を要求する。
+- [ ] AIはProduction反映、Production workflow、外部設定変更、顧客送信、返金、解約、利用者data操作を実行しない。
 - [ ] AI-safe障害サマリーのschemaとexport手順がある。
 - [ ] CI失敗から再現テスト、修正Draft PRまでの標準手順がある。
 - [ ] Medium / High risk変更に別コンテキストレビューがある。
 - [ ] base / head SHA変更時にレビューを無効化する。
 - [ ] focused testとfull CIが成功している。
-- [ ] mergeとProduction反映は別に承認し、人間がそれぞれ実行する。
+- [ ] mergeとProduction反映を別に承認し、mergeは人間または全条件を満たす別の操作役AI、Production反映は人間だけが実行する。
 - [ ] AIサービスが停止した場合の手動縮退手順がある。
 - [ ] AI利用費は当面ChatGPT Plusの範囲である。
 
@@ -219,7 +223,7 @@ Section 14の非免除条件に影響する未解決P0 / P1 / P2、または重�
 3. 未解決P0 / P1がない。
 4. Sections 1〜12の非免除条件に影響する未解決P2がない。影響しないP2だけ、根拠、責任者、期限を記録したうえで人間が受容できる。
 5. 有料βの商品と価格に、Closed Alphaとは別の利用者から実際の申込がある。
-6. merge、Production変更、緊急停止、返金、顧客連絡を人間が実行できる。
+6. 人間がexact PR/headのmergeを明示承認し、自分または全条件を満たす操作役AIによるmergeを統制できる。Production変更、緊急停止、返金、顧客連絡は人間が実行できる。
 7. 延期項目を開始前に固定し、利用者影響と代替手順を記録している。
 
 「機能が完成した」「テストが多い」「AIが修正できる」「少人数だから」だけでは開始条件を満たさない。

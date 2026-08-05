@@ -1,5 +1,13 @@
 # 自律実行ランブック
 
+> **現行統治との関係:** 本書は完了済みリファクタリングprogramのtask固有手順と記録であり、
+> merge、Pages、Productionの権限を付与しない。現在または将来の実行ではroot
+> `AGENTS.md`、`docs/CODEX_WORKFLOW.md`、`docs/operations/AI_AGENT_POLICY.md`、
+> `docs/operations/AI_MERGE_APPROVAL.md`を優先する。Codex実装・レビューセッションは
+> 各PhaseのDraft PRまでで停止し、自己mergeまたはdeployを行わない。人間の明示承認は
+> exact repository / PR / base / headごとに必要であり、merge承認はProduction承認ではない。
+> 本書の「自律実行」「merge」「Pages deploy確認」は、この権限分離を省略する意味ではない。
+
 ## 1. 適用条件
 
 ユーザーが明示的に「第2次リファクタリング計画を全Phase、デプロイ完了まで実行する」と指示した場合にのみ使用する。
