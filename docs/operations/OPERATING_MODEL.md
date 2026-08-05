@@ -6,17 +6,18 @@ Status: approved direction, implementation tracked by Issue #56
 
 本サービスは、家庭内の買い物依頼を安全に共有し、普段買い物を担当しない家族が一人で買い物を完了できる状態を支援する。
 
-運用上の目標はAIによる無人経営ではない。通常時は決定論的な自動化で維持し、異常時は安全に縮退し、Codexが調査・修正Draft PR作成まで担当し、人間は本番・金銭・個人情報・秘密情報・法務に関する判断と状態変更を自分で実行する「例外駆動型の個人運用」とする。
+運用上の目標はAIによる無人経営ではない。通常時は決定論的な自動化で維持し、異常時は安全に縮退し、Codexが調査・修正Draft PR作成まで担当する。人間は本番・金銭・個人情報・秘密情報・法務に関する判断と明示承認を担う。PRのmerge操作だけは、全安全条件を満たす別のGitHub接続済み操作役AIへ委任でき、それ以外の状態変更は人間が実行する「例外駆動型の個人運用」とする。
 
 ## 不変条件
 
-- 固定依頼、数量・条件、売場順、購入進捗、端末内家庭マスタはAIへ依存しない。
-- 写真、更新可能依頼、手書き解析は補助機能であり、停止しても無料コアを利用できる。
+- 固定依頼、URL共有、商品名、数量、条件、売場順、購入進捗、端末内家庭マスタ、家庭マスタの書き出しと復旧はAI、写真、v5、手書き解析、有料機能へ依存しない。
+- 写真、更新可能依頼v5、手書き解析は停止可能な補助機能であり、個別に停止しても無料コアを利用できる。
 - OpenAI、Google、Cloudflareの一部機能が停止しても、固定依頼の閲覧と端末内購入進捗を可能な限り継続する。
 - 公開リポジトリへ利用者情報、秘密情報、capability URL、実写真、実依頼本文を保存しない。
 - AIへCloudflare、決済、Secrets、Productionデータの直接権限を与えない。
-- 人間の承認があっても、AIはmerge、Production反映、外部設定変更、顧客送信、返金、解約、データ削除、事故通知を実行しない。
-- merge、Production変更、返金、データ削除、Secret変更、顧客連絡、法務対応は権限を持つ人間が自分の操作として実行する。
+- Codex実装・レビューセッションは、自分が作成、変更、または必須レビューしたPRをmergeしない。
+- 別のGitHub接続済み操作役AIは、権限を持つ人間が対象repository、PR、base、exact head SHAを明示承認し、`AI_MERGE_APPROVAL.md`の全条件を満たす場合だけmergeを代行できる。
+- merge承認はProduction承認ではない。Production変更、外部設定、Secret、返金、データ操作、顧客連絡、法務対応はAIへ委任せず、権限を持つ人間が実行する。
 - 障害時に自動化するのは修正ではなく、安全停止、縮退、証拠収集である。
 
 ## 4層構成
@@ -61,7 +62,7 @@ Status: approved direction, implementation tracked by Issue #56
 Codexの責務:
 
 - IssueとCI結果の整理
-- AI-safe形式へ明示的にexportされた障害サマリーの分析
+- [AI_AGENT_POLICY.mdの「AI-safe export」](AI_AGENT_POLICY.md#ai-safe-export)をcanonical definitionとし、その全条件を継承し、短縮記述、checklist、Issue、runbook、queueまたはartifactによる省略・緩和を認めないAI-safe障害サマリーの分析
 - 再現テストの追加
 - 修正実装
 - Draft PR作成
@@ -71,7 +72,8 @@ Codexの責務:
 
 Codexに許可しないこと:
 
-- pull requestのmerge、auto-merge、merge queue投入
+- 自分が作成、変更、または必須レビューしたpull requestのmerge
+- auto-merge、merge queue投入、branch protection・required checks・review gateの迂回
 - Production deploy、Production workflowの起動・承認・再実行
 - Cloudflare、GitHub Environment、DNS等の外部設定変更
 - Secretの閲覧・変更
@@ -80,13 +82,16 @@ Codexに許可しないこと:
 - 顧客、参加者、報告者への送信
 - セキュリティ事故の公表・通知
 
-Codexへprivate運用リポジトリ全体の読み取り権限を与えない。人間または決定論的処理がallowlist schemaへ変換したAI-safe exportだけを入力とする。
+Codexへprivate運用リポジトリ全体の読み取り権限を与えない。AIへ入力できるのは、[AI_AGENT_POLICY.mdの「AI-safe export」](AI_AGENT_POLICY.md#ai-safe-export)をcanonical definitionとし、その全条件を継承するAI-safe exportだけである。短縮記述、checklist、Issue、runbook、queueまたはartifactによって条件を省略・緩和しない。人間はexport作成を開始できるが、version管理されたallowlist schemaに基づく決定論的producerが生成し、未知field拒否、型・値範囲、全禁止fieldの不存在を決定論的validatorが確認した後のpayloadだけをAIへ入力できる。人間の目視確認、匿名化、仮名化、実名除去だけではAI-safeとみなさない。
+
+GitHub接続を持つ操作役AIは、実装・必須レビューとは別contextで、権限を持つ人間のexact PR/headに対する明示承認後だけmergeを代行できる。merge直前にbase、head、Draft、mergeable、必須CI、独立レビュー、findingを再取得し、`expected_head_sha`等でhead移動を拒否する。base、head、差分、CI、レビュー結果が変われば承認と必要なレビューを失効させる。auto-merge、merge queue、gate迂回は使用しない。指定がなければSquashとし、merge後にmain側SHAを報告する。詳細は[`AI_MERGE_APPROVAL.md`](AI_MERGE_APPROVAL.md)を正本とする。
 
 ### 4. 人間統治層
 
-人間が判断し、自分で実行する責任:
+人間が担う判断と実行責任:
 
-- pull requestのmerge
+- exact repository / PR / base / headに対するmergeの明示承認
+- mergeを自分で実行するか、全条件を満たす操作役AIへ単発で委任する判断
 - Production反映、停止、再開、rollback
 - Cloudflare / GitHub / DNS / 決済の設定変更
 - Secretの追加、失効、ローテーション
@@ -98,7 +103,7 @@ Codexへprivate運用リポジトリ全体の読み取り権限を与えない�
 - 規約、プライバシーポリシー、特商法表示の確定・公開
 - サービス継続・停止判断
 
-人間はAIの提案を利用できるが、AIへ最終操作を委任しない。
+人間はAIの提案を利用できる。canonical policyに従う承認済みPRのmerge以外の最終操作をAIへ委任しない。
 
 ## 提供チャネル
 
@@ -110,11 +115,11 @@ Codexへprivate運用リポジトリ全体の読み取り権限を与えない�
 
 - 固定依頼
 - URL共有
-- 件数、数量、条件
+- 商品名、数量、条件
 - 売場順
 - 購入進捗
 - 端末内家庭マスタ
-- 復旧・書き出し
+- 家庭マスタの書き出し・復旧
 
 ### Family Lab
 
@@ -189,14 +194,14 @@ private `takami0928/otsukai-ops`は、次の運用記録を匿名コードと最
 
 氏名、メールアドレス、実写真、共有URL、capability token、Secretはprivate Issueにも原則記録しない。必要な情報は専用の安全な保管先に置く。
 
-AIはprivate repositoryまたはprivate Issueを直接読まない。AIへ渡す場合は、人間または決定論的処理が禁止fieldの不存在を確認し、AI-safe schemaへ明示的にexportする。
+AIはprivate repositoryまたはprivate Issueを直接読まない。AIへ渡せるのは、[AI_AGENT_POLICY.mdの「AI-safe export」](AI_AGENT_POLICY.md#ai-safe-export)をcanonical definitionとし、その全条件を継承するAI-safe exportだけである。短縮記述、checklist、Issue、runbook、queueまたはartifactによって条件を省略・緩和しない。version管理されたallowlist schemaに基づく決定論的producerが生成し、未知field拒否、型・値範囲、全禁止fieldの不存在を決定論的validatorが確認した後のpayloadだけを使用する。人間の目視判定、匿名化、仮名化、実名除去だけでAI-safeに昇格させない。
 
 ## 費用方針
 
 - 現在はChatGPT Plusのみを使用する。
 - Codex利用量が実際に業務を阻害するまで上位プランへ変更しない。
 - 異種モデルレビューを有料βの必須条件にしない。
-- 高リスク変更は、別コンテキストのCodexレビュー、CI、決定論的チェックリスト、staging、人間によるmergeとProduction操作で補う。
+- 高リスク変更は、別コンテキストのCodexレビュー、CI、決定論的チェックリスト、staging、人間によるexact merge承認、canonical policyに従うmerge、人間によるProduction操作で補う。
 - AI費用をサービスの実行経路へ組み込まない。
 
 ## 変更管理

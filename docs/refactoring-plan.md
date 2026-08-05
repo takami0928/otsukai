@@ -1,5 +1,11 @@
 # 第2次リファクタリング計画
 
+> **現行統治との関係:** 本書は完了済みprogramの計画・実績記録である。記載された
+> merge、Pages deploy、公開smokeの手順や過去SHAは、将来のCodexへmergeまたはProduction
+> 権限を与えない。新しい作業ではroot `AGENTS.md`と`docs/CODEX_WORKFLOW.md`に従い、
+> Codex実装・レビューセッションはDraft PRまで、exact base/headの独立レビュー、対象PRへの
+> 人間の明示merge承認、Productionの別承認を必要とする。
+
 ## 1. 目的
 
 機能削減・統合後の現在の仕様を固定し、利用者向けの機能・表示・互換性を変えずに、以下を改善する。

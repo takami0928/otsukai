@@ -2,9 +2,9 @@
 
 ## Supported state
 
-This project is under active development. The primary user-facing supported state is the specific release or commit currently deployed to the public Stable Free Core environment.
+This project is under active development. The primary user-facing supported state is the specific release or exact commit whose deployment to the public Stable Free Core environment completed successfully.
 
-The latest `main` branch is a development and investigation target. It is not automatically a deployed or user-facing supported release. It may contain changes that are not yet deployed, remain disabled, or are available only in staging.
+At present, a push to `main` automatically starts the GitHub Pages deployment workflow. That trigger does not make the mutable `main` branch name itself the supported release. A `main` commit may still be pending deployment, have a failed deployment, or contain code paths that remain disabled or restricted. Security reports and operational decisions must identify the exact successfully deployed commit or release.
 
 Experimental photo, live-request, handwriting, Family Lab, Closed Alpha, and Paid Beta paths may remain disabled, invitation-only, or restricted to a separately identified deployed release. Public Release / General Availability is a separate deployed environment or release state for generally available paid or optional features and must be identified independently from the Stable Free Core.
 
@@ -60,15 +60,19 @@ This is an individually operated project. Immediate or 24-hour response is not g
 - Capability URLs grant access to anyone who possesses the complete URL. They are not equivalent to account-authenticated confidential storage.
 - Product photos and live requests use bounded retention and must not be treated as permanent storage.
 - The service is not intended to make medical, allergy, or other safety-critical purchasing decisions on behalf of users.
-- AI maintenance tools must not receive user photos, shopping content, capability URLs, Secrets, raw support messages, private operations Issues, or unrestricted private repository search results.
-- AI maintenance tools may receive only payloads explicitly exported into a defined AI-safe allowlist schema and verified by a deterministic validator before use.
-- Anonymization or removal of direct identifiers alone is not an AI-safe input condition and does not replace allowlisting, data minimization, prohibited-field validation, or prompt-injection controls.
+- AI maintenance tools must not receive photos or image blobs; product names, condition text, or free text; complete shared URLs; request tokens, photo tokens, edit secrets, or Turnstile tokens; API keys, Secrets, cookies, or authorization headers.
+- AI maintenance tools must not receive names, email addresses, street addresses, phone numbers, payment identifiers, raw support text, request or response bodies, raw provider errors, private Issues, private PRs, private Runbooks, or private repository search results.
+- AI must not browse, search, fetch, or read private `takami0928/otsukai-ops`. A convention to read only an anonymized portion is not an enforceable access boundary.
+- AI maintenance tools may receive only payloads satisfying [the canonical "AI-safe export" definition](docs/operations/AI_AGENT_POLICY.md#ai-safe-export), whose full conditions are inherited. Short descriptions, checklists, Issues, runbooks, queues, or artifacts must not omit or relax those conditions. Such payloads must be explicitly exported into a defined AI-safe allowlist schema and verified by a deterministic validator before use.
+- The deterministic validator must reject unknown schema fields and verify the absence of every prohibited field before export. Anonymization, pseudonymization, or removal of direct identifiers alone is not an AI-safe input condition and does not replace allowlisting, data minimization, prohibited-field validation, or prompt-injection controls.
 - Any AI-specific queue or artifact may contain only schema-valid, validator-approved payloads. It must not contain free text, source records, raw logs, private links, or repository search results.
 
 ## Operational safety
 
 When a vulnerability affects an optional feature, the preferred first response is to stop new operations for that feature and fall back to the fixed text request path.
 
-AI may prepare investigation notes, a Draft PR, a rollback checklist, and communication drafts. AI does not merge, deploy, modify external settings, rotate Secrets, refund, delete data, or send notifications, even after human approval.
+AI may prepare investigation notes, a dedicated branch, tests, a Draft PR, a read-only review, a rollback checklist, and communication drafts. A Codex implementation or review session must not merge a PR it created, changed, or used as its required review target.
 
-Data migrations, Secret rotation, Production deployment, refund, deletion, and external notification are separately approved and executed by a human operator.
+A separate GitHub-connected operator AI may merge only after an authorized human explicitly approves the exact repository, PR, base, and head SHA and every condition in [`docs/operations/AI_MERGE_APPROVAL.md`](docs/operations/AI_MERGE_APPROVAL.md) is satisfied. The operator must re-fetch base/head, Draft, mergeable, required CI, independent review, and finding state immediately before merge; reject a moved head with `expected_head_sha` or equivalent; and invalidate approval when base, head, diff, CI, or review changes. Auto-merge, merge queues, and protection/check/review bypasses are prohibited.
+
+Merge approval is not Production approval. If a merge would itself trigger a Production action that cannot be separated, an operator AI must stop. Production deployment or workflow start/approval/rerun, external settings, Secret rotation, migrations, charges/refunds/cancellations, user-data access/deletion/recovery, customer or reporter messages, incident notification, legal publication, and Production stop/restart are separately approved and executed by a human operator.
