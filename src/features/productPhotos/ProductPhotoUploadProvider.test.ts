@@ -142,16 +142,37 @@ describe('WorkerProductPhotoUploadProvider', () => {
 
   it('rejects a mismatched success response and resets the token', async () => {
     const challenge = turnstile()
+    const requestId = 'safe-success-response-id'
     const provider = new WorkerProductPhotoUploadProvider(
       'https://worker.example/',
       challenge,
-      vi.fn(async () => Response.json({ photos: [] })) as typeof fetch,
+      vi.fn(async () => Response.json(
+        { photos: [] },
+        { headers: { 'X-Otsukai-Request-Id': requestId } },
+      )) as typeof fetch,
     )
 
     await expect(provider.upload([photo()])).rejects.toMatchObject({
       code: 'service-unavailable',
+      requestId,
     })
     expect(challenge.reset).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the correlation ID when a successful response is not JSON', async () => {
+    const requestId = 'safe-json-response-id'
+    const provider = new WorkerProductPhotoUploadProvider(
+      'https://worker.example/',
+      turnstile(),
+      vi.fn(async () => new Response('not-json', {
+        headers: { 'X-Otsukai-Request-Id': requestId },
+      })) as typeof fetch,
+    )
+
+    await expect(provider.upload([photo()])).rejects.toMatchObject({
+      code: 'service-unavailable',
+      requestId,
+    })
   })
 
   it('propagates cancellation without logging or retrying', async () => {

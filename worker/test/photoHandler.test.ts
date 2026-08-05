@@ -565,4 +565,29 @@ describe('photo API handler', () => {
       expect(Object.keys(entry).every((key) => allowedKeys.has(key))).toBe(true)
     }
   })
+
+  it('classifies a Durable Object namespace lookup failure as storage', async () => {
+    const { env, namespace } = photoEnv()
+    env.DIAGNOSTIC_MODE = 'true'
+    namespace.getByName.mockImplementationOnce(() => {
+      throw new Error('raw namespace detail')
+    })
+    const messages: string[] = []
+
+    const response = await handlePhotoApiRequest(
+      photoBatchRequest(),
+      env,
+      {
+        createRequestId: () => 'safe-namespace-request',
+        logImplementation: (message) => messages.push(message),
+        fetchImplementation: successfulTurnstileFetch(),
+      },
+    )
+
+    expect(response.status).toBe(503)
+    expect(messages.join('\n')).toContain(
+      '"errorClass":"photo-storage"',
+    )
+    expect(messages.join('\n')).not.toContain('raw namespace detail')
+  })
 })

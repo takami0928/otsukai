@@ -207,8 +207,8 @@ async function handlePhotoBatch(
         photo.jpeg,
         digestImplementation,
       )
-      const stub = env.PHOTO_OBJECTS.getByName(photo.token)
       failureClass = 'photo-storage'
+      const stub = env.PHOTO_OBJECTS.getByName(photo.token)
       const result = await stub.savePhoto({
         jpeg: photo.jpeg,
         contentHash,

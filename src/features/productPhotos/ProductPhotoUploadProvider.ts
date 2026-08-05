@@ -202,15 +202,28 @@ export class WorkerProductPhotoUploadProvider
         body,
         signal: options.signal,
       })
+      const requestId = safeRequestId(response)
       if (!response.ok) {
         throw mapUploadFailure(
           response.status,
           await readErrorCode(response),
-          safeRequestId(response),
+          requestId,
         )
       }
-      if (!validateSuccess(await response.json(), photos)) {
-        throw new ProductPhotoUploadError('service-unavailable')
+      let responseValue: unknown
+      try {
+        responseValue = await response.json()
+      } catch {
+        throw new ProductPhotoUploadError(
+          'service-unavailable',
+          requestId,
+        )
+      }
+      if (!validateSuccess(responseValue, photos)) {
+        throw new ProductPhotoUploadError(
+          'service-unavailable',
+          requestId,
+        )
       }
     } catch (error) {
       if (options.signal?.aborted) {

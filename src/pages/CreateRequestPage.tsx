@@ -884,6 +884,9 @@ export function CreateRequestPage({
       return false
     }
     const itemKeys = photos.map((photo) => photo.itemKey)
+    setShareMessage('')
+    setShareStatus('')
+    setPhotoUploadFailed(false)
     pendingPhotos.setPhotoStatus(itemKeys, 'uploading')
     setIsUploadingPhotos(true)
     try {
