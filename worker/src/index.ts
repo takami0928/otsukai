@@ -16,7 +16,10 @@ import {
   isPhotoApiRoute,
   type PhotoHandlerDependencies,
 } from './photoHandler'
-import { createWorkerRequestId } from './requestId'
+import {
+  createWorkerRequestId,
+  WORKER_REQUEST_ID_HEADER,
+} from './requestId'
 import {
   handleManualValidationSessionRequest,
   MANUAL_VALIDATION_SESSION_HEADER,
@@ -37,7 +40,7 @@ import {
   validateHandwritingImportRequest,
 } from './validation'
 
-export const HANDWRITING_REQUEST_ID_HEADER = 'X-Otsukai-Request-Id'
+export const HANDWRITING_REQUEST_ID_HEADER = WORKER_REQUEST_ID_HEADER
 
 export {
   hasHandwritingConfiguration,
@@ -325,6 +328,8 @@ function preflightResponse(
       'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
       'Access-Control-Allow-Headers':
         `Content-Type, If-Match, If-None-Match, ${MANUAL_VALIDATION_SESSION_HEADER}`,
+      'Access-Control-Expose-Headers': WORKER_REQUEST_ID_HEADER,
+      [WORKER_REQUEST_ID_HEADER]: requestId,
       'Access-Control-Max-Age': '86400',
       Vary: 'Origin',
     },
@@ -363,6 +368,8 @@ export function routeRequest(
         fetchImplementation: dependencies.fetchImplementation,
         timeoutMs: dependencies.timeoutMs,
         now: dependencies.now,
+        logImplementation: dependencies.logImplementation,
+        createRequestId: dependencies.createRequestId,
       },
     )
   }

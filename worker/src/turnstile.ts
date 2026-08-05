@@ -8,6 +8,14 @@ type TurnstileSiteverifyResponse = {
   hostname?: string
 }
 
+export type TurnstileVerificationResult =
+  | 'verified'
+  | 'siteverify-failed'
+  | 'action-mismatch'
+  | 'hostname-mismatch'
+  | 'response-invalid'
+  | 'unavailable'
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -36,6 +44,18 @@ export async function verifyTurnstileToken(options: {
   signal: AbortSignal
   expectedAction?: string
 }): Promise<boolean> {
+  return (await verifyTurnstileTokenDetailed(options)) === 'verified'
+}
+
+export async function verifyTurnstileTokenDetailed(options: {
+  token: string
+  secret: string
+  origin: string
+  remoteIp?: string
+  fetchImplementation: typeof fetch
+  signal: AbortSignal
+  expectedAction?: string
+}): Promise<TurnstileVerificationResult> {
   const expectedHostname = new URL(options.origin).hostname
   const body = new URLSearchParams({
     secret: options.secret,
@@ -57,22 +77,32 @@ export async function verifyTurnstileToken(options: {
     if (options.signal.aborted) {
       throw error
     }
-    return false
+    return 'unavailable'
   }
   if (!response.ok) {
-    return false
+    return 'unavailable'
   }
 
   let parsed: TurnstileSiteverifyResponse | undefined
   try {
     parsed = parseSiteverifyResponse(await response.json())
   } catch {
-    return false
+    return 'response-invalid'
   }
-  return Boolean(
-    parsed?.success &&
-      parsed.action ===
-        (options.expectedAction ?? DEFAULT_TURNSTILE_ACTION) &&
-      parsed.hostname === expectedHostname,
-  )
+  if (!parsed) {
+    return 'response-invalid'
+  }
+  if (!parsed.success) {
+    return 'siteverify-failed'
+  }
+  if (
+    parsed.action !==
+    (options.expectedAction ?? DEFAULT_TURNSTILE_ACTION)
+  ) {
+    return 'action-mismatch'
+  }
+  if (parsed.hostname !== expectedHostname) {
+    return 'hostname-mismatch'
+  }
+  return 'verified'
 }

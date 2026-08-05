@@ -110,6 +110,12 @@ describe('photo API handler', () => {
       allowedOrigin,
     )
     expect(response.headers.get('Cache-Control')).toBe('no-store')
+    expect(response.headers.get('X-Otsukai-Request-Id')).toMatch(
+      /^[A-Za-z0-9-]{1,64}$/u,
+    )
+    expect(response.headers.get('Access-Control-Expose-Headers')).toBe(
+      'X-Otsukai-Request-Id',
+    )
     await expect(response.json()).resolves.toEqual({
       photos: [0, 1, 2].map((index) => ({
         token: validPhotoTokens[index],
@@ -149,6 +155,49 @@ describe('photo API handler', () => {
     expect(response.status).toBe(403)
     await expect(response.json()).resolves.toEqual({ code: 'AUTH_FAILED' })
     expect(namespace.getByName).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    {
+      name: 'action mismatch',
+      action: 'wrong_action',
+      hostname: 'takami0928.github.io',
+      errorClass: 'turnstile-action-mismatch',
+    },
+    {
+      name: 'hostname mismatch',
+      action: PHOTO_TURNSTILE_ACTION,
+      hostname: 'attacker.example',
+      errorClass: 'turnstile-hostname-mismatch',
+    },
+  ])('rejects Turnstile $name without storage access', async ({
+    action,
+    hostname,
+    errorClass,
+  }) => {
+    const { env, namespace } = photoEnv()
+    env.DIAGNOSTIC_MODE = 'true'
+    const messages: string[] = []
+    const response = await handlePhotoApiRequest(
+      photoBatchRequest(),
+      env,
+      {
+        createRequestId: () => 'safe-photo-request',
+        logImplementation: (message) => messages.push(message),
+        fetchImplementation: vi.fn(async () => Response.json({
+          success: true,
+          action,
+          hostname,
+        })) as typeof fetch,
+      },
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({ code: 'AUTH_FAILED' })
+    expect(namespace.getByName).not.toHaveBeenCalled()
+    expect(messages.some((message) => (
+      JSON.parse(message) as { errorClass?: string }
+    ).errorClass === errorClass)).toBe(true)
   })
 
   it('times out a stalled Turnstile request without storage access', async () => {
@@ -354,6 +403,51 @@ describe('photo API handler', () => {
     expect(namespace.getByName).toHaveBeenCalledTimes(1)
   })
 
+  it('distinguishes invalid and expired manual validation sessions before Turnstile', async () => {
+    const gateNow = Date.UTC(2026, 7, 2)
+    const invalid = photoEnv()
+    Object.assign(invalid.env, {
+      PHOTO_API_ENABLED: 'false',
+      MANUAL_VALIDATION_ENABLED: 'true',
+      MANUAL_VALIDATION_SESSION_SHA256: await sha256(manualValidationToken),
+      MANUAL_VALIDATION_EXPIRES_AT: new Date(gateNow + 60_000).toISOString(),
+    })
+    const invalidBase = photoBatchRequest()
+    const invalidHeaders = new Headers(invalidBase.headers)
+    invalidHeaders.set(
+      'X-Otsukai-Validation-Session',
+      `mv1_${'X'.repeat(32)}`,
+    )
+    const invalidResponse = await handlePhotoApiRequest(
+      new Request(invalidBase, { headers: invalidHeaders }),
+      invalid.env,
+      { now: () => gateNow },
+    )
+    expect(invalidResponse.status).toBe(403)
+    await expect(invalidResponse.json()).resolves.toEqual({
+      code: 'VALIDATION_SESSION_INVALID',
+    })
+    expect(invalid.namespace.getByName).not.toHaveBeenCalled()
+
+    const expired = photoEnv()
+    Object.assign(expired.env, {
+      PHOTO_API_ENABLED: 'false',
+      MANUAL_VALIDATION_ENABLED: 'true',
+      MANUAL_VALIDATION_SESSION_SHA256: await sha256(manualValidationToken),
+      MANUAL_VALIDATION_EXPIRES_AT: new Date(gateNow).toISOString(),
+    })
+    const expiredResponse = await handlePhotoApiRequest(
+      photoBatchRequest(),
+      expired.env,
+      { now: () => gateNow },
+    )
+    expect(expiredResponse.status).toBe(410)
+    await expect(expiredResponse.json()).resolves.toEqual({
+      code: 'VALIDATION_SESSION_EXPIRED',
+    })
+    expect(expired.namespace.getByName).not.toHaveBeenCalled()
+  })
+
   it('allows capability photo reads during an unexpired manual session without a session header', async () => {
     const { env, namespace } = photoEnv()
     const gateNow = Date.UTC(2026, 7, 2)
@@ -417,5 +511,83 @@ describe('photo API handler', () => {
 
     expect(response.status).toBe(200)
     expect(consoleLog).not.toHaveBeenCalled()
+  })
+
+  it('emits only allowlisted photo stages when diagnostics are enabled', async () => {
+    const { env, namespace } = photoEnv()
+    env.DIAGNOSTIC_MODE = 'true'
+    namespace.stubs.set(validPhotoTokens[0], Object.assign(
+      new FakePhotoStub(),
+      { saveError: new Error('raw storage detail') },
+    ))
+    const messages: string[] = []
+
+    const response = await handlePhotoApiRequest(
+      photoBatchRequest(),
+      env,
+      {
+        createRequestId: () => 'safe-photo-request',
+        logImplementation: (message) => messages.push(message),
+        fetchImplementation: successfulTurnstileFetch(),
+      },
+    )
+
+    expect(response.status).toBe(503)
+    expect(response.headers.get('X-Otsukai-Request-Id')).toBe(
+      'safe-photo-request',
+    )
+    expect(messages.length).toBeGreaterThan(0)
+    const combined = messages.join('\n')
+    expect(combined).toContain('"errorClass":"photo-storage"')
+    expect(combined).not.toContain(validPhotoTokens[0])
+    expect(combined).not.toContain('item-0')
+    expect(combined).not.toContain('single-use-token')
+    expect(combined).not.toContain('turnstile-secret-value')
+    expect(combined).not.toContain('raw storage detail')
+    const allowedKeys = new Set([
+      'schemaVersion',
+      'event',
+      'requestId',
+      'stage',
+      'durationMs',
+      'httpStatus',
+      'errorClass',
+      'photoCount',
+      'imageBytes',
+    ])
+    for (const message of messages) {
+      const entry = JSON.parse(message) as Record<string, unknown>
+      expect(entry).toMatchObject({
+        schemaVersion: 1,
+        event: 'product_photo_api',
+        requestId: 'safe-photo-request',
+      })
+      expect(Object.keys(entry).every((key) => allowedKeys.has(key))).toBe(true)
+    }
+  })
+
+  it('classifies a Durable Object namespace lookup failure as storage', async () => {
+    const { env, namespace } = photoEnv()
+    env.DIAGNOSTIC_MODE = 'true'
+    namespace.getByName.mockImplementationOnce(() => {
+      throw new Error('raw namespace detail')
+    })
+    const messages: string[] = []
+
+    const response = await handlePhotoApiRequest(
+      photoBatchRequest(),
+      env,
+      {
+        createRequestId: () => 'safe-namespace-request',
+        logImplementation: (message) => messages.push(message),
+        fetchImplementation: successfulTurnstileFetch(),
+      },
+    )
+
+    expect(response.status).toBe(503)
+    expect(messages.join('\n')).toContain(
+      '"errorClass":"photo-storage"',
+    )
+    expect(messages.join('\n')).not.toContain('raw namespace detail')
   })
 })

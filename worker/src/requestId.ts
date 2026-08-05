@@ -1,4 +1,5 @@
 export const MAX_REQUEST_ID_CHARACTERS = 64
+export const WORKER_REQUEST_ID_HEADER = 'X-Otsukai-Request-Id'
 
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9-]{1,64}$/u
 

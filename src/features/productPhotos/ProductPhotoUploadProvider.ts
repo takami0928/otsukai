@@ -9,13 +9,19 @@ export const PRODUCT_PHOTO_TURNSTILE_ACTION = 'product_photo_upload'
 
 export type ProductPhotoUploadErrorCode =
   | 'auth-failed'
+  | 'validation-session-invalid'
+  | 'validation-session-expired'
+  | 'origin-not-allowed'
   | 'invalid-photo'
   | 'limit-reached'
   | 'timeout'
   | 'service-unavailable'
 
 export class ProductPhotoUploadError extends Error {
-  constructor(readonly code: ProductPhotoUploadErrorCode) {
+  constructor(
+    readonly code: ProductPhotoUploadErrorCode,
+    readonly requestId?: string,
+  ) {
     super(code)
     this.name = 'ProductPhotoUploadError'
   }
@@ -37,10 +43,35 @@ function uploadUrl(endpoint: string): string {
   return new URL('v1/photos/batch', base).toString()
 }
 
+const WORKER_REQUEST_ID_HEADER = 'X-Otsukai-Request-Id'
+const SAFE_WORKER_ERROR_CODES = new Set([
+  'AUTH_FAILED',
+  'VALIDATION_SESSION_INVALID',
+  'VALIDATION_SESSION_EXPIRED',
+  'ORIGIN_NOT_ALLOWED',
+  'PHOTO_REQUEST_INVALID',
+  'PHOTO_BATCH_TOO_LARGE',
+  'PHOTO_INVALID',
+  'PHOTO_METADATA_PRESENT',
+  'PHOTO_DIMENSIONS_TOO_LARGE',
+  'PHOTO_TOKEN_CONFLICT',
+  'UNSUPPORTED_CONTENT_TYPE',
+  'SERVICE_UNAVAILABLE',
+  'TIMEOUT',
+])
+
+function safeRequestId(response: Response): string | undefined {
+  const value = response.headers.get(WORKER_REQUEST_ID_HEADER) ?? ''
+  return /^[A-Za-z0-9-]{1,64}$/u.test(value) ? value : undefined
+}
+
 async function readErrorCode(response: Response): Promise<string | undefined> {
   try {
     const value: unknown = await response.json()
-    return isRecord(value) && typeof value.code === 'string'
+    return isRecord(value) &&
+      Object.keys(value).length === 1 &&
+      typeof value.code === 'string' &&
+      SAFE_WORKER_ERROR_CODES.has(value.code)
       ? value.code
       : undefined
   } catch {
@@ -51,20 +82,36 @@ async function readErrorCode(response: Response): Promise<string | undefined> {
 function mapUploadFailure(
   status: number,
   code?: string,
+  requestId?: string,
 ): ProductPhotoUploadError {
+  if (code === 'VALIDATION_SESSION_INVALID') {
+    return new ProductPhotoUploadError(
+      'validation-session-invalid',
+      requestId,
+    )
+  }
+  if (code === 'VALIDATION_SESSION_EXPIRED') {
+    return new ProductPhotoUploadError(
+      'validation-session-expired',
+      requestId,
+    )
+  }
+  if (code === 'ORIGIN_NOT_ALLOWED') {
+    return new ProductPhotoUploadError('origin-not-allowed', requestId)
+  }
   if (status === 401 || status === 403 || code === 'AUTH_FAILED') {
-    return new ProductPhotoUploadError('auth-failed')
+    return new ProductPhotoUploadError('auth-failed', requestId)
   }
   if (status === 408 || status === 504 || code === 'TIMEOUT') {
-    return new ProductPhotoUploadError('timeout')
+    return new ProductPhotoUploadError('timeout', requestId)
   }
   if (status === 413 || status === 429) {
-    return new ProductPhotoUploadError('limit-reached')
+    return new ProductPhotoUploadError('limit-reached', requestId)
   }
   if (status === 400 || status === 409 || status === 415) {
-    return new ProductPhotoUploadError('invalid-photo')
+    return new ProductPhotoUploadError('invalid-photo', requestId)
   }
-  return new ProductPhotoUploadError('service-unavailable')
+  return new ProductPhotoUploadError('service-unavailable', requestId)
 }
 
 function validatePhotos(photos: readonly PendingPhoto[]): void {
@@ -155,11 +202,28 @@ export class WorkerProductPhotoUploadProvider
         body,
         signal: options.signal,
       })
+      const requestId = safeRequestId(response)
       if (!response.ok) {
-        throw mapUploadFailure(response.status, await readErrorCode(response))
+        throw mapUploadFailure(
+          response.status,
+          await readErrorCode(response),
+          requestId,
+        )
       }
-      if (!validateSuccess(await response.json(), photos)) {
-        throw new ProductPhotoUploadError('service-unavailable')
+      let responseValue: unknown
+      try {
+        responseValue = await response.json()
+      } catch {
+        throw new ProductPhotoUploadError(
+          'service-unavailable',
+          requestId,
+        )
+      }
+      if (!validateSuccess(responseValue, photos)) {
+        throw new ProductPhotoUploadError(
+          'service-unavailable',
+          requestId,
+        )
       }
     } catch (error) {
       if (options.signal?.aborted) {

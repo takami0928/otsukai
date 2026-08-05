@@ -279,7 +279,9 @@ describe('CreateRequestPage product photo sharing', () => {
 
     expect(upload).toHaveBeenCalledTimes(1)
     expect(share).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('写真を保存できませんでした')
+    expect(container.textContent).toContain(
+      '写真保存サービスで問題が発生しました',
+    )
     expect(container.querySelector('img[alt="牛乳の参考写真"]')).not.toBeNull()
 
     await click(button('写真を外してv3で共有'))
@@ -287,6 +289,80 @@ describe('CreateRequestPage product photo sharing', () => {
     expect(share).toHaveBeenCalledTimes(1)
     expect(sharedPayload().requestId).toMatch(/^v3-/)
     expect(revokePreviewUrl).toHaveBeenCalledWith('blob:compressed-preview')
+  })
+
+  it.each([
+    [
+      'auth-failed',
+      '写真保存の認証確認に失敗しました。',
+    ],
+    [
+      'validation-session-invalid',
+      '限定検証セッションを確認できませんでした。',
+    ],
+    [
+      'validation-session-expired',
+      '限定検証セッションの有効期限が切れています。',
+    ],
+    [
+      'invalid-photo',
+      '写真の形式または容量を確認できませんでした。',
+    ],
+    [
+      'service-unavailable',
+      '写真保存サービスで問題が発生しました。',
+    ],
+    [
+      'timeout',
+      '写真の保存が時間内に完了しませんでした。',
+    ],
+  ] as const)('shows a safe %s upload failure with only its correlation ID', async (
+    code,
+    expectedMessage,
+  ) => {
+    const upload = vi.fn<ProductPhotoUploadProvider['upload']>(async () => {
+      throw new ProductPhotoUploadError(code, 'safe-photo-request-123')
+    })
+    await renderPage({ upload })
+    await selectMilkPhoto()
+    await click(button('確認へ'))
+    await click(button('LINEで送る'))
+
+    expect(container.textContent).toContain(expectedMessage)
+    expect(container.textContent).toContain(
+      '問い合わせID: safe-photo-request-123',
+    )
+    expect(container.textContent).not.toContain('SERVICE_UNAVAILABLE')
+    expect(share).not.toHaveBeenCalled()
+  })
+
+  it('clears a previous correlation ID while an upload retry is running', async () => {
+    let finishRetry: (() => void) | undefined
+    const retry = new Promise<void>((resolve) => {
+      finishRetry = resolve
+    })
+    const upload = vi.fn<ProductPhotoUploadProvider['upload']>()
+      .mockRejectedValueOnce(
+        new ProductPhotoUploadError(
+          'service-unavailable',
+          'previous-request-id',
+        ),
+      )
+      .mockImplementationOnce(async () => retry)
+    await renderPage({ upload })
+    await selectMilkPhoto()
+    await click(button('確認へ'))
+    await click(button('LINEで送る'))
+    expect(container.textContent).toContain('previous-request-id')
+
+    await click(button('写真付き共有を再試行'))
+    expect(container.textContent).not.toContain('previous-request-id')
+
+    await act(async () => {
+      finishRetry?.()
+      await retry
+      await Promise.resolve()
+    })
   })
 
   it('blocks review while compression is pending and never uploads a rejected source', async () => {
